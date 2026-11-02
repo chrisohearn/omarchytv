@@ -3366,10 +3366,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
      * paired PC "> ask" / "> agents" and the TV MCP server (:47800/mcp).
      */
     private AsciiMenu.Page grokBotPage() {
-        AsciiMenu.Page p = new AsciiMenu.Page(str(R.string.grok_bot_hub));
         LauncherConfig.WebApp grokBot = LauncherConfig.BUILTIN_AI_WEBAPPS[0];
         LauncherConfig gc = LauncherConfig.get(this);
-        p.add("Chat with the Grok Bot companion", "OK ›", r -> {
+        String companionName = CompanionChatActivity.botName(gc);
+        AsciiMenu.Page p = new AsciiMenu.Page(companionName + " & AI");
+        p.add("Chat with " + companionName, "OK ›", r -> {
             handler.post(() -> openCompanionChat(false));
             return false;
         });
@@ -3428,13 +3429,19 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             return true;
         });
         String lAgent = "Companion agent";
-        p.add(lAgent, "ask".equals(gc.companionAgent) ? "OmarchyTV Ask" : "Grok Bot (PC companion)", r -> {
+        p.add(lAgent, "ask".equals(gc.companionAgent) ? "OmarchyTV Ask" : companionName + " (PC companion)", r -> {
             String n = "ask".equals(gc.companionAgent) ? "grokbot" : "ask";
             applyLive("grok-bot", lAgent, j -> companionPlugins(j).put("companionAgent", n));
             return true;
         });
         // v2.13.8 "Grok Bot diretto (senza PC)": used when no PC companion is linked. URL and key stay on this TV only.
         android.content.SharedPreferences gd = GrokbotDirectActivity.prefs(this);
+        String lSpeak = "Read replies aloud (TV voice)";
+        p.add(lSpeak, gd.getBoolean("speak", true) ? str(R.string.on) : str(R.string.off), r -> {
+            gd.edit().putBoolean("speak", !gd.getBoolean("speak", true)).apply();
+            handler.post(() -> showMenu("grok-bot", lSpeak));
+            return false;
+        });
         p.add("Grok Bot diretto (senza PC)", gd.getBoolean("enabled", false) ? str(R.string.on) : str(R.string.off), r -> {
             gd.edit().putBoolean("enabled", !gd.getBoolean("enabled", false)).apply();
             handler.post(() -> showMenu("grok-bot", "Grok Bot diretto (senza PC)"));
@@ -3446,11 +3453,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         });
         p.add("  Sender key", GrokbotDirect.mask(gd.getString("key", "")) + " ›", r -> {
             directDialog(true);
-            return false;
-        });
-        p.add("  Leggi risposte ad alta voce", gd.getBoolean("speak", true) ? str(R.string.on) : str(R.string.off), r -> {
-            gd.edit().putBoolean("speak", !gd.getBoolean("speak", true)).apply();
-            handler.post(() -> showMenu("grok-bot", "  Leggi risposte ad alta voce"));
             return false;
         });
         // Optional "Voce di Grok (xAI)": off by default (the system TTS stays the default); paid xAI API key.

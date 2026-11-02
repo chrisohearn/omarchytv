@@ -152,8 +152,14 @@ OmarchyTV requests microphone permission before the first use. The Speak button
 shows when it is listening or recognizing. Press it again to cancel. Leaving the
 chat cancels recognition, and an attempt ends after at most 30 seconds. A failed
 attempt shows an error and sends no question. A successful attempt sends the
-recognized message through the selected companion route. This is dictation;
-it does not start a provider's live voice call or read replies aloud.
+recognized message through the selected companion route. The PC companion reads
+fresh text replies using an installed offline Android TV voice when **Read replies aloud
+(TV voice)** is on. The chat's **Voice** button shares that setting. Starting the
+microphone, muting Voice, or leaving the chat stops speech. Reopening history
+does not speak old replies, and replies received while the chat is closed stay
+silent. If the TV voice is unavailable, the answer remains visible with a
+settings hint. These are remote push-to-talk turns with TV speech; they do not
+start the provider's live voice call or use its premium voice API.
 
 Only one PC companion request runs at a time. Reopening the chat or pressing the
 microphone again keeps the pending request. A further dictated question stays in

@@ -14,6 +14,8 @@ import android.os.Bundle;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
+import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.ViewGroup;
@@ -29,6 +31,7 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 /**
@@ -49,6 +52,10 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
     private EditText input;
     private TextView mic;
     private SpeechRecognizer speech;
+    private TextToSpeech tts;
+    private TextView voiceOutput;
+    private boolean ttsReady, ttsFailed, voiceFailureShown;
+    private String queuedSpeech, speakingId;
     private boolean voiceOnResume;
     private boolean resumed;
     private final Runnable speechTimeout = () -> {
@@ -105,6 +112,12 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
         TextView title = text(botName + " · Companion (TV)", 16, t.fgBright, true);
         title.setPadding(dp(12), 0, 0, 0);
         head.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        voiceOutput = button(voiceLabel());
+        voiceOutput.setOnClickListener(v -> {
+            GrokbotDirectActivity.prefs(this).edit().putBoolean("speak", !GrokbotDirectActivity.speak(this)).apply();
+            stopSpeaking();
+        });
+        head.addView(voiceOutput);
         panel.addView(head);
         TextView via = text(routeNote(), 11, t.fgDim, false);
         via.setPadding(0, dp(6), 0, dp(10));
@@ -149,13 +162,14 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
             restoreConversation();
         });
         row.addView(clear);
-        TextView foot = text("Built for @tcballard's Grok Bot Desktop Companion v0.1.0 (MIT) · try \"open YouTube\"", 10, t.fgDim, false);
+        TextView foot = text("Press the remote microphone to speak. Replies use the TV voice; select Voice to mute.", 10, t.fgDim, false);
         foot.setPadding(0, dp(8), 0, 0);
         panel.addView(foot);
 
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(720), dp(460), Gravity.CENTER);
         shade.addView(panel, lp);
         setContentView(shade);
+        initSpeechOutput();
 
         input.setText(prefs().getString("draft:" + botName, ""));
         String q = getIntent().getStringExtra("q");
@@ -229,6 +243,7 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
 
     private void voice() {
         if (!resumed || isFinishing()) return;
+        stopSpeaking();
         if (speech != null) {
             stopVoice();
             return;
@@ -326,6 +341,8 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
             if ("grokbot_answer".equals(type)) {
                 String text = d.optString("text", "");
                 linkButtons(d.optJSONArray("links"), text);
+                String mode = d.optString("mode");
+                if (!"sent".equals(mode) && !"ipc".equals(mode)) speakReply(text);
                 mark.blink(false);
                 mark.postDelayed(() -> mark.blink(true), 160);
             }
@@ -337,6 +354,7 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
         super.onResume();
         resumed = true;
         visible = true;
+        voiceOutput.setText(voiceLabel());
         restoreConversation();
         markRead(this, LauncherConfig.get(this));
         OmarchyLink.addListener(this);
@@ -351,6 +369,7 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
         resumed = false;
         visible = false;
         stopVoice();
+        stopSpeaking();
         mic.removeCallbacks(requestTimeout);
         prefs().edit().putString("draft:" + botName, input.getText().toString()).apply();
         OmarchyLink.removeListener(this);
@@ -360,7 +379,86 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
     @Override
     protected void onDestroy() {
         stopVoice();
+        stopSpeaking();
+        if (tts != null) {
+            tts.shutdown();
+            tts = null;
+        }
         super.onDestroy();
+    }
+
+    private String voiceLabel() {
+        return "Voice: " + (GrokbotDirectActivity.speak(this) ? "on" : "off");
+    }
+
+    private void initSpeechOutput() {
+        tts = new TextToSpeech(this, status -> {
+            if (tts == null || isFinishing() || isDestroyed()) return;
+            int language = status == TextToSpeech.SUCCESS
+                    ? tts.setLanguage(Locale.forLanguageTag(MainActivity.speechLanguage(this)))
+                    : TextToSpeech.LANG_NOT_SUPPORTED;
+            // Use an installed voice so reading a private companion reply adds no cloud speech provider.
+            ttsReady = false;
+            if (language >= TextToSpeech.LANG_AVAILABLE && tts.getVoices() != null) {
+                String wanted = Locale.forLanguageTag(MainActivity.speechLanguage(this)).getLanguage();
+                for (android.speech.tts.Voice voice : tts.getVoices()) {
+                    if (!voice.isNetworkConnectionRequired() && wanted.equals(voice.getLocale().getLanguage())
+                            && tts.setVoice(voice) == TextToSpeech.SUCCESS) {
+                        ttsReady = true;
+                        break;
+                    }
+                }
+            }
+            ttsFailed = !ttsReady;
+            if (queuedSpeech != null) speakReply(queuedSpeech);
+        });
+        tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+            @Override public void onStart(String id) {
+                runOnUiThread(() -> {
+                    if (id.equals(speakingId) && resumed) voiceOutput.setText("Speaking… Voice to mute");
+                });
+                android.util.Log.i("CompanionVoice", "Started reply " + id);
+            }
+            @Override public void onDone(String id) { completed(id, false); }
+            @Override public void onError(String id) { completed(id, true); }
+            private void completed(String id, boolean failed) {
+                android.util.Log.i("CompanionVoice", (failed ? "Failed reply " : "Finished reply ") + id);
+                runOnUiThread(() -> {
+                    if (!id.equals(speakingId)) return;
+                    speakingId = null;
+                    voiceOutput.setText(voiceLabel());
+                    if (failed) voiceUnavailable();
+                });
+            }
+        });
+    }
+
+    private void speakReply(String text) {
+        if (!resumed || !GrokbotDirectActivity.speak(this) || text == null || text.isEmpty()) return;
+        queuedSpeech = text;
+        if (ttsFailed) {
+            queuedSpeech = null;
+            voiceUnavailable();
+        } else if (ttsReady && tts != null) {
+            queuedSpeech = null;
+            speakingId = UUID.randomUUID().toString();
+            if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, speakingId) == TextToSpeech.ERROR) {
+                speakingId = null;
+                voiceUnavailable();
+            }
+        }
+    }
+
+    private void stopSpeaking() {
+        queuedSpeech = speakingId = null;
+        if (tts != null) tts.stop();
+        if (voiceOutput != null) voiceOutput.setText(voiceLabel());
+    }
+
+    private void voiceUnavailable() {
+        if (!resumed || voiceFailureShown) return;
+        voiceFailureShown = true;
+        line("OmarchyTV", "TV voice is unavailable. Check Android Settings → Text-to-speech; your reply stays in the chat.", false);
     }
 
     private void line(String who, String msg, boolean me) {
