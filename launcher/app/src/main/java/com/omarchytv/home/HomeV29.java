@@ -25,7 +25,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
-import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.json.JSONArray;
@@ -40,9 +40,8 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * v2.9 home (spec "Omarchy TV", §3): Waybar top bar, fastfetch mini terminal, btop-style widgets, empty centre
- * for the wallpaper, bottom app window with 16:9 banner tiles. All sizes are the spec's px at 1080p scaled by
- * screen height / 1080 (same proportions at 4K). Every colour comes from the colors.toml keys in {@link Theme}.
+ * Waybar, fastfetch and btop-style widgets above two rows of labeled apps. Geometry scales from
+ * 1920×1080 to 4K. The selected theme supplies hues and accents; home surfaces stay dark.
  */
 final class HomeV29 extends FrameLayout {
 
@@ -341,9 +340,12 @@ final class HomeV29 extends FrameLayout {
         row.setPadding(px(10), px(10), px(10), px(10));
         row.setOverScrollMode(OVER_SCROLL_NEVER);
         row.setItemAnimator(null);
-        row.setLayoutManager(new LinearLayoutManager(a, LinearLayoutManager.HORIZONTAL, false));
+        row.setLayoutManager(new GridLayoutManager(a, rowCols(0)));
         rowAdapter = new TileAdapter(true, rowCols(0), row);   // bind() applies Layout → App size
         row.setAdapter(rowAdapter);
+        appWin.addOnLayoutChangeListener((v, l, top, r, bottom, oldL, oldTop, oldR, oldBottom) -> {
+            if (top != oldTop && cfg != null && editPanel == null) post(() -> applyPanelPos(cfg));
+        });
         LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(-1, -2);
         rl.topMargin = px(16);
         appWin.addView(row, rl);
@@ -378,12 +380,15 @@ final class HomeV29 extends FrameLayout {
         tvBody = vbox();
         tvWin.addView(tvBody, new LinearLayout.LayoutParams(-1, -2));
         appsWin = window("app");
-        FrameLayout gh = new FrameLayout(a);
-        gridName = text("", 30, true);
+        LinearLayout gh = hbox();
+        gridName = text("", 32, true);
         gridName.setSingleLine(true);
-        gh.addView(gridName, new LayoutParams(-2, -2, Gravity.START | Gravity.CENTER_VERTICAL));
-        gridHints = text("", 18, false);
-        gh.addView(gridHints, new LayoutParams(-2, -2, Gravity.END | Gravity.CENTER_VERTICAL));
+        gridName.setEllipsize(TextUtils.TruncateAt.END);
+        gridName.setPadding(0, 0, px(24), 0);
+        gh.addView(gridName, new LinearLayout.LayoutParams(0, -2, 1f));
+        gridHints = text("", 22, false);
+        gridHints.setSingleLine(true);
+        gh.addView(gridHints, new LinearLayout.LayoutParams(-2, -2));
         appsWin.addView(gh, new LinearLayout.LayoutParams(-1, -2));
         grid = new RecyclerView(a);
         grid.setClipChildren(false);
@@ -391,7 +396,7 @@ final class HomeV29 extends FrameLayout {
         grid.setPadding(px(8), px(12), px(8), px(12));
         grid.setOverScrollMode(OVER_SCROLL_NEVER);
         grid.setItemAnimator(null);
-        grid.setLayoutManager(new androidx.recyclerview.widget.GridLayoutManager(a, 7));
+        grid.setLayoutManager(new GridLayoutManager(a, 7));
         gridAdapter = new TileAdapter(false, 7, grid);
         grid.setAdapter(gridAdapter);
         LinearLayout.LayoutParams gl = new LinearLayout.LayoutParams(-1, 0, 1f);
@@ -577,7 +582,7 @@ final class HomeV29 extends FrameLayout {
         }
         tint(menuBtn, ink(t.fgBright));
         for (View b : barIcons) tint(b, ink(t.fgBright));
-        tip.setBackgroundColor(Theme.withAlpha(t.bg, 0.98f));
+        tip.setBackgroundColor(Theme.withAlpha(darkSurface(t.bg), 1f));
         tip.setTextColor(ink(t.fgBright));
         for (BoxView b : new BoxView[]{term, wxBox, pcBox, aiBoxRef, depBox, appWin, tvWin, appsWin, pcWin, sysWin, grokbotBox}) b.setColors(winBg, t.muted, ink(t.accent), ink(t.cyan));
         barSpacex.setTextColor(ink(t.accent2));
@@ -622,9 +627,13 @@ final class HomeV29 extends FrameLayout {
         appHints.setTextColor(ink(t.fg));
         updateRowHeader();
         rowAdapter.cols = rowCols(c.columns);
-        // grokbot sits just above the app window: follow its height (296 px fits the 6-per-row tiles)
+        ((GridLayoutManager) row.getLayoutManager()).setSpanCount(rowAdapter.cols);
+        int rows = Math.min(2, Math.max(1, (rowAdapter.getItemCount() + rowAdapter.cols - 1) / rowAdapter.cols));
+        LinearLayout.LayoutParams rowLayout = (LinearLayout.LayoutParams) row.getLayoutParams();
+        rowLayout.height = rows * (rowAdapter.tileH(rowAdapter.cols) + px(20)) + row.getPaddingTop() + row.getPaddingBottom();
+        row.setLayoutParams(rowLayout);
         LayoutParams gbl = (LayoutParams) grokbotBox.getLayoutParams();
-        gbl.bottomMargin = px(296) + rowAdapter.tileH(rowAdapter.cols) - rowAdapter.tileH(6);
+        gbl.bottomMargin = rowLayout.height + px(140);
         grokbotBox.setLayoutParams(gbl);
         rowAdapter.notifyDataSetChanged();
         gridAdapter.notifyDataSetChanged();
@@ -632,18 +641,35 @@ final class HomeV29 extends FrameLayout {
         buildWorkspace();
     }
 
-    /** Preserve the palette hue, lifting low-contrast custom theme text toward a readable foreground. */
-    private int ink(int color) {
-        Theme theme = t != null ? t : Theme.cur();
-        int fallback = Surfaces.luminance(theme.bg) > 0.179 ? Color.BLACK : Color.WHITE;
-        int foreground = Theme.readable(theme.fg, fallback, theme.bg);
-        return Theme.readable(color, foreground, theme.bg);
+    /** Home stays dark while keeping the selected theme's hue and accents. */
+    private int darkSurface(int color) {
+        return Surfaces.luminance(color) > 0.18 ? Theme.mix(color, Color.BLACK, 0.90f) : color;
     }
 
+    private int ink(int color) {
+        return ink(color, darkSurface((t != null ? t : Theme.cur()).bg));
+    }
+
+    /** Contrast belongs to the surface being drawn, which may differ in a partial custom palette. */
+    private int ink(int color, int background) {
+        Theme theme = t != null ? t : Theme.cur();
+        int fallback = Surfaces.luminance(background) > 0.179 ? Color.BLACK : Color.WHITE;
+        int foreground = Theme.readable(theme.fg, fallback, background);
+        int readable = Theme.readable(color, foreground, background);
+        for (int i = 0; i <= 20; i++) {
+            int candidate = Theme.mix(readable, fallback, i / 20f);
+            if (Surfaces.contrast(Surfaces.luminance(candidate), Surfaces.luminance(background)) >= 7) return candidate;
+        }
+        return fallback;
+    }
+
+    private int tileBackground() { return darkSurface(t.bgLight); }
+
     private int windowBackground() {
-        float alpha = Surfaces.wallpaperAlpha(t.bg, opacity(cfg) + noBlur(),
+        int background = darkSurface(t.bg);
+        float alpha = Surfaces.wallpaperAlpha(background, Math.max(0.90f, opacity(cfg) + noBlur()),
                 ink(t.fg), ink(t.fgBright), ink(t.accent), ink(t.accent2), ink(t.cyan), ink(t.green), ink(t.red), ink(t.yellow));
-        return Theme.withAlpha(t.bg, alpha);
+        return Theme.withAlpha(background, alpha);
     }
 
     private static void tint(View b, int color) {
@@ -782,7 +808,7 @@ final class HomeV29 extends FrameLayout {
         a.setEllipsize(TextUtils.TruncateAt.END);
         float cw = a.getPaint().measureText("M");
         r.addView(a, new LinearLayout.LayoutParams(Math.round(cw * labelCols), -2));
-        BarView b = new BarView(act, t.selection, fill, frac);
+        BarView b = new BarView(act, darkSurface(t.selection), fill, frac);
         LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(0, px(barH), 1f);
         bl.leftMargin = px(8);
         bl.rightMargin = px(10);
@@ -1054,7 +1080,7 @@ final class HomeV29 extends FrameLayout {
         iv.setColorFilter(t.accent);
         col.addView(iv, new LinearLayout.LayoutParams(px(72), px(72)));
         TextView tv = text(label, 30, true);
-        tv.setTextColor(ink(t.fgBright));
+        tv.setTextColor(ink(t.fgBright, tileBackground()));
         tv.setGravity(Gravity.CENTER);
         tv.setSingleLine(true);
         tv.setEllipsize(TextUtils.TruncateAt.END);
@@ -1063,14 +1089,14 @@ final class HomeV29 extends FrameLayout {
         col.addView(tv, tl);
         if (sub != null && !sub.isEmpty()) {
             TextView sv = text(sub, 20, false);
-            sv.setTextColor(ink(t.fg));
+            sv.setTextColor(ink(t.fg, tileBackground()));
             sv.setSingleLine(true);
             sv.setEllipsize(TextUtils.TruncateAt.END);
             col.addView(sv, new LinearLayout.LayoutParams(-2, -2));
         }
         f.addView(col, new LayoutParams(-1, -1));
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(t.bgLight);
+        bg.setColor(tileBackground());
         f.setBackground(bg);
         f.setForeground(new FocusRing());
         styleTile(f, false, false);
@@ -1233,11 +1259,30 @@ final class HomeV29 extends FrameLayout {
     private float cellH() { return getHeight() / (float) GRID_Y; }
 
     void applyPanelPos(LauncherConfig c) {
+        if (activeWs != 1 || getWidth() == 0) return;
+        // Validate against the new measured grid before restoring old offsets; keep saved config intact.
+        for (String id : PANEL_IDS) {
+            View v = panelView(id);
+            v.setTranslationX(0);
+            v.setTranslationY(0);
+        }
         for (String id : PANEL_IDS) {
             View v = panelView(id);
             int[] p = c.panelPos.get(id);
-            v.setTranslationX(p != null ? p[0] * cellW() : 0);
-            v.setTranslationY(p != null ? p[1] * cellH() : 0);
+            if (p == null || !v.isShown()) continue;
+            int cx = p[0], cy = p[1];
+            if (!fits(v, cx, cy)) {
+                int distance = Integer.MAX_VALUE;
+                cx = cy = 0;
+                for (int y = -GRID_Y; y <= GRID_Y; y++) {
+                    for (int x = -GRID_X; x <= GRID_X; x++) {
+                        int d = Math.abs(x - p[0]) + Math.abs(y - p[1]);
+                        if (d < distance && fits(v, x, y)) { cx = x; cy = y; distance = d; }
+                    }
+                }
+            }
+            v.setTranslationX(cx * cellW());
+            v.setTranslationY(cy * cellH());
         }
     }
 
@@ -1246,8 +1291,8 @@ final class HomeV29 extends FrameLayout {
         float x = v.getLeft() + tx, y = v.getTop() + ty;
         for (android.view.ViewParent p = v.getParent(); p instanceof View && p != this; p = p.getParent()) {
             View pv = (View) p;
-            x += pv.getLeft() + pv.getTranslationX();
-            y += pv.getTop() + pv.getTranslationY();
+            x += pv.getLeft() + (pv == widgets ? 0 : pv.getTranslationX());
+            y += pv.getTop() + (pv == widgets ? 0 : pv.getTranslationY());
         }
         return new android.graphics.RectF(x, y, x + v.getWidth(), y + v.getHeight());
     }
@@ -1256,7 +1301,7 @@ final class HomeV29 extends FrameLayout {
     private boolean fits(View v, int cx, int cy) {
         android.graphics.RectF r = rectAt(v, cx * cellW(), cy * cellH());
         if (r.left < 0 || r.right > getWidth() || r.top < barHeight() || r.bottom > getHeight()) return false;
-        if (appWin.getVisibility() == VISIBLE && android.graphics.RectF.intersects(r, rectAt(appWin, appWin.getTranslationX(), appWin.getTranslationY()))) return false;
+        if (appWin.getVisibility() == VISIBLE && android.graphics.RectF.intersects(r, rectAt(appWin, 0, 0))) return false;
         for (String id : PANEL_IDS) {
             View o = panelView(id);
             if (o == v || o.getVisibility() != VISIBLE) continue;
@@ -1465,34 +1510,26 @@ final class HomeV29 extends FrameLayout {
             }
             return false;
         }
-        if (z == 3) {   // 3 · app grid: up from the first row goes to the bar
+        if (z == 2 || z == 3) {
+            RecyclerView list = z == 2 ? row : grid;
+            int columns = z == 2 ? rowAdapter.cols : 7;
+            int count = z == 2 ? rowAdapter.getItemCount() : gridAdapter.getItemCount();
+            int pos = list.getChildAdapterPosition(list.findContainingItemView(f));
+            if (pos < 0) return arrow;
+            int to = -1;
             if (k == KeyEvent.KEYCODE_DPAD_UP) {
-                int pos = grid.getChildAdapterPosition(grid.findContainingItemView(f));
-                if (pos >= 0 && pos < 7) {
-                    wsFocus.put(3, f);
-                    activeWsButton().requestFocus();
-                    return true;
-                }
-                if (pos >= 7) {
-                    focusGrid(pos - 7);
-                    return true;
-                }
-            }
-            if (k == KeyEvent.KEYCODE_DPAD_DOWN) {
-                int pos = grid.getChildAdapterPosition(grid.findContainingItemView(f));
-                if (pos >= 0) {
-                    int to = Math.min(gridAdapter.getItemCount() - 1, pos + 7);
-                    if (to / 7 > pos / 7) focusGrid(to);
-                    return true;
-                }
-            }
-            if (k == KeyEvent.KEYCODE_DPAD_LEFT || k == KeyEvent.KEYCODE_DPAD_RIGHT) {
-                int pos = grid.getChildAdapterPosition(grid.findContainingItemView(f));
-                int to = pos + (k == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1);
-                if (pos >= 0 && to >= 0 && to < gridAdapter.getItemCount()) focusGrid(to);
-                return true;
-            }
-            return false;
+                if (pos >= columns) to = pos - columns;
+                else if (z == 2) { if (!focusNearestWidget(f)) activeWsButton().requestFocus(); }
+                else { wsFocus.put(3, f); activeWsButton().requestFocus(); }
+            } else if (k == KeyEvent.KEYCODE_DPAD_DOWN) {
+                int next = Math.min(count - 1, pos + columns);
+                if (next / columns > pos / columns) to = next;
+            } else if (k == KeyEvent.KEYCODE_DPAD_LEFT || k == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                int next = pos + (k == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1);
+                if (next >= 0 && next < count && next / columns == pos / columns) to = next;
+            } else return false;
+            if (to >= 0) { if (z == 2) focusApp(to); else focusGrid(to); }
+            return true;
         }
         if (z == 4) {   // 2 / 4 / 5: default focus search inside the window; nothing above = the bar
             if (k == KeyEvent.KEYCODE_DPAD_UP) {
@@ -1513,9 +1550,7 @@ final class HomeV29 extends FrameLayout {
         }
         switch (k) {
             case KeyEvent.KEYCODE_DPAD_UP:
-                if (z == 2) {
-                    if (!focusNearestWidget(f)) ws[0].requestFocus();
-                } else if (z == 1) activeWsButton().requestFocus();
+                if (z == 1) activeWsButton().requestFocus();
                 return true;
             case KeyEvent.KEYCODE_DPAD_DOWN:
                 if (z == 1) {
@@ -1526,12 +1561,6 @@ final class HomeV29 extends FrameLayout {
             case KeyEvent.KEYCODE_DPAD_LEFT:
             case KeyEvent.KEYCODE_DPAD_RIGHT: {
                 boolean r = k == KeyEvent.KEYCODE_DPAD_RIGHT;
-                if (z == 2) {
-                    int pos = row.getChildAdapterPosition(row.findContainingItemView(f));
-                    int to = pos + (r ? 1 : -1);
-                    if (to >= 0 && to < rowAdapter.getItemCount()) focusApp(to);
-                    return true;
-                }
                 if (f == depBox) return true;
                 ViewGroup g = (ViewGroup) f.getParent();
                 int i = g.indexOfChild(f), to = i + (r ? 1 : -1);
@@ -1570,14 +1599,14 @@ final class HomeV29 extends FrameLayout {
     }
 
     void focusApp(int pos) {
-        focusIn(row, rowAdapter, pos, true);
+        focusIn(row, rowAdapter, pos);
     }
 
     void focusGrid(int pos) {
-        focusIn(grid, gridAdapter, pos, false);
+        focusIn(grid, gridAdapter, pos);
     }
 
-    private void focusIn(RecyclerView rv, TileAdapter ad, int pos, boolean horizontal) {
+    private void focusIn(RecyclerView rv, TileAdapter ad, int pos) {
         int n = ad.getItemCount();
         if (n == 0) {
             activeWsButton().requestFocus();
@@ -1594,15 +1623,9 @@ final class HomeV29 extends FrameLayout {
             RecyclerView.ViewHolder h2 = rv.findViewHolderForAdapterPosition(p);
             if (h2 != null) {
                 h2.itemView.requestFocus();
-                if (horizontal) {
-                    int l = h2.itemView.getLeft(), r = h2.itemView.getRight(), w = rv.getWidth();
-                    if (r > w) rv.scrollBy(r - w + px(6), 0);
-                    else if (l < 0) rv.scrollBy(l - px(6), 0);
-                } else {
-                    int tp = h2.itemView.getTop(), b = h2.itemView.getBottom(), hh = rv.getHeight();
-                    if (b > hh) rv.scrollBy(0, b - hh + px(12));
-                    else if (tp < 0) rv.scrollBy(0, tp - px(12));
-                }
+                int tp = h2.itemView.getTop(), b = h2.itemView.getBottom(), hh = rv.getHeight();
+                if (b > hh) rv.scrollBy(0, b - hh + px(12));
+                else if (tp < 0) rv.scrollBy(0, tp - px(12));
             }
         });
     }
@@ -1645,6 +1668,7 @@ final class HomeV29 extends FrameLayout {
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
         int n = apps != null ? apps.getItemCount() : 0;
         int to = -1;
+        int columns = movingInGrid ? 7 : rowAdapter.cols;
         switch (k) {
             case KeyEvent.KEYCODE_DPAD_LEFT:
                 if (down && movingApp > 0) to = movingApp - 1;
@@ -1653,10 +1677,10 @@ final class HomeV29 extends FrameLayout {
                 if (down && movingApp < n - 1) to = movingApp + 1;
                 break;
             case KeyEvent.KEYCODE_DPAD_UP:
-                if (down && movingInGrid && movingApp - 7 >= 0) to = movingApp - 7;
+                if (down && movingApp - columns >= 0) to = movingApp - columns;
                 break;
             case KeyEvent.KEYCODE_DPAD_DOWN:
-                if (down && movingInGrid && movingApp + 7 < n) to = movingApp + 7;
+                if (down && movingApp + columns < n) to = movingApp + columns;
                 break;
             case KeyEvent.KEYCODE_DPAD_CENTER:
             case KeyEvent.KEYCODE_ENTER:
@@ -1750,10 +1774,6 @@ final class HomeV29 extends FrameLayout {
                 ImageView iv = new ImageView(act);
                 iv.setImageResource(R.drawable.ln_monitor);
                 col.addView(iv, new LinearLayout.LayoutParams(px(56), px(56)));
-                TextView tv = text("TV", 28, true);
-                LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(-2, -2);
-                tl.topMargin = px(8);
-                col.addView(tv, tl);
                 f.addView(col, new LayoutParams(-1, -1));
             } else {
                 ImageView iv = new ImageView(act);
@@ -1766,6 +1786,12 @@ final class HomeV29 extends FrameLayout {
                 tv.setEllipsize(TextUtils.TruncateAt.END);
                 f.addView(tv, new LayoutParams(-1, -1));
             }
+            TextView caption = text("", 24, false);
+            caption.setSingleLine(true);
+            caption.setEllipsize(TextUtils.TruncateAt.END);
+            caption.setGravity(Gravity.CENTER);
+            caption.setPadding(px(10), 0, px(10), 0);
+            f.addView(caption, new LayoutParams(-1, px(44), Gravity.BOTTOM));
             f.setForeground(new FocusRing());
             return new RecyclerView.ViewHolder(f) {
             };
@@ -1773,12 +1799,14 @@ final class HomeV29 extends FrameLayout {
 
         private int inner() {
             return rv.getWidth() > 0 ? rv.getWidth() - rv.getPaddingLeft() - rv.getPaddingRight()
-                    : Math.round(1920 * s) - px(64) - px(56) - px(4) - (tvFirst ? 0 : px(16));
+                    : Math.round(1920 * s) - px(64) - px(56) - px(4) - (tvFirst ? px(20) : px(16));
         }
 
-        /** Tile height with n per row (the row's height follows it). */
+        /** Banner plus readable app caption; the home window shows up to two rows. */
         int tileH(int n) {
-            return tileW(inner(), px(20), n) * 9 / 16;
+            int width = tileW(inner() - px(20), px(20), n);
+            if (tvFirst) width = Math.min(width, px(360));   // two Large rows must clear the widget deck
+            return width * 9 / 16 + px(44);
         }
 
         @Override
@@ -1786,24 +1814,27 @@ final class HomeV29 extends FrameLayout {
             FrameLayout f = (FrameLayout) h.itemView;
             int inner = inner();
             int gap = px(20);
-            int w = tileW(inner, gap, cols);
-            RecyclerView.LayoutParams lp = new RecyclerView.LayoutParams(tvFirst ? w : (inner / cols), w * 9 / 16);
-            if (tvFirst) lp.rightMargin = pos == getItemCount() - 1 ? 0 : gap;
-            else {
-                lp.width = w;
-                lp.leftMargin = gap / 2;
-                lp.rightMargin = gap / 2;
-                lp.bottomMargin = gap;
-            }
+            int w = tileW(inner - gap, gap, cols);
+            if (tvFirst) w = Math.min(w, px(360));
+            int bannerHeight = w * 9 / 16;
+            RecyclerView.LayoutParams lp = new RecyclerView.LayoutParams(w, bannerHeight + px(44));
+            lp.leftMargin = (inner / cols - w) / 2;
+            lp.rightMargin = inner / cols - w - lp.leftMargin;
+            lp.bottomMargin = gap;
             f.setLayoutParams(lp);
             boolean tvTile = tvOn() && pos == 0;
             final int app = appIndex(pos);
+            View art = f.getChildAt(0);
+            art.setLayoutParams(new LayoutParams(-1, bannerHeight));
+            TextView caption = (TextView) f.getChildAt(f.getChildCount() - 1);
+            caption.setText(tvTile ? "TV" : apps.labelAt(app));
+            caption.setTextColor(ink(t.fgBright, tileBackground()));
+            caption.setVisibility(VISIBLE);
             if (tvTile) {
                 LinearLayout col = (LinearLayout) f.getChildAt(0);
                 ((ImageView) col.getChildAt(0)).setColorFilter(t.accent);
-                ((TextView) col.getChildAt(1)).setTextColor(ink(t.fgBright));
                 GradientDrawable bg = new GradientDrawable();
-                bg.setColor(t.bgLight);
+                bg.setColor(tileBackground());
                 f.setBackground(bg);
             } else {
                 ImageView iv = (ImageView) f.getChildAt(0);
@@ -1814,9 +1845,11 @@ final class HomeV29 extends FrameLayout {
                 iv.setPadding(px(2), px(2), px(2), px(2));
                 tv.setText(apps.labelAt(app));
                 tv.setVisibility(banner != null ? GONE : VISIBLE);
-                tv.setTextColor(ink(cfg.textTiles ? t.fg : t.fgBright));
+                tv.setLayoutParams(new LayoutParams(-1, -1));
+                caption.setVisibility(banner != null ? VISIBLE : GONE);
+                tv.setTextColor(ink(cfg.textTiles ? t.fg : t.fgBright, tileBackground()));
                 GradientDrawable bg = new GradientDrawable();
-                bg.setColor(cfg.textTiles ? t.bgLight : Theme.withAlpha(t.bgLight, Math.max(0.30f, opacity(cfg) + noBlur() - 0.15f)));
+                bg.setColor(tileBackground());
                 f.setBackground(bg);
             }
             f.setAlpha(movingApp >= 0 && app == movingApp && (movingInGrid != tvFirst) ? 0.85f : 1f);
@@ -1856,9 +1889,9 @@ final class HomeV29 extends FrameLayout {
         Drawable d = f.getForeground();
         if (d instanceof FocusRing) ((FocusRing) d).set(focused);
         View label = f.getChildAt(f.getChildCount() - 1);
-        if (label instanceof TextView && cfg != null && cfg.textTiles) {
+        if (label instanceof TextView) {
             ((TextView) label).setTypeface(focused ? tfBold : tf);
-            ((TextView) label).setTextColor(ink(focused ? t.fgBright : t.fg));
+            ((TextView) label).setTextColor(ink(focused ? t.fgBright : t.fg, tileBackground()));
         }
         float sc = focused ? 1.05f : 1f;
         f.setZ(focused ? 2f : 0f);

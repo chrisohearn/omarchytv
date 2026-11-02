@@ -93,7 +93,7 @@ public class HomeUiTest {
         scene.addView(home, new FrameLayout.LayoutParams(-1, -1));
         activity.setContentView(scene);
         apps = new AppAdapter(activity, null, 6) {
-            private final String[] names = {firstAppName, "Music", "Photos", "Browser", "Radio", "Library", "Streams", "Gallery"};
+            private final String[] names = {firstAppName, "Music", "Photos", "Browser", "Radio", "Library", "Streams", "Gallery", "Podcasts", "Games", "Search", "Downloads"};
             @Override public int getItemCount() { return names.length; }
             @Override String labelAt(int pos) { return names[pos]; }
             @Override Drawable bannerAt(int pos) { return banner(names[pos], pos); }
@@ -175,7 +175,7 @@ public class HomeUiTest {
         key(KeyEvent.KEYCODE_DPAD_RIGHT);
         View selected = activity.getCurrentFocus();
         assertEquals(1, home.lastApp);
-        assertNotNull(text("Music  ·  2/8"));
+        assertNotNull(text("Music  ·  2/12"));
         key(KeyEvent.KEYCODE_DPAD_UP);
         assertSame(home.panelView("weather"), activity.getCurrentFocus());
         key(KeyEvent.KEYCODE_DPAD_RIGHT);
@@ -216,7 +216,15 @@ public class HomeUiTest {
             home.bind(new LauncherConfig(activity, config("tokyo-night", cols), cols),
                     apps);
             settle();
-            for (int pos : new int[]{0, cols - 1, 7}) {
+            int[] window = new int[2];
+            ((View) home.row.getParent()).getLocationOnScreen(window);
+            for (String id : new String[]{"term", "weather", "pc", "ai"}) {
+                View panel = home.panelView(id);
+                int[] at = new int[2];
+                panel.getLocationOnScreen(at);
+                assertTrue(id + " clears " + cols + " app columns", at[1] + panel.getHeight() <= window[1]);
+            }
+            for (int pos : new int[]{0, cols - 1, 11}) {
                 home.focusApp(pos);
                 settle();
                 View tile = activity.getCurrentFocus();
@@ -235,16 +243,84 @@ public class HomeUiTest {
         capture("dark-app-focus");
     }
 
+    @Test public void twoRowsUseTheHomeWindowAndKeepSpatialRemoteNavigation() throws Exception {
+        create(config("tokyo-night", 6));
+        View first = home.row.findViewHolderForAdapterPosition(0).itemView;
+        View secondRow = home.row.findViewHolderForAdapterPosition(6).itemView;
+        assertTrue(secondRow.getTop() > first.getBottom());
+        assertTrue(secondRow.getBottom() <= home.row.getHeight());
+        key(KeyEvent.KEYCODE_DPAD_DOWN);
+        assertEquals(6, home.lastApp);
+        key(KeyEvent.KEYCODE_DPAD_RIGHT);
+        assertEquals(7, home.lastApp);
+        home.focusApp(11);
+        settle();
+        key(KeyEvent.KEYCODE_DPAD_RIGHT);
+        assertEquals(11, home.lastApp);
+        key(KeyEvent.KEYCODE_DPAD_UP);
+        assertEquals(5, home.lastApp);
+        home.focusApp(5);
+        settle();
+        key(KeyEvent.KEYCODE_DPAD_RIGHT);
+        assertEquals(5, home.lastApp);
+        key(KeyEvent.KEYCODE_DPAD_UP);
+        assertSame(home.panelView("ai"), activity.getCurrentFocus());
+        key(KeyEvent.KEYCODE_DPAD_DOWN);
+        assertEquals(5, home.lastApp);
+        JSONObject withTv = config("tokyo-night", 6).put("tv", new JSONObject().put("enabled", true));
+        home.bind(new LauncherConfig(activity, withTv, 30), apps);
+        settle();
+        home.focusApp(0);
+        settle();
+        View tv = activity.getCurrentFocus();
+        tv.performClick();
+        tv.performLongClick();
+        assertTrue(calls.contains("openTv"));
+        assertTrue(calls.contains("openWalker"));
+    }
+
+    @Test public void enlargedPanelsRevalidateOldOffsetsWithoutChangingSavedConfiguration() throws Exception {
+        JSONObject json = config("tokyo-night", 4).put("panelPos", new JSONObject()
+                .put("weather", new JSONArray().put(0).put(5)));
+        create(json);
+        View weather = home.panelView("weather");
+        int[] location = new int[2], appsLocation = new int[2];
+        weather.getLocationOnScreen(location);
+        ((View) home.row.getParent()).getLocationOnScreen(appsLocation);
+        assertTrue(location[1] >= home.barHeight());
+        assertTrue(location[1] + weather.getHeight() <= appsLocation[1]);
+        assertTrue(location[0] >= 0 && location[0] + weather.getWidth() <= 1920);
+        assertEquals(5, json.getJSONObject("panelPos").getJSONArray("weather").getInt(1));
+        assertFalse(calls.contains("savePanelPos"));
+    }
+
+    @Test public void darkTextTilesUseTheirOwnBackgroundWithPartialCustomPalettes() throws Exception {
+        JSONObject json = config("tokyo-night", 6).put("textTiles", true);
+        json.getJSONObject("theme").put("colors", new JSONObject()
+                .put("background", "#f0f0f0").put("foreground", "#eeeeee").put("accent", "#dddddd"));
+        create(json);
+        TextView label = text("Cinema");
+        View tile = (View) label.getParent();
+        Bitmap bitmap = Bitmap.createBitmap(1920, 1080, Bitmap.Config.ARGB_8888);
+        scene.draw(new Canvas(bitmap));
+        int[] location = new int[2];
+        tile.getLocationOnScreen(location);
+        int background = bitmap.getPixel(location[0] + 20, location[1] + 20);
+        assertTrue(Surfaces.luminance(background) < 0.08);
+        assertTrue(Surfaces.contrast(Surfaces.luminance(label.getCurrentTextColor()), Surfaces.luminance(background)) >= 4.5);
+        bitmap.recycle();
+    }
+
     @Test public void customPaletteAndSavedPositionsKeepReadableActionableWidgets() throws Exception {
         firstAppName = "A very long application title that must never cover the remote instructions";
         JSONObject json = config("tokyo-night", 6);
         json.getJSONObject("theme").put("colors", new JSONObject()
                 .put("background", "#f0f0f0").put("foreground", "#eeeeee").put("accent", "#dddddd"));
-        json.put("panelPos", new JSONObject().put("weather", new JSONArray().put(1).put(1)));
+        json.put("panelPos", new JSONObject().put("weather", new JSONArray().put(0).put(1)));
         create(json);
-        assertEquals(160f, home.panelView("weather").getTranslationX(), 0.1f);
+        assertEquals(0f, home.panelView("weather").getTranslationX(), 0.1f);
         assertEquals(135f, home.panelView("weather").getTranslationY(), 0.1f);
-        TextView name = text(firstAppName + "  ·  1/8");
+        TextView name = text(firstAppName + "  ·  1/12");
         ViewGroup header = (ViewGroup) name.getParent();
         assertTrue(name.getRight() <= header.getChildAt(1).getLeft());
         key(KeyEvent.KEYCODE_DPAD_UP);
@@ -256,6 +332,7 @@ public class HomeUiTest {
             int[] location = new int[2];
             panel.getLocationOnScreen(location);
             int background = bitmap.getPixel(location[0] + 10, location[1] + panel.getHeight() - 10);
+            assertTrue("dark " + id, Surfaces.luminance(background) < 0.08);
             for (TextView text : texts(panel)) {
                 assertTrue(id + " text " + text.getText() + " color=" + Integer.toHexString(text.getCurrentTextColor())
                         + " background=" + Integer.toHexString(background), Surfaces.contrast(
@@ -265,7 +342,7 @@ public class HomeUiTest {
         bitmap.recycle();
     }
 
-    @Test public void lightThemeWidgetsAlignAndHeadersNeverOverlap() throws Exception {
+    @Test public void lightThemeAccentsKeepDarkPanelsAndHeadersNeverOverlap() throws Exception {
         create(config("catppuccin-latte", 6));
         View weather = home.panelView("weather"), pc = home.panelView("pc"), ai = home.panelView("ai");
         assertEquals(weather.getWidth(), pc.getWidth());
@@ -276,10 +353,10 @@ public class HomeUiTest {
         for (View panel : new View[]{weather, pc, ai}) {
             for (TextView t : texts(panel)) assertTrue(t.getTextSize() >= 24);
         }
-        TextView name = text("Cinema  ·  1/8");
+        TextView name = text("Cinema  ·  1/12");
         ViewGroup header = (ViewGroup) name.getParent();
         assertTrue(name.getRight() <= header.getChildAt(1).getLeft());
         assertTrue(ai.getBottom() < home.row.getTop() + ((View) home.row.getParent()).getTop());
-        capture("light-app-focus");
+        capture("light-theme-dark-panels");
     }
 }
