@@ -34,9 +34,9 @@ public class CompanionPlacementTest {
     }
 
     @Test
-    public void questionsGoToThePcCompanionOnlyWhenItIsThere() {
+    public void aNamedPcCompanionStaysSelectedWhileOffline() {
         assertEquals("companion", CompanionPlacement.route("Bob", true, true));
-        assertEquals("ask", CompanionPlacement.route("Bob", false, true));
+        assertEquals("offline", CompanionPlacement.route("Bob", false, true));
         assertEquals("ask", CompanionPlacement.route("", true, true));
         assertEquals("ask", CompanionPlacement.route("Bob", true, false));
     }

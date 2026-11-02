@@ -31,6 +31,9 @@
             <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
         </intent>
         <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
         <!-- Send to TV: is there a browser / the YouTube app (castKinds). -->
