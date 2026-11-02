@@ -579,6 +579,8 @@ public final class OmarchyLink implements LinkServer.Host {
 
     private static void emit(String type, JSONObject data) {
         main.post(() -> {
+            OmarchyLink r = runtime;
+            if (r != null) CompanionChatActivity.recordReply(r.app, type, data);
             for (Listener l : listeners) l.onLinkEvent(type, data);
         });
     }

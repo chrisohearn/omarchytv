@@ -1920,6 +1920,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
      * their own dialog (onGrokbotReply).
      */
     private void keepCompanionReply(String type, org.json.JSONObject d) {
+        if (CompanionChatActivity.recordedReply(this, d.optString("id"))) {
+            if (companion != null) companion.bind(LauncherConfig.get(this));
+            return;
+        }
         if (!"grokbot_answer".equals(type) || CompanionChatActivity.visible) return;
         if (pendingGrokbotId != null && pendingGrokbotId.equals(d.optString("id"))) return;
         String mode = d.optString("mode");

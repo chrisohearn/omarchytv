@@ -60,6 +60,10 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
     private String pendingId;
     private String botName = "Grok Bot";
     private static final int HISTORY = 30;
+    private static final long REQUEST_MS = 190_000;
+    private static final String REQUEST = "pending:id", REQUEST_BOT = "pending:bot",
+            REQUEST_AT = "pending:at", REQUEST_TEXT = "pending:text", RECORDED = "reply:id";
+    private final Runnable requestTimeout = this::restoreConversation;
     private Theme t;
     private Typeface mono;
     /** True while the chat is on screen: replies then land here, not in the unread count. */
@@ -142,7 +146,7 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
         TextView clear = button("Clear");
         clear.setOnClickListener(v -> {
             prefs().edit().remove(historyKey()).apply();
-            log.removeAllViews();
+            restoreConversation();
         });
         row.addView(clear);
         TextView foot = text("Built for @tcballard's Grok Bot Desktop Companion v0.1.0 (MIT) · try \"open YouTube\"", 10, t.fgDim, false);
@@ -153,8 +157,7 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
         shade.addView(panel, lp);
         setContentView(shade);
 
-        restoreHistory();
-        if (cfg.grokbotMessage != null && !cfg.grokbotMessage.isEmpty()) line(botName, cfg.grokbotMessage, false, false);
+        input.setText(prefs().getString("draft:" + botName, ""));
         String q = getIntent().getStringExtra("q");
         if (q != null && !q.trim().isEmpty()) send(q);
         voiceOnResume = getIntent().getBooleanExtra("voice", false);
@@ -196,17 +199,27 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
         if (q.isEmpty()) return;
         if (speech != null) stopVoice();
         if (q.length() > 240) q = q.substring(0, 240);
+        String destination = route();
+        if ("companion".equals(destination) && activeRequest(this) != null) {
+            input.setText(q);
+            prefs().edit().putString("draft:" + botName, q).apply();
+            line("OmarchyTV", "Still waiting for the previous reply. Your new question is kept in the input field.", false);
+            return;
+        }
         input.setText("");
+        prefs().edit().remove("draft:" + botName).apply();
         line("You", q, true);
         if (launchByName(CompanionCommands.launchQuery(q))) return;
-        String destination = route();
         if ("companion".equals(destination)) {
             pendingId = UUID.randomUUID().toString();
-            line(botName, "…", false, false);
+            prefs().edit().putString(REQUEST, pendingId).putString(REQUEST_BOT, botName)
+                    .putString(REQUEST_TEXT, q).putLong(REQUEST_AT, android.os.SystemClock.elapsedRealtime()).apply();
+            restoreConversation();
             mark.pose("think");
             OmarchyLink.grokbotAsk(pendingId, q, null);
         } else if ("offline".equals(destination)) {
             input.setText(q);
+            prefs().edit().putString("draft:" + botName, q).apply();
             line("OmarchyTV", botName + " is offline. Reconnect the PC and send again.", false);
         } else {
             line("OmarchyTV", "Opening Ask with your question…", false);
@@ -306,23 +319,15 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
         runOnUiThread(() -> {
             if (pendingId == null || !pendingId.equals(d.optString("id"))) return;
             pendingId = null;
-            if (log.getChildCount() > 0) log.removeViewAt(log.getChildCount() - 1);   // the "…" line
+            restoreConversation();
+            if (input.getText().length() == 0) input.setText(prefs().getString("draft:" + botName, ""));
             mark.pose("grokbot_answer".equals(type) ? "happy" : "alert");
             mark.postDelayed(() -> mark.pose("idle"), 2500);
             if ("grokbot_answer".equals(type)) {
                 String text = d.optString("text", "");
-                String mode = d.optString("mode");
-                line(d.optString("bot", botName), "sent".equals(mode)
-                        ? "Sent ✓ The answer appears on the PC companion (its webhook replies there)."
-                        : "ipc".equals(mode) || text.isEmpty()
-                        ? "Sent to the companion on the PC; the reply is in its desktop bubble (IPC-only mode)." : text, false);
                 linkButtons(d.optJSONArray("links"), text);
                 mark.blink(false);
                 mark.postDelayed(() -> mark.blink(true), 160);
-            } else {
-                String code = d.optString("error", "failed");
-                line("OmarchyTV", "not_connected".equals(code) ? "No PC connected over omarchy-link."
-                        : "busy".equals(code) ? "One question every 3 seconds." : d.optString("message", code), false);
             }
         });
     }
@@ -332,6 +337,7 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
         super.onResume();
         resumed = true;
         visible = true;
+        restoreConversation();
         markRead(this, LauncherConfig.get(this));
         OmarchyLink.addListener(this);
         if (voiceOnResume) {
@@ -345,6 +351,8 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
         resumed = false;
         visible = false;
         stopVoice();
+        mic.removeCallbacks(requestTimeout);
+        prefs().edit().putString("draft:" + botName, input.getText().toString()).apply();
         OmarchyLink.removeListener(this);
         super.onPause();
     }
@@ -442,6 +450,64 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
 
     private String historyKey() {
         return "chat:" + botName;
+    }
+
+    /** Shared across recreated chat screens; elapsed time also detects a rebooted, stale request. */
+    private static String activeRequest(Context c) {
+        SharedPreferences p = prefs(c);
+        String id = p.getString(REQUEST, null);
+        if (id == null) return null;
+        long age = android.os.SystemClock.elapsedRealtime() - p.getLong(REQUEST_AT, 0);
+        if (age >= 0 && age < REQUEST_MS) return id;
+        String bot = p.getString(REQUEST_BOT, "Grok Bot");
+        remember(p, "chat:" + bot, "OmarchyTV", "The reply timed out. Check ChatGPT before sending again; no automatic resend.", false);
+        p.edit().remove(REQUEST).putString(RECORDED, id).apply();
+        return null;
+    }
+
+    /** Called by the Link runtime before UI dispatch, including when no chat screen is listening. */
+    static void recordReply(Context c, String type, JSONObject data) {
+        if (!"grokbot_answer".equals(type) && !"grokbot_error".equals(type)) return;
+        String id = activeRequest(c);
+        if (id == null || !id.equals(data.optString("id"))) return;
+        SharedPreferences p = prefs(c);
+        String bot = p.getString(REQUEST_BOT, "Grok Bot");
+        String who = "OmarchyTV", body;
+        if ("grokbot_answer".equals(type)) {
+            who = data.optString("bot", bot);
+            String text = data.optString("text", ""), mode = data.optString("mode");
+            body = "sent".equals(mode) ? "Sent ✓ The answer appears on the PC companion (its webhook replies there)."
+                    : "ipc".equals(mode) || text.isEmpty()
+                    ? "Sent to the companion on the PC; the reply is in its desktop bubble (IPC-only mode)." : text;
+        } else {
+            String code = data.optString("error", "failed");
+            body = "not_connected".equals(code) ? "No PC connected over omarchy-link."
+                    : "busy".equals(code) ? "The companion is busy. Your question is kept for a manual retry."
+                    : data.optString("message", code);
+            if (p.getString("draft:" + bot, "").isEmpty())
+                p.edit().putString("draft:" + bot, p.getString(REQUEST_TEXT, "")).apply();
+        }
+        remember(p, "chat:" + bot, who, body, false);
+        SharedPreferences.Editor edit = p.edit().remove(REQUEST).putString(RECORDED, id);
+        if (!visible) edit.putInt("unread:" + bot, Math.min(99, p.getInt("unread:" + bot, 0) + 1));
+        edit.apply();
+    }
+
+    static boolean recordedReply(Context c, String id) {
+        return id != null && !id.isEmpty() && id.equals(prefs(c).getString(RECORDED, ""));
+    }
+
+    private void restoreConversation() {
+        mic.removeCallbacks(requestTimeout);
+        String active = activeRequest(this);
+        pendingId = botName.equals(prefs().getString(REQUEST_BOT, "")) ? active : null;
+        log.removeAllViews();
+        restoreHistory();
+        if (pendingId != null) {
+            line(botName, "Waiting for the reply…", false, false);
+            long age = android.os.SystemClock.elapsedRealtime() - prefs().getLong(REQUEST_AT, 0);
+            mic.postDelayed(requestTimeout, Math.max(1, REQUEST_MS - age));
+        }
     }
 
     /** The bot name the chat files history and unread under. */
