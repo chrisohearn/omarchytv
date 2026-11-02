@@ -128,6 +128,21 @@ public class LinkServerTest {
     }
 
     @Test
+    public void recoverClosedListenerAtTheSameAddress() throws Exception {
+        server.stopListening();
+        assertFalse(server.listening());
+        assertTrue(server.ensureListening(InetAddress.getLoopbackAddress(), port));
+        assertTrue(server.listening());
+        assertEquals(200, http("GET", "/v1/info", new byte[0], null).status);
+    }
+
+    @Test
+    public void healthyListenerCheckDoesNotRebindAnOccupiedPort() throws Exception {
+        assertFalse(server.ensureListening(InetAddress.getLoopbackAddress(), port));
+        assertEquals(200, http("GET", "/v1/info", new byte[0], null).status);
+    }
+
+    @Test
     public void infoAndNoUnauthenticatedEndpoints() throws Exception {
         Resp info = http("GET", "/v1/info", new byte[0], null);
         assertEquals(200, info.status);

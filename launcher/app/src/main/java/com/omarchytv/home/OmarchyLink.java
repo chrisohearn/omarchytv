@@ -97,6 +97,7 @@ public final class OmarchyLink implements LinkServer.Host {
     private NsdManager.RegistrationListener nsdReg;
     private boolean nsdPair;
     private volatile InetAddress bound;
+    private volatile Network callbackNetwork;
     private String lastStatusKey = "";
     private boolean started;
 
@@ -157,7 +158,7 @@ public final class OmarchyLink implements LinkServer.Host {
 
     static boolean running() {
         OmarchyLink r = runtime;
-        return r != null && r.live() && r.bound != null;
+        return r != null && r.live() && r.bound != null && r.server.listening();
     }
 
     /** PC ids with an open event socket (the "> ask" and AI-source switches need one). */
@@ -173,6 +174,8 @@ public final class OmarchyLink implements LinkServer.Host {
 
     static void setHomeVisible(boolean v) {
         homeVisible = v;
+        OmarchyLink r = runtime;
+        if (v && r != null) r.recoverBinding();
         statusChanged();
     }
 
@@ -369,13 +372,26 @@ public final class OmarchyLink implements LinkServer.Host {
         if (cm != null) {
             ConnectivityManager.NetworkCallback cb = new ConnectivityManager.NetworkCallback() {
                 @Override
+                public void onAvailable(Network network) {
+                    callbackNetwork = network;
+                }
+
+                @Override
                 public void onLinkPropertiesChanged(Network network, LinkProperties lp) {
-                    bg.execute(OmarchyLink.this::rebind);
+                    // The callback snapshot is ordered; synchronous ConnectivityManager reads may be stale.
+                    InetAddress address = ipv4(lp);
+                    bg.execute(() -> {
+                        if (network.equals(callbackNetwork)) rebind(address);
+                    });
                 }
 
                 @Override
                 public void onLost(Network network) {
-                    bg.execute(OmarchyLink.this::rebind);
+                    if (!network.equals(callbackNetwork)) return;
+                    callbackNetwork = null;
+                    bg.execute(() -> {
+                        if (callbackNetwork == null) rebind(null);
+                    });
                 }
             };
             // The (callback, Handler) overload is API 26; Fire OS 6 is API 25 (#59, #56). Both callbacks only
@@ -394,6 +410,7 @@ public final class OmarchyLink implements LinkServer.Host {
                 String a = i.getAction();
                 if (Intent.ACTION_DREAMING_STARTED.equals(a)) screensaver = true;
                 else if (Intent.ACTION_DREAMING_STOPPED.equals(a)) screensaver = false;
+                if (Intent.ACTION_SCREEN_ON.equals(a) || Intent.ACTION_DREAMING_STOPPED.equals(a)) recoverBinding();
                 maybeBroadcastStatus();
             }
         }, f);
@@ -464,23 +481,40 @@ public final class OmarchyLink implements LinkServer.Host {
         });
     }
 
-    /** Bind to the active network's IPv4 address (§3: not every interface). Link worker thread. */
-    private synchronized void rebind() {
+    private final Runnable rebindAfterWake = () -> bg.execute(this::rebind);
+
+    /** One immediate check and one delayed check cover the network settling after wake, without idle polling. */
+    private void recoverBinding() {
+        bg.execute(this::rebind);
+        main.removeCallbacks(rebindAfterWake);
+        main.postDelayed(rebindAfterWake, 2_000);
+    }
+
+    private void rebind() {
+        rebind(lanAddress());
+    }
+
+    /** Bind only to the current default network's IPv4 address; never broaden to every interface. */
+    private synchronized void rebind(InetAddress a) {
         if (!live()) return;
-        InetAddress a = lanAddress();
-        if (a != null && a.equals(bound)) return;
-        unadvertise();
-        bound = null;
         if (a == null) {
+            unadvertise();
+            bound = null;
             server.stopListening();
             return;
         }
         try {
-            server.start(a, LinkServer.PORT);
+            boolean reopened = server.ensureListening(a, LinkServer.PORT);
+            boolean changed = !a.equals(bound);
             bound = a;
-            advertise();
+            if (reopened || changed) {
+                unadvertise();
+                advertise();
+            }
         } catch (Exception e) {
-            Log.w(TAG, "listen " + a + ": " + e);   // no retry loop: the next network change tries again
+            bound = null;
+            unadvertise();
+            Log.w(TAG, "listen " + a + ": " + e);
         }
     }
 
@@ -491,7 +525,10 @@ public final class OmarchyLink implements LinkServer.Host {
     }
 
     private InetAddress lanAddress() {
-        LinkProperties lp = activeLink();
+        return ipv4(activeLink());
+    }
+
+    private static InetAddress ipv4(LinkProperties lp) {
         if (lp == null) return null;
         for (LinkAddress la : lp.getLinkAddresses()) if (la.getAddress() instanceof Inet4Address) return la.getAddress();
         return null;
