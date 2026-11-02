@@ -397,7 +397,10 @@ class FileServer:
             allow_reuse_address = False
             address_family = socket.AF_INET6 if ":" in bind else socket.AF_INET
 
-        self.httpd = S((bind, 0), H)
+        listen_port = config.load_config().get("castPort", 0)
+        if not isinstance(listen_port, int) or (listen_port != 0 and not 1024 <= listen_port <= 65535):
+            raise CastError("castPort must be 0 or 1024..65535", "bad_config")
+        self.httpd = S((bind, listen_port), H)
         port = self.httpd.server_address[1]
         host = f"[{bind}]" if ":" in bind else bind
         self.url = f"http://{host}:{port}{self.route}"
@@ -486,7 +489,7 @@ def via_link(client, item: dict, serve_ok: bool = False, wait: bool = False, out
         body["url"] = server.url
     elif item.get("path"):
         size = item["size"]
-        if caps["upload"] and size <= caps["uploadMax"] and not (serve_ok and size > (8 << 20)):
+        if caps["upload"] and size <= caps["uploadMax"] and not (serve_ok and (size > (8 << 20) or getattr(client, "encrypt", False))):
             data = Path(item["path"]).read_bytes()
             sha = hashlib.sha256(data).hexdigest()
             r = client.request("PUT", "/v1/cast/file", raw=data, content_type=item["mime"],

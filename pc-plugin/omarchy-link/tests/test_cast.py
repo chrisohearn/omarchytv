@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -14,7 +15,7 @@ import urllib.request
 import helpers
 from helpers import cli
 from mock_tv import MockTV
-from omarchy_link import cast
+from omarchy_link import cast, client, config
 from omarchy_link import cli as cli_mod
 
 BIN = helpers.TMP / "castbin"
@@ -206,6 +207,44 @@ class CastE2E(unittest.TestCase):
         short = cast.FileServer("127.0.0.1", "song.mp3", "audio/mpeg", path=str(f), idle=1)
         time.sleep(2.5)
         self.assertTrue(short.closed.is_set())  # idle: closed by itself
+
+    def test_file_server_configured_port(self):
+        f = self.files / "photo.png"
+        f.write_bytes(b"image fixture")
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        with mock.patch.object(cast.config, "load_config", return_value={"castPort": port}):
+            srv = cast.FileServer("127.0.0.1", f.name, "image/png", path=str(f))
+        self.addCleanup(srv.close)
+        self.assertEqual(srv.httpd.server_address[1], port)
+        with urllib.request.urlopen(srv.url, timeout=5) as response:
+            self.assertEqual(response.read(), f.read_bytes())
+        for bad in (-1, 1, 1023, 65536, "47800", None, True):
+            with self.subTest(port=bad), mock.patch.object(cast.config, "load_config", return_value={"castPort": bad}):
+                with self.assertRaises(cast.CastError):
+                    cast.FileServer("127.0.0.1", f.name, "image/png", path=str(f))
+
+    def test_encrypted_link_streams_small_file_only_with_serve(self):
+        tv = self.tv()
+        pairing = config.Pairing.load()
+        pc = client.Client(pairing.tv, pairing.pc_id)
+        # The mock TV speaks plaintext. This facade tests routing for an encrypted
+        # client while the existing mock still proves actual HTTP byte delivery.
+        encrypted = mock.Mock(wraps=pc, host=pc.host, encrypt=True)
+        image = self.files / "small.png"
+        image.write_bytes(b"\x89PNG\r\n\x1a\n" + os.urandom(1000))
+        item = cast.classify(str(image))
+        result = cast.via_link(encrypted, item, serve_ok=True, out=lambda _: None)
+        sent = tv.casts[-1]
+        self.assertIn("url", sent)
+        self.assertNotIn("file", sent)
+        self.assertEqual(tv.cast_fetched[result["id"]], image.read_bytes())
+        self.assertFalse(any(call.args[:2] == ("PUT", "/v1/cast/file") for call in encrypted.request.call_args_list))
+        # Without consent to serve, keep the original upload path and open no port.
+        cast.via_link(encrypted, item, serve_ok=False)
+        self.assertIn("file", tv.casts[-1])
+        self.assertNotIn("url", tv.casts[-1])
 
     def test_screen_experimental(self):
         tv = self.tv()
