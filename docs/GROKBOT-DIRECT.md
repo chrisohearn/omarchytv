@@ -155,6 +155,13 @@ attempt shows an error and sends no question. A successful attempt sends the
 recognized message through the selected companion route. This is dictation;
 it does not start a provider's live voice call or read replies aloud.
 
+Only one PC companion request runs at a time. Reopening the chat or pressing the
+microphone again keeps the pending request. A further dictated question stays in
+the input field for manual submission after the reply. Matching replies and
+errors go into the bot's existing history even when its chat is closed. A request
+expires after 190 seconds without automatic resubmission. Closing the chat also
+saves its unsent draft.
+
 ### PC mode and Direct mode
 
 - **PC mode**: Grok Bot Desktop Companion by Tom Ballard ([@tcballard](https://x.com/tcballard)), running on the Omarchy PC through omarchy-link. The TV sends the question to the PC, and the PC answers. This needs the PC turned on and linked. All the PC mode code and behaviour are Tom's, and I haven't changed them.
