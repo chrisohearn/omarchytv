@@ -57,6 +57,21 @@ final class Surfaces {
         }
         return 1f;
     }
+
+    /** Minimum opacity that protects text over any wallpaper, including light themes over black. */
+    static float wallpaperAlpha(int background, float requested, int... textColors) {
+        for (int alpha = (int) Math.ceil(clamp(requested, 0f, 1f) * 255); alpha < 255; alpha++) {
+            boolean readable = true;
+            for (int wall : new int[]{0x000000, 0xFFFFFF}) {
+                double behind = luminance(over(background, alpha / 255f, wall));
+                for (int text : textColors) {
+                    if (contrast(luminance(text), behind) < MIN_CONTRAST) readable = false;
+                }
+            }
+            if (readable) return alpha / 255f;
+        }
+        return 1f;
+    }
     /** Omarchy shell [menu] background-alpha = 1.0 (default/themed/shell.toml.tpl). */
     static final float MENU_MIN = 1.0f;
 

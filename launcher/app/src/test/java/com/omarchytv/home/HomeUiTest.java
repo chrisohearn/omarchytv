@@ -1,0 +1,285 @@
+package com.omarchytv.home;
+
+import static org.junit.Assert.*;
+
+import android.app.Activity;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Rect;
+import android.graphics.drawable.Drawable;
+import android.view.KeyEvent;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
+import android.widget.TextView;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.junit.After;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.Robolectric;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.android.controller.ActivityController;
+import org.robolectric.annotation.Config;
+import org.robolectric.annotation.GraphicsMode;
+import org.robolectric.Shadows;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.lang.reflect.Proxy;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+/** Real Android views, synthetic data, no network, device, launcher services, or app launches. */
+@RunWith(RobolectricTestRunner.class)
+@Config(sdk = 28, qualifiers = "w1920dp-h1080dp-land-television-mdpi")
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+public class HomeUiTest {
+    private ActivityController<UiActivity> controller;
+    private Activity activity;
+    private HomeV29 home;
+    private FrameLayout scene;
+    private AppAdapter apps;
+    private String firstAppName = "Cinema";
+    private final List<String> calls = new ArrayList<>();
+
+    // ShadowActivity stores a manual focus field. Read the actual Android view hierarchy instead.
+    public static class UiActivity extends Activity {
+        @Override public View getCurrentFocus() { return getWindow().getDecorView().findFocus(); }
+    }
+
+    @After public void close() throws Exception {
+        if (controller != null) controller.pause().stop().destroy();
+        Theme.resolve(null, new JSONObject().put("name", "tokyo-night"));
+    }
+
+    private JSONObject config(String theme, int columns) throws Exception {
+        JSONArray ai = new JSONArray();
+        for (String name : new String[]{"Pro", "Studio", "Claude S", "Claude W", "Dev"}) {
+            ai.put(new JSONObject().put("name", name).put("used", 52).put("limit", 100));
+        }
+        return new JSONObject().put("theme", new JSONObject().put("name", theme))
+                .put("geometry", new JSONObject().put("appSize", LauncherConfig.APP_SIZES[columns - 4]).put("transparency", 60))
+                .put("weather", new JSONObject().put("lat", 0).put("lon", 0).put("place", "Sample City"))
+                .put("ai", ai).put("tv", new JSONObject().put("enabled", false));
+    }
+
+    private void create(JSONObject json) throws Exception {
+        controller = Robolectric.buildActivity(UiActivity.class).setup().visible();
+        activity = controller.get();
+        Files.write(Weather.cacheFile(activity).toPath(), ("{\"current\":{\"temperature_2m\":18,\"weather_code\":3},"
+                + "\"daily\":{\"temperature_2m_min\":[12],\"temperature_2m_max\":[20]}}")
+                .getBytes(StandardCharsets.UTF_8));
+        HomeV29.Host host = (HomeV29.Host) Proxy.newProxyInstance(HomeV29.Host.class.getClassLoader(),
+                new Class[]{HomeV29.Host.class}, (proxy, method, args) -> {
+                    calls.add(method.getName());
+                    if (method.getName().equals("wifiName")) return "Ethernet";
+                    if (method.getName().equals("sources")) return Collections.emptyList();
+                    if (method.getReturnType() == boolean.class) return false;
+                    return null;
+                });
+        home = new HomeV29(activity, host);
+        scene = new FrameLayout(activity);
+        try (java.io.InputStream in = activity.getAssets().open("wallpapers/tokyo-night/01-liftoff-sunset.webp")) {
+            scene.setBackground(Drawable.createFromStream(in, null));
+        }
+        scene.addView(home, new FrameLayout.LayoutParams(-1, -1));
+        activity.setContentView(scene);
+        apps = new AppAdapter(activity, null, 6) {
+            private final String[] names = {firstAppName, "Music", "Photos", "Browser", "Radio", "Library", "Streams", "Gallery"};
+            @Override public int getItemCount() { return names.length; }
+            @Override String labelAt(int pos) { return names[pos]; }
+            @Override Drawable bannerAt(int pos) { return banner(names[pos], pos); }
+        };
+        home.bind(new LauncherConfig(activity, json, 1), apps);
+        layout();
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().setInTouchMode(false);
+        settle();
+        home.focusApp(0);
+        settle();
+        assertSame("initial app focus", home.row, activity.getCurrentFocus().getParent());
+    }
+
+    private Drawable banner(String name, int position) {
+        return new Drawable() {
+            final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            @Override public void draw(Canvas canvas) {
+                Rect b = getBounds();
+                paint.setColor(new int[]{0xFF171C30, 0xFF173C37, 0xFF472D40}[position % 3]);
+                canvas.drawRect(b, paint);
+                paint.setColor(Color.WHITE);
+                paint.setTextSize(30);
+                paint.setTextAlign(Paint.Align.CENTER);
+                canvas.drawText(name, b.centerX(), b.centerY() + 10, paint);
+            }
+            @Override public void setAlpha(int alpha) { }
+            @Override public void setColorFilter(android.graphics.ColorFilter filter) { }
+            @Override public int getOpacity() { return android.graphics.PixelFormat.OPAQUE; }
+        };
+    }
+
+    private void layout() {
+        scene.measure(View.MeasureSpec.makeMeasureSpec(1920, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY));
+        scene.layout(0, 0, 1920, 1080);
+    }
+
+    private void settle() {
+        Shadows.shadowOf(android.os.Looper.getMainLooper()).idleFor(Duration.ofMillis(250));
+        layout();
+    }
+
+    private void key(int code) {
+        KeyEvent e = new KeyEvent(KeyEvent.ACTION_DOWN, code);
+        if (!home.onKey(e)) activity.dispatchKeyEvent(e);
+        settle();
+    }
+
+    private List<TextView> texts(View view) {
+        List<TextView> result = new ArrayList<>();
+        if (view instanceof TextView && view.isShown()) result.add((TextView) view);
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) result.addAll(texts(group.getChildAt(i)));
+        }
+        return result;
+    }
+
+    private TextView text(String value) {
+        for (TextView t : texts(home)) if (t.getText().toString().equals(value)) return t;
+        throw new AssertionError("Missing visible text: " + value);
+    }
+
+    private void capture(String name) throws Exception {
+        File directory = new File("build/ui-evidence");
+        assertTrue(directory.isDirectory() || directory.mkdirs());
+        Bitmap bitmap = Bitmap.createBitmap(1920, 1080, Bitmap.Config.ARGB_8888);
+        scene.draw(new Canvas(bitmap));
+        try (FileOutputStream out = new FileOutputStream(new File(directory, name + ".png"))) {
+            assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, out));
+        }
+        bitmap.recycle();
+    }
+
+    @Test public void remoteSkipsInformationAndReturnsToTheSelectedApp() throws Exception {
+        create(config("tokyo-night", 6));
+        assertFalse(home.panelView("pc").isFocusable());
+        assertFalse(home.panelView("deploys").isFocusable());
+        key(KeyEvent.KEYCODE_DPAD_RIGHT);
+        View selected = activity.getCurrentFocus();
+        assertEquals(1, home.lastApp);
+        assertNotNull(text("Music  ·  2/8"));
+        key(KeyEvent.KEYCODE_DPAD_UP);
+        assertSame(home.panelView("weather"), activity.getCurrentFocus());
+        key(KeyEvent.KEYCODE_DPAD_RIGHT);
+        assertSame(home.panelView("ai"), activity.getCurrentFocus());
+        activity.getCurrentFocus().performClick();
+        assertTrue(calls.contains("aiMenu"));
+        key(KeyEvent.KEYCODE_DPAD_DOWN);
+        assertSame(selected, activity.getCurrentFocus());
+        selected.performClick();
+        selected.performLongClick();
+        assertTrue(calls.contains("launchApp"));
+        assertTrue(calls.contains("tileMenu"));
+        key(KeyEvent.KEYCODE_DPAD_UP);
+        key(KeyEvent.KEYCODE_DPAD_UP);
+        assertEquals("1", ((TextView) activity.getCurrentFocus()).getText().toString());
+        key(KeyEvent.KEYCODE_DPAD_DOWN);
+        assertSame(home.panelView("weather"), activity.getCurrentFocus());
+        capture("dark-widget-focus");
+    }
+
+    @Test public void hiddenWidgetsDoNotTrapFocusAndPanelEditingRestoresReadOnlyState() throws Exception {
+        JSONObject json = config("tokyo-night", 6).put("homeWidgets",
+                new JSONObject().put("weather", false).put("ai", false));
+        create(json);
+        View selected = activity.getCurrentFocus();
+        key(KeyEvent.KEYCODE_DPAD_UP);
+        assertEquals("1", ((TextView) activity.getCurrentFocus()).getText().toString());
+        key(KeyEvent.KEYCODE_DPAD_DOWN);
+        assertSame(selected, activity.getCurrentFocus());
+        assertTrue(home.editPanel("pc"));
+        key(KeyEvent.KEYCODE_BACK);
+        assertFalse(home.panelView("pc").isFocusable());
+    }
+
+    @Test public void everyAppSizeKeepsTheFocusedTileInsideTheWindow() throws Exception {
+        create(config("tokyo-night", 4));
+        for (int cols = 4; cols <= 7; cols++) {
+            home.bind(new LauncherConfig(activity, config("tokyo-night", cols), cols),
+                    apps);
+            settle();
+            for (int pos : new int[]{0, cols - 1, 7}) {
+                home.focusApp(pos);
+                settle();
+                View tile = activity.getCurrentFocus();
+                assertSame(home.row, tile.getParent());
+                int[] at = new int[2];
+                tile.getLocationOnScreen(at);
+                float left = at[0] - tile.getWidth() * (tile.getScaleX() - 1) / 2;
+                assertTrue("focus ring left " + cols, left >= 32);
+                assertTrue("focus ring right " + cols, left + tile.getWidth() * tile.getScaleX() <= 1888);
+            }
+        }
+        home.bind(new LauncherConfig(activity, config("tokyo-night", 6), 20), apps);
+        settle();
+        home.focusApp(0);
+        settle();
+        capture("dark-app-focus");
+    }
+
+    @Test public void customPaletteAndSavedPositionsKeepReadableActionableWidgets() throws Exception {
+        firstAppName = "A very long application title that must never cover the remote instructions";
+        JSONObject json = config("tokyo-night", 6);
+        json.getJSONObject("theme").put("colors", new JSONObject()
+                .put("background", "#f0f0f0").put("foreground", "#eeeeee").put("accent", "#dddddd"));
+        json.put("panelPos", new JSONObject().put("weather", new JSONArray().put(1).put(1)));
+        create(json);
+        assertEquals(160f, home.panelView("weather").getTranslationX(), 0.1f);
+        assertEquals(135f, home.panelView("weather").getTranslationY(), 0.1f);
+        TextView name = text(firstAppName + "  ·  1/8");
+        ViewGroup header = (ViewGroup) name.getParent();
+        assertTrue(name.getRight() <= header.getChildAt(1).getLeft());
+        key(KeyEvent.KEYCODE_DPAD_UP);
+        assertSame(home.panelView("weather"), activity.getCurrentFocus());
+        Bitmap bitmap = Bitmap.createBitmap(1920, 1080, Bitmap.Config.ARGB_8888);
+        scene.draw(new Canvas(bitmap));
+        for (String id : new String[]{"weather", "pc", "ai"}) {
+            View panel = home.panelView(id);
+            int[] location = new int[2];
+            panel.getLocationOnScreen(location);
+            int background = bitmap.getPixel(location[0] + 10, location[1] + panel.getHeight() - 10);
+            for (TextView text : texts(panel)) {
+                assertTrue(id + " text " + text.getText() + " color=" + Integer.toHexString(text.getCurrentTextColor())
+                        + " background=" + Integer.toHexString(background), Surfaces.contrast(
+                        Surfaces.luminance(text.getCurrentTextColor()), Surfaces.luminance(background)) >= 4.5);
+            }
+        }
+        bitmap.recycle();
+    }
+
+    @Test public void lightThemeWidgetsAlignAndHeadersNeverOverlap() throws Exception {
+        create(config("catppuccin-latte", 6));
+        View weather = home.panelView("weather"), pc = home.panelView("pc"), ai = home.panelView("ai");
+        assertEquals(weather.getWidth(), pc.getWidth());
+        assertEquals(weather.getWidth(), ai.getWidth());
+        assertEquals(weather.getHeight(), pc.getHeight());
+        assertEquals(weather.getHeight(), ai.getHeight());
+        assertTrue(weather.getHeight() >= 248);
+        for (View panel : new View[]{weather, pc, ai}) {
+            for (TextView t : texts(panel)) assertTrue(t.getTextSize() >= 24);
+        }
+        TextView name = text("Cinema  ·  1/8");
+        ViewGroup header = (ViewGroup) name.getParent();
+        assertTrue(name.getRight() <= header.getChildAt(1).getLeft());
+        assertTrue(ai.getBottom() < home.row.getTop() + ((View) home.row.getParent()).getTop());
+        capture("light-app-focus");
+    }
+}

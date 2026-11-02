@@ -155,9 +155,9 @@ final class HomeV29 extends FrameLayout {
         tfBold = Typeface.create(tf, Typeface.BOLD);
         setClipChildren(false);
 
-        // ---- 3.1 bar: 52 px, padding 32, three equal columns ----
+        // ---- Waybar: couch-readable targets, square focus marks ----
         bar = new FrameLayout(a);
-        addView(bar, new LayoutParams(-1, px(52)));
+        addView(bar, new LayoutParams(-1, px(64)));
         LinearLayout left = hbox();
         left.setPadding(px(32), 0, 0, 0);
         bar.addView(left, new LayoutParams(-2, -1, Gravity.START));
@@ -166,29 +166,29 @@ final class HomeV29 extends FrameLayout {
         menuBtn.setOnClickListener(v -> host.openSettings(v));
         for (int i = 0; i < 5; i++) {
             final int n = i + 1;
-            TextView w = text(String.valueOf(n), 20, false);
+            TextView w = text(String.valueOf(n), 24, true);
             w.setGravity(Gravity.CENTER);
             w.setFocusable(true);
-            w.setPadding(px(10), 0, px(10), 0);
+            w.setPadding(px(14), 0, px(14), 0);
             w.setOnClickListener(v -> host.showWorkspace(cfg != null ? cfg.workspaceAt(n) : n));   // n = bar position
             w.setBackground(new Underline());
             ws[i] = w;
             left.addView(w, new LinearLayout.LayoutParams(-2, -1));
         }
-        clock = text("", 22, false);
+        clock = text("", 26, true);
         bar.addView(clock, new LayoutParams(-2, -2, Gravity.CENTER));
         LinearLayout right = hbox();
         right.setPadding(0, 0, px(32) - px(13), 0);
         bar.addView(right, new LayoutParams(-2, -1, Gravity.END));
-        barSpacex = text("🚀 SpaceX TV", 18, true);
+        barSpacex = text("🚀 SpaceX TV", 22, true);
         barSpacex.setFocusable(true);
         barSpacex.setClickable(true);
-        barSpacex.setGravity(Gravity.CENTER);   // same row as the icons: centred in a 44 px box like iconButton
+        barSpacex.setGravity(Gravity.CENTER);   // same row as the icons: centred in a 56 px box like iconButton
         barSpacex.setSingleLine(true);
         barSpacex.setPadding(px(12), 0, px(12), 0);
         barSpacex.setBackground(new Underline());
         barSpacex.setOnClickListener(v -> host.sys("spacex-tv"));
-        LinearLayout.LayoutParams sxl = new LinearLayout.LayoutParams(-2, px(44));
+        LinearLayout.LayoutParams sxl = new LinearLayout.LayoutParams(-2, px(56));
         sxl.gravity = Gravity.CENTER_VERTICAL;
         sxl.rightMargin = px(16);
         right.addView(barSpacex, sxl);
@@ -219,7 +219,7 @@ final class HomeV29 extends FrameLayout {
         });
         barIcons.get(4).setOnClickListener(host::showInputs);
         barIcons.get(5).setOnClickListener(host::screenPc);
-        tip = text("", 19, false);
+        tip = text("", 24, false);
         tip.setVisibility(GONE);
         tip.setPadding(px(14), px(8), px(14), px(8));
         tip.setElevation(20f);
@@ -229,17 +229,18 @@ final class HomeV29 extends FrameLayout {
             barIcons.get(i).setOnFocusChangeListener((v, f) -> showTip(f ? v : null, k));
         }
 
-        // ---- 3.2 fastfetch: x 32, y 76, w 640, padding 18×22 ----
+        // ---- Fastfetch: keep the wordmark and terminal prompt ----
         term = new BoxView(a, s, tf);
         LayoutParams tl = new LayoutParams(px(640), -2);
         tl.leftMargin = px(32);
-        tl.topMargin = px(76);
+        tl.topMargin = px(88);
         addView(term, tl);
-        termPrompt = text("", 20, false);
+        term.setMinimumHeight(px(248));
+        termPrompt = text("", 24, false);
         termLogo = text(logoText(), 8, false);
         termLogo.setLineSpacing(0, 1.15f);
         termLogo.setHorizontallyScrolling(true);
-        termInfo = text("", 20, false);
+        termInfo = text("", 24, false);
         termInfo.setMaxLines(3);   // v2.10: one item per line (the single line was cut to "up" on the TV)
         termInfo.setLineSpacing(px(4), 1f);
         term.addView(termPrompt);
@@ -249,12 +250,12 @@ final class HomeV29 extends FrameLayout {
         term.addView(termLogo, ll);
         term.addView(termInfo);
 
-        // ---- 3.3 widgets: right 32, y 76, w 1120, 3 equal columns, gap 16 ----
+        // ---- Widgets: three aligned columns with 24 px gutters ----
         widgets = new LinearLayout(a);
         widgets.setOrientation(LinearLayout.VERTICAL);
         LayoutParams wl = new LayoutParams(px(1120), -2, Gravity.END | Gravity.TOP);
         wl.rightMargin = px(32);
-        wl.topMargin = px(76);
+        wl.topMargin = px(88);
         addView(widgets, wl);
         LinearLayout r1 = hbox(), r2 = hbox();
         r1.setGravity(Gravity.TOP);
@@ -269,23 +270,26 @@ final class HomeV29 extends FrameLayout {
         r2l.topMargin = px(16);
         widgets.addView(r2, r2l);
         wxBox = widget(r1, act.getString(R.string.v29_weather), 0);
-        pcBox = widget(r1, "omarchy · pc", 16);
-        BoxView ai = widget(r1, "ai credits · pc", 16);
-        // Keep each top-row panel one column wide, (1120 - 2 x 16) / 3, even when its siblings are switched off.
+        pcBox = widget(r1, "omarchy · pc", 24);
+        pcBox.setFocusable(false);
+        BoxView ai = widget(r1, "ai credits · pc", 24);
+        // Keep each top-row panel one column wide, (1120 - 2 x 24) / 3, even when its siblings are switched off.
         // With weight 1 a lone panel (e.g. only the weather widget on) stretched across the whole 1120 px row.
         for (View col : new View[]{wxBox, pcBox, ai}) {
             LinearLayout.LayoutParams cl = (LinearLayout.LayoutParams) col.getLayoutParams();
-            cl.width = px((1120 - 32) / 3f);
+            cl.width = px((1120 - 48) / 3f);
+            col.setMinimumHeight(px(248));
             cl.weight = 0f;
         }
         r2.addView(new View(a), new LinearLayout.LayoutParams(0, 1, 2f));
         View gap = new View(a);
         r2.addView(gap, new LinearLayout.LayoutParams(px(32), 1));
         depBox = widget(r2, "deploys · pc", 0);
+        depBox.setFocusable(false);
         ((LinearLayout.LayoutParams) depBox.getLayoutParams()).weight = 1f;
         // 2 columns + 1 gap left of the third column: weights 2 : 1 with a 32 px spacer ≈ 3 equal columns, 16 gaps
         this.aiBoxRef = ai;
-        wxTemp = text("", 50, false);
+        wxTemp = text("", 58, true);
         wxLine1 = line("");
         wxLine2 = line("");
         wxBox.addView(wxTemp);
@@ -321,17 +325,20 @@ final class HomeV29 extends FrameLayout {
         addView(appWin, al);
         appWin.setClipChildren(false);
         appWin.setClipToPadding(false);
-        FrameLayout head = new FrameLayout(a);
-        appName = text("", 30, true);
+        LinearLayout head = hbox();
+        appName = text("", 32, true);
         appName.setSingleLine(true);
         appName.setEllipsize(TextUtils.TruncateAt.END);
-        head.addView(appName, new LayoutParams(-2, -2, Gravity.START | Gravity.CENTER_VERTICAL));
-        appHints = text("", 18, false);
-        head.addView(appHints, new LayoutParams(-2, -2, Gravity.END | Gravity.CENTER_VERTICAL));
+        appName.setPadding(0, 0, px(24), 0);
+        head.addView(appName, new LinearLayout.LayoutParams(0, -2, 1f));
+        appHints = text("", 22, false);
+        appHints.setSingleLine(true);
+        head.addView(appHints, new LinearLayout.LayoutParams(-2, -2));
         appWin.addView(head, new LinearLayout.LayoutParams(-1, -2));
         row = new RecyclerView(a);
         row.setClipChildren(false);
         row.setClipToPadding(false);
+        row.setPadding(px(10), px(10), px(10), px(10));
         row.setOverScrollMode(OVER_SCROLL_NEVER);
         row.setItemAnimator(null);
         row.setLayoutManager(new LinearLayoutManager(a, LinearLayoutManager.HORIZONTAL, false));
@@ -407,7 +414,7 @@ final class HomeV29 extends FrameLayout {
         b.setClipToPadding(false);
         LayoutParams l = new LayoutParams(-1, -2);
         l.leftMargin = l.rightMargin = l.bottomMargin = px(32);
-        l.topMargin = px(76);
+        l.topMargin = px(88);
         b.setVisibility(GONE);
         addView(b, l);
         return b;
@@ -443,11 +450,12 @@ final class HomeV29 extends FrameLayout {
         tv.setTypeface(bold ? tfBold : tf);
         tv.setTextSize(TypedValue.COMPLEX_UNIT_PX, sizePx * s * big);
         tv.setIncludeFontPadding(false);
+        tv.setTextColor(ink(Theme.cur().fg));
         return tv;
     }
 
     private TextView line(String v) {
-        TextView tv = text(v, 19, false);
+        TextView tv = text(v, 24, false);
         tv.setSingleLine(true);
         tv.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(-1, -2);
@@ -458,7 +466,7 @@ final class HomeV29 extends FrameLayout {
 
     private BoxView widget(LinearLayout parent, String title, int gapLeft) {
         BoxView b = new BoxView(act, s, tf);
-        b.setLegend(title, px(14), px(18));
+        b.setLegend(title, px(18), px(20));
         b.setFocusable(true);
         b.focusBorder = true;
         LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(0, -2, 1f);
@@ -474,7 +482,7 @@ final class HomeV29 extends FrameLayout {
         ImageView iv = new ImageView(act);
         iv.setImageResource(res);
         f.addView(iv, new LayoutParams(px(iconPx), px(iconPx), Gravity.CENTER));
-        f.setLayoutParams(new LinearLayout.LayoutParams(px(boxPx), px(44)));
+        f.setLayoutParams(new LinearLayout.LayoutParams(px(boxPx), px(56)));
         f.setBackground(new Underline());
         return f;
     }
@@ -489,9 +497,11 @@ final class HomeV29 extends FrameLayout {
             boolean on = false;
             for (int x : st) if (x == android.R.attr.state_focused) on = true;
             if (!on) return;
-            p.setColor(t != null ? t.accent : Color.WHITE);
             android.graphics.Rect b = getBounds();
-            c.drawRect(b.left + px(4), b.bottom - px(3), b.right - px(4), b.bottom, p);
+            p.setColor(Theme.withAlpha(t != null ? t.fg : Color.WHITE, 0.16f));
+            c.drawRect(b, p);
+            p.setColor(t != null ? ink(t.accent) : Color.WHITE);
+            c.drawRect(b.left + px(4), b.bottom - px(5), b.right - px(4), b.bottom, p);
         }
 
         @Override
@@ -537,8 +547,7 @@ final class HomeV29 extends FrameLayout {
         }
     }
 
-    // ---- alpha rules (spec §2): windows = opacity, bar = +0.10 (max 0.95), tiles = −0.15 (min 0.30); no blur
-    // below Android 12 → +0.10 everywhere. ----
+    // User opacity is the starting point; text windows raise it only as far as contrast requires.
 
     static float opacity(LauncherConfig c) {
         return 1f - Math.max(5, Math.min(60, c.transparency)) / 100f;
@@ -555,27 +564,26 @@ final class HomeV29 extends FrameLayout {
         cfg = c;
         t = Theme.cur();
         this.apps = apps;
-        float op = opacity(c), nb = noBlur();
-        int winBg = Theme.withAlpha(t.bg, Math.min(0.98f, op + nb));
-        bar.setBackgroundColor(Theme.withAlpha(t.bg, Math.min(0.95f, op + 0.10f) + nb > 0.98f ? 0.98f : Math.min(0.95f, op + 0.10f) + nb));
-        clock.setTextColor(t.fgBright);
+        int winBg = windowBackground();
+        bar.setBackgroundColor(winBg);
+        clock.setTextColor(ink(t.fgBright));
         for (int i = 0; i < 5; i++) {
             boolean on = c.workspaceAt(i + 1) == activeWs;
-            ws[i].setTextColor(on ? t.accent : t.fg);
+            ws[i].setTextColor(ink(on ? t.accent : t.fg));
             ws[i].setTypeface(on ? tfBold : tf);
             ws[i].setPaintFlags(on ? ws[i].getPaintFlags() | Paint.UNDERLINE_TEXT_FLAG : ws[i].getPaintFlags() & ~Paint.UNDERLINE_TEXT_FLAG);
             ws[i].setVisibility(c.workspaceAt(i + 1) > 0 ? VISIBLE : GONE);
             ws[i].setText(c.workspaceNamesInBar && c.workspaceAt(i + 1) > 0 ? c.workspaceName(c.workspaceAt(i + 1)) : String.valueOf(i + 1));
         }
-        tint(menuBtn, t.fgBright);
-        for (View b : barIcons) tint(b, t.fgBright);
+        tint(menuBtn, ink(t.fgBright));
+        for (View b : barIcons) tint(b, ink(t.fgBright));
         tip.setBackgroundColor(Theme.withAlpha(t.bg, 0.98f));
-        tip.setTextColor(t.fgBright);
-        for (BoxView b : new BoxView[]{term, wxBox, pcBox, aiBoxRef, depBox, appWin, tvWin, appsWin, pcWin, sysWin, grokbotBox}) b.setColors(winBg, t.muted, t.accent, t.cyan);
-        barSpacex.setTextColor(t.accent2);
+        tip.setTextColor(ink(t.fgBright));
+        for (BoxView b : new BoxView[]{term, wxBox, pcBox, aiBoxRef, depBox, appWin, tvWin, appsWin, pcWin, sysWin, grokbotBox}) b.setColors(winBg, t.muted, ink(t.accent), ink(t.cyan));
+        barSpacex.setTextColor(ink(t.accent2));
         barSpacex.setVisibility(c.pluginSpacexTv ? VISIBLE : GONE);
-        grokbotEyes.setTextColor(t.accent);
-        grokbotText.setTextColor(t.fgBright);
+        grokbotEyes.setTextColor(ink(t.accent));
+        grokbotText.setTextColor(ink(t.fgBright));
         boolean mirrored = c.grokbotBotName != null && !c.grokbotBotName.isEmpty();
         grokbotMark.setVisibility(VISIBLE);   // v2.13: Grok Bot's ball when nothing is mirrored
         grokbotEyes.setVisibility(GONE);
@@ -585,15 +593,15 @@ final class HomeV29 extends FrameLayout {
                 : gbMsg != null ? " " + gbMsg : " companion · ask");
         // The floating face is the one companion: this "companion · ask" tile only stands in when it is off.
         grokbotBox.setVisibility(activeWs == 1 && CompanionPlacement.homeTile(c.pluginGrokbot, c.companionOverlay) ? VISIBLE : GONE);
-        for (BoxView b : remoteBox) b.setColors(winBg, t.muted, t.accent, t.cyan);
+        for (BoxView b : remoteBox) b.setColors(winBg, t.muted, ink(t.accent), ink(t.cyan));
         // v2.10: every home widget can be switched off (Settings → Widgets); the clock lives only in the bar.
         wxBox.setVisibility(c.wWeather ? VISIBLE : GONE);
         pcBox.setVisibility(c.wPc ? VISIBLE : GONE);
         aiBoxRef.setVisibility(c.wAi ? VISIBLE : GONE);
         term.setVisibility(activeWs == 1 && c.wTerm ? VISIBLE : GONE);
         if (editPanel == null) post(() -> applyPanelPos(c));
-        gridName.setTextColor(t.accent);
-        gridHints.setTextColor(t.fg);
+        gridName.setTextColor(ink(t.accent));
+        gridHints.setTextColor(ink(t.fg));
         gridHints.setText(gridHintsText());
         term.setLegend(null, px(18), px(22));
         appWin.setLegend(null, px(20), px(28));
@@ -605,13 +613,13 @@ final class HomeV29 extends FrameLayout {
         span(p, "$ ", t.fg);
         int cs = p.length();
         p.append("█");
-        cursorSpan = new ForegroundColorSpan(t.fg);
+        cursorSpan = new ForegroundColorSpan(ink(t.fg));
         p.setSpan(cursorSpan, cs, p.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         promptText = p;
         termPrompt.setText(p, TextView.BufferType.SPANNABLE);
-        termLogo.setTextColor(t.accent);
-        appName.setTextColor(t.accent);
-        appHints.setTextColor(t.fg);
+        termLogo.setTextColor(ink(t.accent));
+        appName.setTextColor(ink(t.accent));
+        appHints.setTextColor(ink(t.fg));
         updateRowHeader();
         rowAdapter.cols = rowCols(c.columns);
         // grokbot sits just above the app window: follow its height (296 px fits the 6-per-row tiles)
@@ -624,15 +632,29 @@ final class HomeV29 extends FrameLayout {
         buildWorkspace();
     }
 
+    /** Preserve the palette hue, lifting low-contrast custom theme text toward a readable foreground. */
+    private int ink(int color) {
+        Theme theme = t != null ? t : Theme.cur();
+        int fallback = Surfaces.luminance(theme.bg) > 0.179 ? Color.BLACK : Color.WHITE;
+        int foreground = Theme.readable(theme.fg, fallback, theme.bg);
+        return Theme.readable(color, foreground, theme.bg);
+    }
+
+    private int windowBackground() {
+        float alpha = Surfaces.wallpaperAlpha(t.bg, opacity(cfg) + noBlur(),
+                ink(t.fg), ink(t.fgBright), ink(t.accent), ink(t.accent2), ink(t.cyan), ink(t.green), ink(t.red), ink(t.yellow));
+        return Theme.withAlpha(t.bg, alpha);
+    }
+
     private static void tint(View b, int color) {
         View iv = ((ViewGroup) b).getChildAt(0);
         if (iv instanceof ImageView) ((ImageView) iv).setColorFilter(color);
     }
 
-    private static void span(SpannableStringBuilder b, String s, int color) {
+    private void span(SpannableStringBuilder b, String s, int color) {
         int st = b.length();
         b.append(s);
-        b.setSpan(new ForegroundColorSpan(color), st, b.length(), 0);
+        b.setSpan(new ForegroundColorSpan(ink(color)), st, b.length(), 0);
     }
 
     /** Clock, fastfetch line, widgets; cheap (in-memory reads + small cached files). */
@@ -680,13 +702,13 @@ final class HomeV29 extends FrameLayout {
                 if (l == null) continue;
                 LinearLayout r = hbox();
                 TextView n = text(l.optString("label"), REMOTE_TEXT, false);
-                n.setTextColor(t.fg);
+                n.setTextColor(ink(t.fg));
                 n.setSingleLine(true);
                 n.setEllipsize(TextUtils.TruncateAt.END);
                 r.addView(n, new LinearLayout.LayoutParams(0, -2, 1f));
                 String tone = l.optString("tone");
                 TextView v = text(l.optString("value"), REMOTE_TEXT, false);
-                v.setTextColor("up".equals(tone) ? t.green : "down".equals(tone) ? t.red : t.fgBright);
+                v.setTextColor(ink("up".equals(tone) ? t.green : "down".equals(tone) ? t.red : t.fgBright));
                 v.setSingleLine(true);
                 LinearLayout.LayoutParams vl = new LinearLayout.LayoutParams(-2, -2);
                 vl.leftMargin = px(12);
@@ -710,20 +732,20 @@ final class HomeV29 extends FrameLayout {
         }
     }
 
-    /** Fetched panes are read from across the room: larger than the 19 px widget text. */
+    /** Fetched panes share the home widgets’ couch-readable type size. */
     private static final float REMOTE_TEXT = 24;
 
     private void updateWeather() {
-        wxTemp.setTextColor(t.accent);
-        wxLine1.setTextColor(t.fg);
-        wxLine2.setTextColor(t.fg);
+        wxTemp.setTextColor(ink(t.accent));
+        wxLine1.setTextColor(ink(t.fg));
+        wxLine2.setTextColor(ink(t.fg));
         JSONObject w = Weather.cached(act);
         JSONObject cur = w != null ? w.optJSONObject("current") : null;
         barWx.setVisibility(cfg.barWeather && cur != null ? VISIBLE : GONE);
         if (cfg.barWeather && cur != null) {
             barWxIcon.setImageResource(Weather.icon(cur.optInt("weather_code")));
-            barWxIcon.setColorFilter(t.fgBright);
-            barWxTemp.setTextColor(t.fgBright);
+            barWxIcon.setColorFilter(ink(t.fgBright));
+            barWxTemp.setTextColor(ink(t.fgBright));
             barWxTemp.setText(Weather.temp(cur.optDouble("temperature_2m"), cfg.tempF) + (cfg.tempF ? "°F" : "°"));
             barWx.setContentDescription(act.getString(Weather.describe(cur.optInt("weather_code"))));
         }
@@ -744,7 +766,7 @@ final class HomeV29 extends FrameLayout {
 
     private TextView offline() {
         TextView v = line(act.getString(R.string.v29_pc_off));
-        v.setTextColor(t.fg);
+        v.setTextColor(ink(t.fg));
         return v;
     }
 
@@ -754,8 +776,8 @@ final class HomeV29 extends FrameLayout {
         LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(-1, -2);
         l.topMargin = px(6);
         r.setLayoutParams(l);
-        TextView a = text(label, 19, false);
-        a.setTextColor(t.fg);
+        TextView a = text(label, 24, false);
+        a.setTextColor(ink(t.fg));
         a.setSingleLine(true);
         a.setEllipsize(TextUtils.TruncateAt.END);
         float cw = a.getPaint().measureText("M");
@@ -765,8 +787,8 @@ final class HomeV29 extends FrameLayout {
         bl.leftMargin = px(8);
         bl.rightMargin = px(10);
         r.addView(b, bl);
-        TextView pct = text(right, 19, false);
-        pct.setTextColor(t.fg);
+        TextView pct = text(right, 24, true);
+        pct.setTextColor(ink(t.fg));
         pct.setGravity(Gravity.END);
         r.addView(pct, new LinearLayout.LayoutParams(Math.round(cw * 4), -2));
         return r;
@@ -793,8 +815,8 @@ final class HomeV29 extends FrameLayout {
                 ic.setColorFilter(t.magenta);
                 r.addView(ic, new LinearLayout.LayoutParams(px(19), px(19)));
                 String a = np.optString("artist", "");
-                TextView tx = text((a.isEmpty() ? "" : a + " — ") + np.optString("title"), 19, false);
-                tx.setTextColor(t.fg);
+                TextView tx = text((a.isEmpty() ? "" : a + " — ") + np.optString("title"), 24, false);
+                tx.setTextColor(ink(t.fg));
                 tx.setSingleLine(true);
                 tx.setEllipsize(TextUtils.TruncateAt.END);
                 LinearLayout.LayoutParams txl = new LinearLayout.LayoutParams(0, -2, 1f);
@@ -810,13 +832,13 @@ final class HomeV29 extends FrameLayout {
             String stt = x.optString("status");
             int col = "green".equals(stt) || "ok".equals(stt) ? t.green : "yellow".equals(stt) || "building".equals(stt) ? t.yellow : t.red;
             LinearLayout r = hbox();
-            TextView n = text(x.optString("name"), 19, false);
-            n.setTextColor(t.fg);
+            TextView n = text(x.optString("name"), 24, false);
+            n.setTextColor(ink(t.fg));
             n.setSingleLine(true);
             n.setEllipsize(TextUtils.TruncateAt.END);
             r.addView(n, new LinearLayout.LayoutParams(0, -2, 1f));
-            TextView v = text(stt, 19, false);
-            v.setTextColor(col);
+            TextView v = text(stt, 24, false);
+            v.setTextColor(ink(col));
             v.setSingleLine(true);
             LinearLayout.LayoutParams vl = new LinearLayout.LayoutParams(-2, -2);
             vl.leftMargin = px(12);
@@ -848,7 +870,7 @@ final class HomeV29 extends FrameLayout {
                 aiBody.addView(barRow(a.name, nameW, f, col, 10, Math.round(f * 100) + "%"));
             } else {
                 TextView v = line(a.name + "  " + (a.usedUnknown() ? "?" : MainActivity.amountText(a.used, a.unit)));
-                v.setTextColor(t.fg);
+                v.setTextColor(ink(t.fg));
                 aiBody.addView(v);
             }
         }
@@ -874,7 +896,7 @@ final class HomeV29 extends FrameLayout {
         anchor.getLocationInWindow(loc);
         getLocationInWindow(me);
         LayoutParams l = (LayoutParams) tip.getLayoutParams();
-        l.topMargin = px(56);
+        l.topMargin = px(72);
         l.leftMargin = Math.max(px(32), Math.min(getWidth() - px(32) - tip.getMeasuredWidth(), loc[0] - me[0] + anchor.getWidth() / 2 - tip.getMeasuredWidth() / 2));
         tip.setLayoutParams(l);
     }
@@ -1016,7 +1038,7 @@ final class HomeV29 extends FrameLayout {
         }
         if (src.isEmpty()) {
             TextView v = line(act.getString(R.string.no_inputs));
-            v.setTextColor(t.fg);
+            v.setTextColor(ink(t.fg));
             tvBody.addView(v);
         }
     }
@@ -1032,7 +1054,7 @@ final class HomeV29 extends FrameLayout {
         iv.setColorFilter(t.accent);
         col.addView(iv, new LinearLayout.LayoutParams(px(72), px(72)));
         TextView tv = text(label, 30, true);
-        tv.setTextColor(t.fgBright);
+        tv.setTextColor(ink(t.fgBright));
         tv.setGravity(Gravity.CENTER);
         tv.setSingleLine(true);
         tv.setEllipsize(TextUtils.TruncateAt.END);
@@ -1041,7 +1063,7 @@ final class HomeV29 extends FrameLayout {
         col.addView(tv, tl);
         if (sub != null && !sub.isEmpty()) {
             TextView sv = text(sub, 20, false);
-            sv.setTextColor(t.fg);
+            sv.setTextColor(ink(t.fg));
             sv.setSingleLine(true);
             sv.setEllipsize(TextUtils.TruncateAt.END);
             col.addView(sv, new LinearLayout.LayoutParams(-2, -2));
@@ -1063,12 +1085,12 @@ final class HomeV29 extends FrameLayout {
         pcPaneBody.removeAllViews();
         if (!host.pcPaired()) {
             TextView m = text(act.getString(R.string.v210_pc_link), 34, true);
-            m.setTextColor(t.fgBright);
+            m.setTextColor(ink(t.fgBright));
             LinearLayout.LayoutParams ml = new LinearLayout.LayoutParams(-2, -2);
             ml.topMargin = px(24);
             pcPaneBody.addView(m, ml);
             TextView h = line(act.getString(R.string.v210_pc_link_hint));
-            h.setTextColor(t.fg);
+            h.setTextColor(ink(t.fg));
             h.setSingleLine(false);
             pcPaneBody.addView(h);
             LinearLayout actions = hbox();
@@ -1095,8 +1117,8 @@ final class HomeV29 extends FrameLayout {
         r.setBaselineAligned(false);
         pcPaneBody.addView(r, new LinearLayout.LayoutParams(-1, -2));
         BoxView pc = widget(r, "omarchy · pc", 0), ai = widget(r, "ai credits · pc", 24), dep = widget(r, "deploys · pc", 24);
-        int winBg = Theme.withAlpha(t.bg, Math.min(0.98f, opacity(cfg) + noBlur()));
-        for (BoxView b : new BoxView[]{pc, ai, dep}) b.setColors(winBg, t.muted, t.accent, t.cyan);
+        int winBg = windowBackground();
+        for (BoxView b : new BoxView[]{pc, ai, dep}) b.setColors(winBg, t.muted, ink(t.accent), ink(t.cyan));
         LinearLayout pb = vbox(), ab = vbox(), db = vbox();
         pc.addView(pb, new LinearLayout.LayoutParams(-1, -2));
         ai.addView(ab, new LinearLayout.LayoutParams(-1, -2));
@@ -1105,7 +1127,7 @@ final class HomeV29 extends FrameLayout {
         if (dep.getVisibility() != VISIBLE) {
             dep.setVisibility(VISIBLE);
             TextView v = line("—");
-            v.setTextColor(t.fg);
+            v.setTextColor(ink(t.fg));
             db.addView(v);
         }
         updateAi(ab);
@@ -1137,7 +1159,7 @@ final class HomeV29 extends FrameLayout {
         b.setFocusable(true);
         b.setClickable(true);
         b.setPadding(px(18), px(10), px(18), px(10));
-        b.setTextColor(t.fgBright);
+        b.setTextColor(ink(t.fgBright));
         b.setBackground(new Underline());
         b.setOnClickListener(v -> r.run());
         return b;
@@ -1177,10 +1199,10 @@ final class HomeV29 extends FrameLayout {
         r.setClickable(true);
         r.setPadding(px(16), px(10), px(16), px(10));
         TextView a = text(act.getString(label), 24, false);
-        a.setTextColor(t.fgBright);
+        a.setTextColor(ink(t.fgBright));
         r.addView(a, new LayoutParams(-2, -2, Gravity.START | Gravity.CENTER_VERTICAL));
         TextView b = text(value != null ? value : "›", 24, false);
-        b.setTextColor(t.accent);
+        b.setTextColor(ink(t.accent));
         r.addView(b, new LayoutParams(-2, -2, Gravity.END | Gravity.CENTER_VERTICAL));
         r.setBackground(new Underline());
         r.setOnClickListener(v -> host.sys(id));
@@ -1301,11 +1323,12 @@ final class HomeV29 extends FrameLayout {
             v.setTranslationX(editOldCx * cellW());
             v.setTranslationY(editOldCy * cellH());
         }
+        v.setFocusable(v == wxBox || v == aiBoxRef);
         focusApp(lastApp);
     }
 
     int barHeight() {
-        return px(52);
+        return px(64);
     }
 
     // ---- animated OMARCHY TV logo (v2.10): 1-2 s "decrypt" or "print" when the home opens, then still ----
@@ -1415,7 +1438,7 @@ final class HomeV29 extends FrameLayout {
             if (k == KeyEvent.KEYCODE_DPAD_UP) return true;
             if (k == KeyEvent.KEYCODE_DPAD_DOWN) {
                 if (activeWs == 1) {
-                    if (!focusFirstVisible(widgets)) focusApp(lastApp);
+                    if (!focusNearestWidget(f)) focusApp(lastApp);
                 } else restoreFocus();
                 return true;
             }
@@ -1491,13 +1514,12 @@ final class HomeV29 extends FrameLayout {
         switch (k) {
             case KeyEvent.KEYCODE_DPAD_UP:
                 if (z == 2) {
-                    if (!focusFirstVisible(widgets)) ws[0].requestFocus();
+                    if (!focusNearestWidget(f)) ws[0].requestFocus();
                 } else if (z == 1) activeWsButton().requestFocus();
                 return true;
             case KeyEvent.KEYCODE_DPAD_DOWN:
                 if (z == 1) {
-                    if (f.getParent() == ((ViewGroup) widgets.getChildAt(0)) && depBox.getVisibility() == VISIBLE && f == aiBoxRef) depBox.requestFocus();
-                    else focusApp(lastApp);
+                    focusApp(lastApp);
                     return true;
                 }
                 return true;
@@ -1522,14 +1544,20 @@ final class HomeV29 extends FrameLayout {
         }
     }
 
-    private boolean focusFirstVisible(ViewGroup g) {
-        ViewGroup r1 = (ViewGroup) g.getChildAt(0);
-        for (int i = 0; i < r1.getChildCount(); i++) {
-            View v = r1.getChildAt(i);
-            if (v.getVisibility() == VISIBLE && v.isFocusable()) return v.requestFocus();
+    /** Use screen geometry so user-arranged panels keep the same remote path. Read-only panes are skipped. */
+    private boolean focusNearestWidget(View from) {
+        int[] location = new int[2];
+        if (from != null) from.getLocationOnScreen(location);
+        float x = location[0] + (from != null ? from.getWidth() / 2f : 0);
+        View nearest = null;
+        float distance = Float.MAX_VALUE;
+        for (View v : new View[]{wxBox, aiBoxRef}) {
+            if (!v.isShown() || !v.isFocusable()) continue;
+            v.getLocationOnScreen(location);
+            float d = Math.abs(location[0] + v.getWidth() / 2f - x);
+            if (d < distance) { nearest = v; distance = d; }
         }
-        if (depBox.getVisibility() == VISIBLE) return depBox.requestFocus();
-        return false;
+        return nearest != null && nearest.requestFocus();
     }
 
     /** The TV tile is the first item of the home row unless "tv.enabled" is false. */
@@ -1661,7 +1689,10 @@ final class HomeV29 extends FrameLayout {
         }
         boolean tvFocused = lastApp == 0 && tvShown();
         appHints.setText(tvFocused ? R.string.v210_tv_hints : R.string.v210_app_hints);
-        if (tvFocused) appName.setText("TV");
+        int count = rowAdapter.getItemCount();
+        int pos = Math.max(0, Math.min(lastApp, count - 1));
+        String name = tvFocused ? "TV" : apps != null && count > 0 ? apps.labelAt(pos - tvOffset()) : "";
+        appName.setText(count > 0 ? name + "  ·  " + (pos + 1) + "/" + count : "");
     }
 
     /** Home row tiles visible at once: Layout → App size (4..7); 0 (no config yet) gives the v2.9 six. */
@@ -1675,7 +1706,7 @@ final class HomeV29 extends FrameLayout {
     }
 
     // ---- tiles: home row (TV + apps, App size per row, 16:9) and the 7-per-row grid of workspace 3 ----
-    // Focus (spec): 4 px accent border + 2 px dark outer outline + scale 1.05; unfocused: 2 px muted border.
+    // Focus uses scale plus a wide accent border and a contrasting outer outline.
 
     private final class TileAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         private final boolean tvFirst;
@@ -1770,7 +1801,7 @@ final class HomeV29 extends FrameLayout {
             if (tvTile) {
                 LinearLayout col = (LinearLayout) f.getChildAt(0);
                 ((ImageView) col.getChildAt(0)).setColorFilter(t.accent);
-                ((TextView) col.getChildAt(1)).setTextColor(t.fgBright);
+                ((TextView) col.getChildAt(1)).setTextColor(ink(t.fgBright));
                 GradientDrawable bg = new GradientDrawable();
                 bg.setColor(t.bgLight);
                 f.setBackground(bg);
@@ -1783,7 +1814,7 @@ final class HomeV29 extends FrameLayout {
                 iv.setPadding(px(2), px(2), px(2), px(2));
                 tv.setText(apps.labelAt(app));
                 tv.setVisibility(banner != null ? GONE : VISIBLE);
-                tv.setTextColor(cfg.textTiles ? t.fg : t.fgBright);
+                tv.setTextColor(ink(cfg.textTiles ? t.fg : t.fgBright));
                 GradientDrawable bg = new GradientDrawable();
                 bg.setColor(cfg.textTiles ? t.bgLight : Theme.withAlpha(t.bgLight, Math.max(0.30f, opacity(cfg) + noBlur() - 0.15f)));
                 f.setBackground(bg);
@@ -1827,7 +1858,7 @@ final class HomeV29 extends FrameLayout {
         View label = f.getChildAt(f.getChildCount() - 1);
         if (label instanceof TextView && cfg != null && cfg.textTiles) {
             ((TextView) label).setTypeface(focused ? tfBold : tf);
-            ((TextView) label).setTextColor(focused ? t.fgBright : t.fg);
+            ((TextView) label).setTextColor(ink(focused ? t.fgBright : t.fg));
         }
         float sc = focused ? 1.05f : 1f;
         f.setZ(focused ? 2f : 0f);
@@ -1838,7 +1869,7 @@ final class HomeV29 extends FrameLayout {
         }
     }
 
-    /** Tile border: unfocused 2 px muted; focused 2 px dark outer outline + 4 px accent inside it. */
+    /** A contrasting outline keeps the accent focus border visible on both dark and light banners. */
     private final class FocusRing extends Drawable {
         private final Paint p = new Paint();
         private boolean on;
@@ -1865,9 +1896,9 @@ final class HomeV29 extends FrameLayout {
                 c.drawRect(b.left + w / 2, b.top + w / 2, b.right - w / 2, b.bottom - w / 2, p);
                 return;
             }
-            float o = px(2), a = px(4);
+            float o = px(3), a = px(6);
             p.setStrokeWidth(o);
-            p.setColor(0xE6000000);
+            p.setColor(ink(t.fgBright));
             c.drawRect(b.left + o / 2, b.top + o / 2, b.right - o / 2, b.bottom - o / 2, p);
             p.setStrokeWidth(a);
             p.setColor(t.accent);

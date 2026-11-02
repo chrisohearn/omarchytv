@@ -53,4 +53,26 @@ public class SurfacesTest {
             assertTrue(on(Surfaces.TEXT_DIM, behind) >= 4.5);
         }
     }
+
+    @Test
+    public void homeSurfacesProtectLightAndDarkThemesAcrossWallpaperExtremes() throws Exception {
+        org.json.JSONObject themes = new org.json.JSONObject(new String(java.nio.file.Files.readAllBytes(
+                java.nio.file.Paths.get("src/main/assets/omarchy_themes.json")), java.nio.charset.StandardCharsets.UTF_8))
+                .getJSONObject("themes");
+        for (java.util.Iterator<String> it = themes.keys(); it.hasNext();) {
+            String name = it.next();
+            org.json.JSONObject palette = themes.getJSONObject(name);
+            int bg = Theme.parse(palette.getString("background"), 0);
+            int fg = Theme.parse(palette.getString("foreground"), 0);
+            for (int transparency : Surfaces.STEPS) {
+                float alpha = Surfaces.wallpaperAlpha(bg, Surfaces.surfaceAlpha(transparency), fg);
+                for (int wall : new int[]{0x000000, 0xFFFFFF, 0xFF49A8, 0x888888}) {
+                    assertTrue(name + " over " + Integer.toHexString(wall),
+                            on(fg, Surfaces.over(bg, alpha, wall)) >= 4.5);
+                }
+                assertTrue(alpha >= Surfaces.surfaceAlpha(transparency));
+            }
+        }
+        assertEquals(0.95f, Surfaces.wallpaperAlpha(0x000000, 0.95f, 0xFFFFFF), 0.004f);
+    }
 }
