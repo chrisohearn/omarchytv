@@ -45,6 +45,19 @@ the IP shown on the TV, and the PC calls `GET /v1/info`.
 When a paired TV's DHCP address changes, the PC finds it again by `id` over
 mDNS and updates its stored address. The token stays valid.
 
+The Android launcher uses the default-network callback's supplied link properties
+to choose its IPv4 bind address. A lost default network stops the listener; a
+replacement network binds only its own address. Returning Home or waking the
+screen checks the actual listening socket immediately and once more after two
+seconds, so a closed listener can reopen even when the address has not changed.
+A healthy listener and its connected clients remain in place. These checks add
+no idle polling, wakelock, port, pairing change or broader interface binding.
+
+This recovery requires a launcher APK built from this source. Updating only the
+PC plugin does not install it on a TV. An existing release can be upgraded in
+place only by an APK signed with the same signing key; preserve the installed
+release and its data when that key is unavailable.
+
 ## 3. Transport and limits
 
 - HTTP/1.1 and RFC 6455 WebSocket on the same port. JSON is UTF-8. No TLS in v1

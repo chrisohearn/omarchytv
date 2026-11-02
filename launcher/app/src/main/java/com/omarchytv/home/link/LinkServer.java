@@ -222,6 +222,15 @@ public final class LinkServer {
 
     // ---- lifecycle ---------------------------------------------------------------------------------
 
+    /** Keep a healthy listener (and its clients), or recover a closed listener at the same address. */
+    public synchronized boolean ensureListening(InetAddress address, int port) throws IOException {
+        ServerSocket s = server;
+        if (s != null && !s.isClosed() && s.isBound()
+                && s.getInetAddress().equals(address) && s.getLocalPort() == port) return false;
+        start(address, port);
+        return true;
+    }
+
     /** (Re)binds to {@code address} (the LAN address; null = all interfaces) on {@code port}. */
     public synchronized int start(InetAddress address, int port) throws IOException {
         stopListening();
