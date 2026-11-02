@@ -1,0 +1,10 @@
+{
+  "bots": [{
+    "id": "YOUR-DOT-ID",
+    "name": "Jarvis",
+    "shortName": "Jarvis",
+    "avatarShape": "blob",
+    "avatarColor": "cyan",
+    "isPrimary": true
+  }]
+}

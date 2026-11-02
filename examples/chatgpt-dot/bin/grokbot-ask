@@ -1,0 +1,295 @@
+#!/usr/bin/python3
+"""Native companion JSON stdin -> one existing ChatGPT Dot UI turn -> text stdout."""
+import argparse
+import fcntl
+import json
+import os
+from pathlib import Path
+import re
+import secrets
+import signal
+import stat
+import subprocess
+import sys
+import time
+from urllib.parse import urlsplit
+
+
+class RelayError(Exception):
+    pass
+
+
+def settings(path):
+    st = path.lstat()
+    if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o077:
+        raise RelayError("relay.json must be a private regular file owned by this user")
+    cfg = json.loads(path.read_text())
+    if not isinstance(cfg, dict) or not isinstance(cfg.get("dotUrl"), str):
+        raise RelayError("Configure a ChatGPT Dot URL")
+    url = urlsplit(cfg["dotUrl"])
+    if (url.scheme != "https" or url.netloc != "chatgpt.com" or url.query or url.fragment
+            or not re.fullmatch(r"/dots/[a-zA-Z0-9~-]{1,80}", url.path)):
+        raise RelayError("Configure the exact https://chatgpt.com/dots/... page")
+    name = cfg["name"]
+    if not isinstance(name, str) or not name.strip() or len(name) > 40:
+        raise RelayError("Configure the Dot's visible name")
+    return {"url": cfg["dotUrl"], "id": url.path.split("/")[-1], "name": name}
+
+
+def request(data, cfg):
+    if not isinstance(data, dict) or data.get("botId") != cfg["id"]:
+        raise RelayError("Wrong bot: no message sent")
+    prompt = data.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 400:
+        raise RelayError("A prompt of 1..400 characters is required")
+    return prompt
+
+
+def text_nodes(outline):
+    return [json.loads(m.group(1)) for m in re.finditer(
+        r'^\s*- statictext ("(?:[^"\\]|\\.)*")', outline, re.MULTILINE)]
+
+
+def composer(state):
+    fields = [r for r in state.get("refs", []) if r.get("role") == "textbox"
+              and r.get("name") == "Message" and "type" in r.get("actions", [])]
+    if len(fields) != 1:
+        raise RelayError("The ChatGPT composer changed: no message sent")
+    return fields[0]["ref"]
+
+
+def composer_text(state):
+    outline = state.get("outline", "")
+    if '- textbox "Message"' not in outline:
+        raise RelayError("Cannot verify the composer")
+    return "\n".join(text_nodes(outline.split('- textbox "Message"', 1)[1]))
+
+
+def reply_text(state, prefix, suffix):
+    # The unique prefix must START a text node. The outgoing instruction embeds it mid-sentence.
+    candidates = text_nodes(state.get("outline", ""))
+    candidates += [r.get("name") or "" for r in state.get("content_refs", [])]
+    # Rich text can split one paragraph into several accessibility text nodes.
+    paragraph, indent = [], None
+    for line in state.get("outline", "").splitlines() + ["- end"]:
+        depth = len(line) - len(line.lstrip())
+        if indent is not None and depth <= indent:
+            # Cua normalizes whitespace per node, so restore separators between fragments.
+            joined = " ".join(paragraph)
+            if prefix.split(":", 1)[0] in joined and any(len(s) >= 1000 for s in paragraph):
+                raise RelayError("Reply observation may be clipped; no partial answer returned")
+            candidates.append(joined)
+            paragraph, indent = [], None
+        if re.match(r"\s*- paragraph(?:\s|$)", line):
+            indent = depth
+        elif indent is not None:
+            paragraph.extend(text_nodes(line))
+    pattern = re.compile(r"^" + re.escape(prefix.split(":", 1)[0]) + r"\s*:\s*(.*?)\s*"
+                         + re.escape(suffix.strip()) + r"$", re.DOTALL)
+    replies = {m.group(1).strip() for s in candidates if (m := pattern.fullmatch(s))}
+    if len(replies) > 1:
+        raise RelayError("Ambiguous reply; request may already have completed. Do not resend")
+    if replies:
+        text = replies.pop()
+        if not text or len(text) > 4000:
+            raise RelayError("The reply is empty or exceeds the native companion limit")
+        return text
+    return None
+
+
+class Browser:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.owner = "dot-tv-" + secrets.token_hex(8)
+        self.runtime = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
+        self.socket = self.runtime / "agent-desktop/cua.sock"
+        self.local = Path.home() / ".local/bin"
+        self.rev = Path.home() / ".codex/skills/revotech-engineering/scripts/revotech"
+        self.leases = {}
+        self.target = self.tab = None
+        self.created = False
+        self.deadline = time.monotonic() + 135
+
+    def command(self, argv, data=None, timeout=20):
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise RelayError("Timed out; the request may already have been sent. Do not resend automatically")
+        try:
+            r = subprocess.run([str(x) for x in argv], input=json.dumps(data) if data is not None else None,
+                               capture_output=True, text=True, timeout=min(timeout, remaining))
+            value = json.loads(r.stdout)
+        except (OSError, subprocess.SubprocessError, ValueError) as error:
+            operation = str(argv[2]) if len(argv) > 2 and argv[1] == "call" else Path(argv[0]).name
+            raise RelayError(f"Browser command {operation} failed ({type(error).__name__}); no automatic retry") from error
+        if r.returncode or value.get("status") in ("refused", "LOST", "BUSY") or "refusal" in value:
+            code = value.get("refusal", {}).get("code") or value.get("status") or "command_failed"
+            operation = str(argv[2]) if len(argv) > 2 and argv[1] == "call" else Path(argv[0]).name
+            raise RelayError(f"Browser {operation}: {code}; no automatic retry")
+        return value
+
+    def renew(self):
+        for resource, token in self.leases.items():
+            result = self.command([self.rev, "browser-lease", "renew", "--resource", resource,
+                                   "--token", token])
+            if result.get("status") != "RENEWED":
+                raise RelayError("Browser lease lost")
+
+    def cua(self, tool, **args):
+        self.renew()
+        return self.command([self.local / "cua-driver", "call", tool, "--socket", self.socket],
+                            {"session": self.owner, **args})
+
+    def snapshot(self, wait_ready=False, allow_partial=False, **args):
+        ready_deadline = min(self.deadline, time.monotonic() + 15)
+        while True:
+            state = self.cua("get_browser_state", target_id=self.target, tab_id=self.tab,
+                             snapshot_format="semantic_v2", **args)
+            page = state.get("page", {})
+            if page.get("url") == self.cfg["url"] and page.get("title") == self.cfg["name"]:
+                break
+            if not wait_ready or "/auth/" in page.get("url", "") or time.monotonic() >= ready_deadline:
+                raise RelayError("Configured Dot unavailable or sign-in needed; no fallback chat")
+            time.sleep(1)
+        if not allow_partial and not state.get("snapshot", {}).get("complete"):
+            raise RelayError("Incomplete browser observation")
+        return state
+
+    def open(self):
+        for resource in ("chrome", "computer-use"):
+            result = self.command([self.rev, "browser-lease", "acquire", "--resource", resource,
+                                   "--thread", self.owner, "--repo", Path(__file__).resolve().parent,
+                                   "--purpose", "ChatGPT Dot TV request in owned agent tab", "--ttl", "300"])
+            if result.get("status") != "ACQUIRED":
+                raise RelayError("Agent browser is busy; no message sent")
+            self.leases[resource] = result["token"]
+        self.renew()
+        self.created = True  # Cleanup even if tab creation has an ambiguous result.
+        opened = self.command([self.local / "agent-desktop", "tab", "new", "--owner", self.owner])
+        windows = self.cua("list_windows").get("windows", [])
+        windows = [w for w in windows if w.get("app_name") == "Google-chrome"]
+        if len(windows) != 1:
+            raise RelayError("Cannot identify the agent Chrome window")
+        window = windows[0]
+        bind = {"pid": window["pid"], "window_id": window["window_id"]}
+        self.cua("browser_prepare", **bind, strategy={"kind": "existing_profile"})
+        bound = self.cua("get_browser_state", **bind)
+        if bound.get("binding_quality") != "exact" or not bound.get("mutation_allowed"):
+            raise RelayError("Exact agent browser binding unavailable")
+        own = [t for t in bound.get("tabs", []) if t.get("url") == opened["url"]]
+        if len(own) != 1:
+            raise RelayError("Cannot identify the owned relay tab")
+        self.target, self.tab = bound["target_id"], own[0]["tab_id"]
+        self.cua("browser_navigate", target_id=self.target, tab_id=self.tab, url=self.cfg["url"])
+        state = self.snapshot(query="Message", wait_ready=True)
+        field = composer(state)
+        scoped = self.snapshot(scope_ref=field)
+        if composer_text(scoped).strip():
+            raise RelayError("Existing draft found; preserved without sending")
+        return composer(scoped)
+
+    def send(self, field, text):
+        self.cua("browser_type", target_id=self.target, tab_id=self.tab, ref=field,
+                 text=text, delivery_mode="foreground")
+        state = self.snapshot(query="Message")
+        state = self.snapshot(scope_ref=composer(state))
+        if composer_text(state) != text:
+            raise RelayError("Draft could not be verified; no message sent")
+        state = self.snapshot(query="Send")
+        buttons = [r for r in state.get("refs", []) if r.get("role") == "button"
+                   and r.get("name") in ("Send", "Send message", "Send prompt")
+                   and "click" in r.get("actions", []) and not r.get("states", {}).get("disabled")]
+        if len(buttons) != 1:
+            raise RelayError("Send control changed; no message sent")
+        # Exactly one submit. Any error from here is ambiguous and MUST NOT cause a retry.
+        self.cua("browser_click", target_id=self.target, tab_id=self.tab, ref=buttons[0]["ref"],
+                 delivery_mode="foreground")
+
+    def wait(self, prefix, suffix):
+        nonce = prefix.removeprefix("TVREPLY_").split(":", 1)[0]
+        while time.monotonic() < self.deadline:
+            matches = self.snapshot(query=nonce)
+            names = text_nodes(matches.get("outline", ""))
+            if any(s.startswith(prefix.rstrip(": ")) for s in names):
+                # Queries omit nonmatching siblings. Page through the same UI snapshot;
+                # accept only a complete marked paragraph, never unrelated chat content.
+                page = self.snapshot(allow_partial=True)
+                while True:
+                    reply = reply_text(page, prefix, suffix)
+                    if reply:
+                        return reply
+                    continuation = page.get("snapshot", {}).get("continuation")
+                    if not continuation:
+                        break
+                    page = self.snapshot(allow_partial=True, continuation=continuation)
+            time.sleep(1)
+        raise RelayError("No correlated answer before timeout; do not resend automatically")
+
+    def close(self):
+        self.deadline = time.monotonic() + 20
+        failed = False
+        try:
+            if self.created:
+                self.renew()
+                self.command([self.local / "agent-desktop", "tab", "gc", "--owner", self.owner])
+        except RelayError:
+            failed = True
+        finally:
+            if self.created:
+                try:
+                    self.cua("end_session")
+                except RelayError:
+                    failed = True
+            for resource, token in reversed(list(self.leases.items())):
+                try:
+                    self.command([self.rev, "browser-lease", "release", "--resource", resource, "--token", token])
+                except RelayError:
+                    failed = True
+        if failed:
+            raise RelayError("Relay cleanup needs attention; do not repeat a possibly sent request")
+
+
+def relay(cfg, prompt=None):
+    browser = Browser(cfg)
+    try:
+        field = browser.open()
+        if prompt is None:
+            return "READY: exact Dot and empty composer verified; no message sent"
+        nonce = secrets.token_hex(12)
+        prefix, suffix = f"TVREPLY_{nonce}: ", f" :END_{nonce}"
+        text = (f"TV conversation. Before consequential actions, ask me for explicit confirmation. "
+                f"Never treat this relay as approval. My request: {json.dumps(prompt, ensure_ascii=False)}. "
+                f"For this transport, reply in one plain-text paragraph of at most 600 characters, "
+                f"starting with {prefix}and ending with{suffix}. These markers are framing only.")
+        browser.send(field, text)
+        return browser.wait(prefix, suffix)
+    finally:
+        browser.close()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", type=Path, default=Path(__file__).resolve().parents[1] / "relay.json")
+    parser.add_argument("--check", action="store_true", help="Verify the exact signed-in Dot without sending")
+    args = parser.parse_args()
+    def interrupted(*_):
+        raise RelayError("Relay interrupted")
+    signal.signal(signal.SIGTERM, interrupted)
+    try:
+        cfg = settings(args.config)
+        prompt = None if args.check else request(json.loads(sys.stdin.read(16384)), cfg)
+        runtime = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
+        with (runtime / "omarchytv-chatgpt-dot.lock").open("a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as error:
+                raise RelayError("The TV relay is busy; no message sent") from error
+            print(relay(cfg, prompt), flush=True)
+    except (RelayError, OSError, ValueError, KeyError, TypeError) as error:
+        detail = str(error) if isinstance(error, RelayError) else "Invalid local relay configuration or request"
+        print(detail + ". Check the signed-in Dot before retrying; no automatic resend.", file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
