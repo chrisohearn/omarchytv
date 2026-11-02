@@ -125,7 +125,7 @@ Pick **Test Grok Bot diretto**. Within a few seconds you should see and hear a o
   `https://ntfy.sh/<reply_topic>` with the same `id`. The body must be raw JSON, not wrapped in text.
   If the run shows `HTTP 429 daily message quota reached`, the shared ntfy.sh quota ran out: wait for the daily reset
   (00:00 UTC). See the known issue at the top and [issue #70](https://github.com/piermark/omarchytv/issues/70).
-- **It still goes to the PC**: a linked PC companion always wins. Turn the PC link off (or the PC) to use the direct mode.
+- **It still goes to the PC**: a configured PC companion keeps its identity while offline. On Android, Direct mode opens only when no named PC companion is configured.
 - **Nothing is spoken**: turn on "Leggi risposte ad alta voce". On Android, install or enable a TTS engine. Some webOS/Tizen browsers have no `speechSynthesis`.
 
 ## Privacy
@@ -147,6 +147,14 @@ to your Grok Bot routine over HTTPS, and the TV never sends your key anywhere el
 | LG webOS | Blue (`keyCode 406`): a short press opens the chat, holding it for about 0.65 s opens the chat by voice. | The Magic Remote mic always belongs to the system, so I can't use it. Hold Blue instead. |
 | Samsung Tizen | `ColorF3Blue`: short press for chat, hold for voice (same as webOS). | Search/Voice/Mic keys are registered through `tizen.tvinputdevice` when the TV lets apps have them, and then they open the chat by voice. Otherwise hold Blue. |
 
+The Android PC companion calls the system speech-recognition service directly.
+OmarchyTV requests microphone permission before the first use. The Speak button
+shows when it is listening or recognizing. Press it again to cancel. Leaving the
+chat cancels recognition, and an attempt ends after at most 30 seconds. A failed
+attempt shows an error and sends no question. A successful attempt sends the
+recognized message through the selected companion route. This is dictation;
+it does not start a provider's live voice call or read replies aloud.
+
 ### PC mode and Direct mode
 
 - **PC mode**: Grok Bot Desktop Companion by Tom Ballard ([@tcballard](https://x.com/tcballard)), running on the Omarchy PC through omarchy-link. The TV sends the question to the PC, and the PC answers. This needs the PC turned on and linked. All the PC mode code and behaviour are Tom's, and I haven't changed them.
@@ -154,7 +162,7 @@ to your Grok Bot routine over HTTPS, and the TV never sends your key anywhere el
 
 How the choice is made:
 
-- On Android, the Blue key or mic opens PC mode when a PC is linked. When no PC is linked and Direct mode is on, it opens Direct mode.
+- On Android, the Blue key or mic opens PC mode when a named PC companion is configured, including while it is offline. An offline question stays in the input field for manual resubmission after the PC reconnects. It never falls back to a different Ask provider or Direct mode. Without a named PC companion, Direct mode opens when no PC is linked and Direct mode is on. Choosing OmarchyTV's Ask explicitly still opens Ask.
 - On webOS/Tizen, Direct mode is used when no PC is linked. It is also used as a fallback when the PC request fails, for example because the PC is off or unreachable.
 - Ask and the other agents (Claude/Codex/Hermes) never change.
 

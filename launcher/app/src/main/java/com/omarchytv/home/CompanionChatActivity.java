@@ -11,7 +11,9 @@ import android.content.pm.ResolveInfo;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
+import android.speech.SpeechRecognizer;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.ViewGroup;
@@ -33,7 +35,8 @@ import java.util.UUID;
  * v2.13 Grok Bot Companion (TV) session: a chat panel opened from the floating companion (the Blue key, OK on
  * it after long-press Menu, or the home tile). Type with the on-screen or a Bluetooth/USB keyboard, or speak through
  * the system recognizer (the remote's mic on Android TV). With @tcballard's Grok Bot Desktop Companion on
- * a linked PC (omarchy-link) the question goes to it; otherwise to OmarchyTV's own Ask (the AI provider
+ * a linked PC (omarchy-link) the question goes to it. A named PC companion stays selected while offline.
+ * Without a configured PC companion, questions go to OmarchyTV's own Ask (the AI provider
  * chosen there: Grok Bot, Claude Code, Codex, Hermes…). "open Netflix" / "apri YouTube" opens an installed app
  * first (CompanionCommands). Links in a reply become buttons: YouTube ones play in the YouTube app, others open
  * in the WebApp, only after OK on the button. Each bot keeps its last 30 lines. Built against @tcballard's
@@ -45,6 +48,14 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
     private ScrollView scroll;
     private EditText input;
     private TextView mic;
+    private SpeechRecognizer speech;
+    private boolean voiceOnResume;
+    private boolean resumed;
+    private final Runnable speechTimeout = () -> {
+        if (speech == null) return;
+        stopVoice();
+        line("OmarchyTV", "Speech recognition timed out. Press Speak to try again.", false);
+    };
     private GrokbotMark mark;
     private String pendingId;
     private String botName = "Grok Bot";
@@ -87,7 +98,7 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
         mark = new GrokbotMark(this);
         CompanionOverlay.paint(mark, cfg);
         head.addView(mark, new LinearLayout.LayoutParams(dp(40), dp(40)));
-        TextView title = text(botName + " · Grok Bot Companion (TV)", 16, t.fgBright, true);
+        TextView title = text(botName + " · Companion (TV)", 16, t.fgBright, true);
         title.setPadding(dp(12), 0, 0, 0);
         head.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         panel.addView(head);
@@ -146,12 +157,17 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
         if (cfg.grokbotMessage != null && !cfg.grokbotMessage.isEmpty()) line(botName, cfg.grokbotMessage, false, false);
         String q = getIntent().getStringExtra("q");
         if (q != null && !q.trim().isEmpty()) send(q);
-        if (getIntent().getBooleanExtra("voice", false)) voice();
-        else mic.requestFocus(); // soft keyboard opens only when the user selects the text field
+        voiceOnResume = getIntent().getBooleanExtra("voice", false);
+        mic.requestFocus(); // soft keyboard opens only when the user selects the text field
     }
 
     @Override
     public boolean dispatchKeyEvent(android.view.KeyEvent e) {
+        int key = e.getKeyCode();
+        if (key == KeyEvent.KEYCODE_SEARCH || key == KeyEvent.KEYCODE_VOICE_ASSIST || key == KeyEvent.KEYCODE_ASSIST) {
+            if (e.getAction() == KeyEvent.ACTION_UP) voice();
+            return true;
+        }
         // Physical/Bluetooth keyboard: typing while focus is elsewhere goes straight into the field.
         if (input != null && !input.hasFocus() && e.getAction() == android.view.KeyEvent.ACTION_DOWN
                 && e.isPrintingKey() && e.getUnicodeChar() != 0) {
@@ -169,23 +185,29 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
     }
 
     private String routeNote() {
-        return "companion".equals(route())
-                ? "Answers come from @tcballard's Grok Bot Desktop Companion on your PC (omarchy-link)."
-                : "No PC companion linked: questions go to OmarchyTV's Ask.";
+        String destination = route();
+        if ("companion".equals(destination)) return "Answers come from " + botName + " through your PC companion (omarchy-link).";
+        if ("offline".equals(destination)) return botName + " needs the PC connection. Questions stay here until it reconnects.";
+        return "Questions go to OmarchyTV's Ask.";
     }
 
     private void send(String raw) {
         String q = raw == null ? "" : raw.trim();
         if (q.isEmpty()) return;
+        if (speech != null) stopVoice();
         if (q.length() > 240) q = q.substring(0, 240);
         input.setText("");
         line("You", q, true);
         if (launchByName(CompanionCommands.launchQuery(q))) return;
-        if ("companion".equals(route())) {
+        String destination = route();
+        if ("companion".equals(destination)) {
             pendingId = UUID.randomUUID().toString();
             line(botName, "…", false, false);
             mark.pose("think");
             OmarchyLink.grokbotAsk(pendingId, q, null);
+        } else if ("offline".equals(destination)) {
+            input.setText(q);
+            line("OmarchyTV", botName + " is offline. Reconnect the PC and send again.", false);
         } else {
             line("OmarchyTV", "Opening Ask with your question…", false);
             startActivity(new Intent(this, AskActivity.class).putExtra("cmd", q));
@@ -193,24 +215,89 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
     }
 
     private void voice() {
+        if (!resumed || isFinishing()) return;
+        if (speech != null) {
+            stopVoice();
+            return;
+        }
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.RECORD_AUDIO}, REQ_VOICE);
+            return;
+        }
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            line("OmarchyTV", "No speech recognizer on this TV. Type your question instead.", false);
+            return;
+        }
         Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE, MainActivity.speechLanguage(this))
+                .putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName())
                 .putExtra(RecognizerIntent.EXTRA_PROMPT, "Ask " + botName);
         try {
-            startActivityForResult(i, REQ_VOICE);
-        } catch (ActivityNotFoundException e) {
-            line("OmarchyTV", "No speech recognizer on this TV: type instead (the keyboard's own mic may work).", false);
-            input.requestFocus();
+            // Call the system service from our process. Some TV recognizer activities call their own
+            // service in-process, which Android 11 rejects in its calling-permission check.
+            SpeechRecognizer current = SpeechRecognizer.createSpeechRecognizer(this);
+            speech = current;
+            current.setRecognitionListener(new RecognitionListener() {
+                @Override public void onReadyForSpeech(Bundle params) {
+                    if (speech == current) mic.setText("Listening… OK to cancel");
+                }
+                @Override public void onBeginningOfSpeech() { }
+                @Override public void onRmsChanged(float rmsdB) { }
+                @Override public void onBufferReceived(byte[] buffer) { }
+                @Override public void onEndOfSpeech() {
+                    if (speech == current) mic.setText("Recognizing… OK to cancel");
+                }
+                @Override public void onError(int error) {
+                    if (speech != current) return;
+                    stopVoice();
+                    String message = error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS
+                            ? "Microphone access was denied. Check OmarchyTV's microphone permission."
+                            : error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
+                            ? "No speech heard. Press Speak to try again."
+                            : "Speech recognition failed (" + error + "). Press Speak to try again.";
+                    line("OmarchyTV", message, false);
+                }
+                @Override public void onResults(Bundle results) {
+                    if (speech != current) return;
+                    List<String> words = results == null ? null : results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                    stopVoice();
+                    if (!resumed) return;
+                    if (words != null && !words.isEmpty() && words.get(0) != null && !words.get(0).trim().isEmpty()) send(words.get(0));
+                    else line("OmarchyTV", "No speech heard. Press Speak to try again.", false);
+                }
+                @Override public void onPartialResults(Bundle results) { }
+                @Override public void onEvent(int type, Bundle params) { }
+            });
+            mic.setText("Starting microphone… OK to cancel");
+            mic.postDelayed(speechTimeout, 30_000);
+            current.startListening(i);
+        } catch (RuntimeException e) {
+            stopVoice();
+            line("OmarchyTV", "Could not start speech recognition. Type your question instead.", false);
         }
     }
 
+    private void stopVoice() {
+        mic.removeCallbacks(speechTimeout);
+        SpeechRecognizer current = speech;
+        speech = null; // Ignore callbacks caused by cancellation or destruction.
+        if (current != null) {
+            try { current.cancel(); } finally { current.destroy(); }
+        }
+        mic.setText("🎤 Speak");
+    }
+
     @Override
-    protected void onActivityResult(int req, int res, Intent data) {
-        super.onActivityResult(req, res, data);
-        if (req != REQ_VOICE || res != RESULT_OK || data == null) return;
-        List<String> r = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
-        if (r != null && !r.isEmpty()) send(r.get(0));
+    public void onRequestPermissionsResult(int request, String[] permissions, int[] grants) {
+        super.onRequestPermissionsResult(request, permissions, grants);
+        if (request != REQ_VOICE) return;
+        if (grants.length > 0 && grants[0] == PackageManager.PERMISSION_GRANTED) {
+            if (resumed) mic.post(this::voice);
+            else voiceOnResume = true;
+        } else {
+            line("OmarchyTV", "Microphone access was not allowed. You can still type your question.", false);
+        }
     }
 
     @Override
@@ -243,16 +330,29 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
     @Override
     protected void onResume() {
         super.onResume();
+        resumed = true;
         visible = true;
         markRead(this, LauncherConfig.get(this));
         OmarchyLink.addListener(this);
+        if (voiceOnResume) {
+            voiceOnResume = false;
+            mic.post(this::voice);
+        }
     }
 
     @Override
     protected void onPause() {
+        resumed = false;
         visible = false;
+        stopVoice();
         OmarchyLink.removeListener(this);
         super.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        stopVoice();
+        super.onDestroy();
     }
 
     private void line(String who, String msg, boolean me) {

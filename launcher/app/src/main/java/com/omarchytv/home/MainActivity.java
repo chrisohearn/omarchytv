@@ -1984,7 +1984,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         if (companion != null) companion.setArmed(false);
         // v2.13.8 "Grok Bot diretto": with no PC companion linked and a webhook routine set, the TV asks Grok Bot
         // itself (GrokbotDirectActivity). The PC companion chat is unchanged and still wins when the PC is linked.
-        if (!"ask".equals(LauncherConfig.get(this).companionAgent) && !OmarchyLink.hasPc() && GrokbotDirectActivity.enabled(this)) {
+        LauncherConfig cfg = LauncherConfig.get(this);
+        boolean namedPcCompanion = cfg.grokbotBotName != null && !cfg.grokbotBotName.isEmpty();
+        if (!"ask".equals(cfg.companionAgent) && !namedPcCompanion && !OmarchyLink.hasPc() && GrokbotDirectActivity.enabled(this)) {
             open(new Intent(this, GrokbotDirectActivity.class).putExtra("voice", voice));
             return;
         }

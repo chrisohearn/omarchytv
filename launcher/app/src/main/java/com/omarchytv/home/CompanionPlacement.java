@@ -84,7 +84,8 @@ final class CompanionPlacement {
 
     /** "companion" = to @tcballard's companion on the PC through omarchy-link; "ask" = OmarchyTV's own Ask. */
     static String route(String mirroredBotName, boolean pcConnected, boolean bridgeOn) {
-        return bridgeOn && pcConnected && mirroredBotName != null && !mirroredBotName.isEmpty() ? "companion" : "ask";
+        if (!bridgeOn || mirroredBotName == null || mirroredBotName.isEmpty()) return "ask";
+        return pcConnected ? "companion" : "offline";
     }
 
     /** The home "companion · ask" tile: only when the floating companion is off, so there is one companion. */
