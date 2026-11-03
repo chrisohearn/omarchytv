@@ -6,6 +6,10 @@ Run these checks from `launcher/` with JDK 17 and `ANDROID_HOME` pointing to an 
 ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
+For a second version on the same date, add `-PbuildRevision=1`; use
+`-PbuildRevision=2` for the next version. Select the revision under the
+[dated-version rule](../PROJECT.md#delivery-expectation).
+
 `HomeUiTest` renders the actual Android home views with Robolectric native graphics at 1920×1080. It uses bundled wallpaper and synthetic app, weather, and usage data. It does not start launcher services, call a network API, or launch another app.
 
 The tests write PNGs to `launcher/app/build/ui-evidence/`:
