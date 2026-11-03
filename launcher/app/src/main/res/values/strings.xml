@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="ctx_show_home">Show on Home</string>
+    <string name="ctx_hide_home">Hide from Home</string>
     <string name="app_name">OmarchyTV</string>
     <string name="brand" translatable="false">OmarchyTV</string>
     <string name="brand_short" translatable="false">[otv]</string>
@@ -317,9 +319,9 @@
     <string name="v29_set_omarchy">OmarchyTV settings</string>
     <string name="v29_set_network">Network &amp; internet</string>
     <string name="v29_set_input">Inputs</string>
-    <string name="v210_tv_hints">OK watch TV · ▲ bar · long OK: Walker</string>
-    <string name="v210_app_hints">OK open · ▲ bar · long OK: Move / Hide</string>
-    <string name="v210_grid_hints">OK open · long OK: Move / Hide · 1-%1$d workspaces</string>
+    <string name="v210_tv_hints">OK watch TV · long OK: Walker</string>
+    <string name="v210_app_hints">OK open · long OK: Move / Hide</string>
+    <string name="v210_grid_hints">OK open · long OK: Home / Info · 1-%1$d workspaces</string>
     <string name="v210_pc_link">Connect Omarchy Linux</string>
     <string name="v210_pc_link_hint">Pair the PC to see its status, AI credits and deploys here.</string>
     <string name="v210_pc_pair">pair</string>
@@ -415,4 +417,12 @@
     <string name="keys_none">No supported remote connected.</string>
     <string name="keys_default">Unbound: %1$s</string>
     <string name="wp_loop">Always-animated wallpaper</string>
+
+    <string name="t3_widget">T3 Code</string>
+    <string name="t3_empty">No active threads</string>
+    <string name="t3_unavailable">Status unavailable</string>
+    <string name="t3_working">Working</string>
+    <string name="t3_queued">Queued</string>
+    <string name="t3_details">OK: thread details</string>
+    <string name="t3_detail_hint">◀ ▶ threads   back close</string>
 </resources>

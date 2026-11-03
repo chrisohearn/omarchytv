@@ -25,7 +25,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
-import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.json.JSONArray;
@@ -40,9 +40,8 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * v2.9 home (spec "Omarchy TV", §3): Waybar top bar, fastfetch mini terminal, btop-style widgets, empty centre
- * for the wallpaper, bottom app window with 16:9 banner tiles. All sizes are the spec's px at 1080p scaled by
- * screen height / 1080 (same proportions at 4K). Every colour comes from the colors.toml keys in {@link Theme}.
+ * Waybar, fastfetch and btop-style widgets above app artwork. Geometry scales from
+ * 1920×1080 to 4K. The selected theme supplies hues and accents; home surfaces stay dark.
  */
 final class HomeV29 extends FrameLayout {
 
@@ -54,13 +53,13 @@ final class HomeV29 extends FrameLayout {
         void openWalker();
         void weatherMenu(View anchor);
         void aiMenu(View anchor);
-        void launchApp(int position);
+        void launchApp(AppAdapter source, int position);
         String wifiName();
         // v2.10
         void wifiClick();
         void openBluetooth();
         void openTv();
-        void tileMenu(int appPos, View anchor);
+        void tileMenu(AppAdapter source, int appPos, View anchor);
         void moveApp(int from, int to);
         void finishMove(boolean save);
         List<Source> sources();
@@ -96,6 +95,7 @@ final class HomeV29 extends FrameLayout {
     // bar
     private final FrameLayout bar;
     private final TextView clock;
+    private final TextView buildStamp;
     private final TextView[] ws = new TextView[5];
     private final View menuBtn;
     private final List<View> barIcons = new ArrayList<>();
@@ -106,8 +106,12 @@ final class HomeV29 extends FrameLayout {
     private final TextView termInfo, termLogo, termPrompt;
     // widgets
     private final LinearLayout widgets;
-    private final BoxView wxBox, pcBox, depBox;
+    private final BoxView wxBox, pcBox, depBox, t3Box;
     private final LinearLayout pcBody, aiBody, depBody;
+    private final LinearLayout t3Body;
+    private final int t3RowHeight;
+    private com.omarchytv.home.link.Agents t3Agents = new com.omarchytv.home.link.Agents();
+    private boolean t3Connected;
     /** Up to 3 panes the TV fetches itself (RemotePanes), in their own row under the widgets. */
     private final LinearLayout remoteRow;
     private final BoxView[] remoteBox = new BoxView[3];
@@ -124,9 +128,11 @@ final class HomeV29 extends FrameLayout {
     // apps
     private final BoxView appWin;
     private final TextView appName, appHints;
+    private final LinearLayout appHead;
     final RecyclerView row;
     private final TileAdapter rowAdapter;
     private AppAdapter apps;
+    private AppAdapter catalog;
     /** Adapter position in the home row (0 = TV tile). */
     int lastApp;
     // v2.10 workspaces 2-5
@@ -155,9 +161,9 @@ final class HomeV29 extends FrameLayout {
         tfBold = Typeface.create(tf, Typeface.BOLD);
         setClipChildren(false);
 
-        // ---- 3.1 bar: 52 px, padding 32, three equal columns ----
+        // ---- Waybar: couch-readable targets, square focus marks ----
         bar = new FrameLayout(a);
-        addView(bar, new LayoutParams(-1, px(52)));
+        addView(bar, new LayoutParams(-1, px(64)));
         LinearLayout left = hbox();
         left.setPadding(px(32), 0, 0, 0);
         bar.addView(left, new LayoutParams(-2, -1, Gravity.START));
@@ -166,29 +172,33 @@ final class HomeV29 extends FrameLayout {
         menuBtn.setOnClickListener(v -> host.openSettings(v));
         for (int i = 0; i < 5; i++) {
             final int n = i + 1;
-            TextView w = text(String.valueOf(n), 20, false);
+            TextView w = text(String.valueOf(n), 24, true);
             w.setGravity(Gravity.CENTER);
             w.setFocusable(true);
-            w.setPadding(px(10), 0, px(10), 0);
+            w.setPadding(px(14), 0, px(14), 0);
             w.setOnClickListener(v -> host.showWorkspace(cfg != null ? cfg.workspaceAt(n) : n));   // n = bar position
             w.setBackground(new Underline());
             ws[i] = w;
             left.addView(w, new LinearLayout.LayoutParams(-2, -1));
         }
-        clock = text("", 22, false);
+        buildStamp = text(a.getString(R.string.build_stamp), 16, false);
+        buildStamp.setGravity(Gravity.CENTER_VERTICAL);
+        buildStamp.setPadding(px(12), 0, 0, 0);
+        left.addView(buildStamp, new LinearLayout.LayoutParams(-2, -1));
+        clock = text("", 26, true);
         bar.addView(clock, new LayoutParams(-2, -2, Gravity.CENTER));
         LinearLayout right = hbox();
         right.setPadding(0, 0, px(32) - px(13), 0);
         bar.addView(right, new LayoutParams(-2, -1, Gravity.END));
-        barSpacex = text("🚀 SpaceX TV", 18, true);
+        barSpacex = text("🚀 SpaceX TV", 22, true);
         barSpacex.setFocusable(true);
         barSpacex.setClickable(true);
-        barSpacex.setGravity(Gravity.CENTER);   // same row as the icons: centred in a 44 px box like iconButton
+        barSpacex.setGravity(Gravity.CENTER);   // same row as the icons: centred in a 56 px box like iconButton
         barSpacex.setSingleLine(true);
         barSpacex.setPadding(px(12), 0, px(12), 0);
         barSpacex.setBackground(new Underline());
         barSpacex.setOnClickListener(v -> host.sys("spacex-tv"));
-        LinearLayout.LayoutParams sxl = new LinearLayout.LayoutParams(-2, px(44));
+        LinearLayout.LayoutParams sxl = new LinearLayout.LayoutParams(-2, px(56));
         sxl.gravity = Gravity.CENTER_VERTICAL;
         sxl.rightMargin = px(16);
         right.addView(barSpacex, sxl);
@@ -219,7 +229,7 @@ final class HomeV29 extends FrameLayout {
         });
         barIcons.get(4).setOnClickListener(host::showInputs);
         barIcons.get(5).setOnClickListener(host::screenPc);
-        tip = text("", 19, false);
+        tip = text("", 24, false);
         tip.setVisibility(GONE);
         tip.setPadding(px(14), px(8), px(14), px(8));
         tip.setElevation(20f);
@@ -229,18 +239,18 @@ final class HomeV29 extends FrameLayout {
             barIcons.get(i).setOnFocusChangeListener((v, f) -> showTip(f ? v : null, k));
         }
 
-        // ---- 3.2 fastfetch: x 32, y 76, w 640, padding 18×22 ----
+        // ---- Fastfetch: keep the wordmark and terminal prompt ----
         term = new BoxView(a, s, tf);
         LayoutParams tl = new LayoutParams(px(640), -2);
         tl.leftMargin = px(32);
-        tl.topMargin = px(76);
+        tl.topMargin = px(88);
         addView(term, tl);
-        termPrompt = text("", 20, false);
+        termPrompt = text("", 24, false);
         termLogo = text(logoText(), 8, false);
         termLogo.setLineSpacing(0, 1.15f);
         termLogo.setHorizontallyScrolling(true);
-        termInfo = text("", 20, false);
-        termInfo.setMaxLines(3);   // v2.10: one item per line (the single line was cut to "up" on the TV)
+        termInfo = text("", 24, false);
+        termInfo.setMaxLines(2);
         termInfo.setLineSpacing(px(4), 1f);
         term.addView(termPrompt);
         LinearLayout.LayoutParams ll = new LinearLayout.LayoutParams(-1, -2);
@@ -249,12 +259,12 @@ final class HomeV29 extends FrameLayout {
         term.addView(termLogo, ll);
         term.addView(termInfo);
 
-        // ---- 3.3 widgets: right 32, y 76, w 1120, 3 equal columns, gap 16 ----
+        // ---- Widgets: weather beside the AI/PC stack, with a shared 24 px gutter ----
         widgets = new LinearLayout(a);
         widgets.setOrientation(LinearLayout.VERTICAL);
-        LayoutParams wl = new LayoutParams(px(1120), -2, Gravity.END | Gravity.TOP);
+        LayoutParams wl = new LayoutParams(px(1192), -2, Gravity.END | Gravity.TOP);
         wl.rightMargin = px(32);
-        wl.topMargin = px(76);
+        wl.topMargin = px(88);
         addView(widgets, wl);
         LinearLayout r1 = hbox(), r2 = hbox();
         r1.setGravity(Gravity.TOP);
@@ -269,24 +279,33 @@ final class HomeV29 extends FrameLayout {
         r2l.topMargin = px(16);
         widgets.addView(r2, r2l);
         wxBox = widget(r1, act.getString(R.string.v29_weather), 0);
-        pcBox = widget(r1, "omarchy · pc", 16);
-        BoxView ai = widget(r1, "ai credits · pc", 16);
-        // Keep each top-row panel one column wide, (1120 - 2 x 16) / 3, even when its siblings are switched off.
-        // With weight 1 a lone panel (e.g. only the weather widget on) stretched across the whole 1120 px row.
+        LinearLayout statsColumn = vbox();
+        statsColumn.setClipChildren(false);
+        LinearLayout.LayoutParams statsLayout = new LinearLayout.LayoutParams(px(584), -2);
+        statsLayout.leftMargin = px(24);
+        r1.addView(statsColumn, statsLayout);
+        BoxView ai = widget(statsColumn, "ai credits · pc", 0);
+        pcBox = widget(statsColumn, "omarchy · pc", 0);
+        pcBox.setFocusable(false);
+        // Explicit widths keep a lone widget from stretching when other panels are hidden.
         for (View col : new View[]{wxBox, pcBox, ai}) {
             LinearLayout.LayoutParams cl = (LinearLayout.LayoutParams) col.getLayoutParams();
-            cl.width = px((1120 - 32) / 3f);
+            cl.width = px(584);
             cl.weight = 0f;
         }
-        r2.addView(new View(a), new LinearLayout.LayoutParams(0, 1, 2f));
-        View gap = new View(a);
-        r2.addView(gap, new LinearLayout.LayoutParams(px(32), 1));
+        ((LinearLayout.LayoutParams) pcBox.getLayoutParams()).topMargin = px(16);
+        wxBox.setMinimumHeight(px(208));
+        ai.setMinimumHeight(px(208));
+        r2.setGravity(Gravity.END);
         depBox = widget(r2, "deploys · pc", 0);
-        ((LinearLayout.LayoutParams) depBox.getLayoutParams()).weight = 1f;
-        // 2 columns + 1 gap left of the third column: weights 2 : 1 with a 32 px spacer ≈ 3 equal columns, 16 gaps
+        depBox.setFocusable(false);
+        ((LinearLayout.LayoutParams) depBox.getLayoutParams()).width = px(584);
+        ((LinearLayout.LayoutParams) depBox.getLayoutParams()).weight = 0f;
         this.aiBoxRef = ai;
-        wxTemp = text("", 50, false);
+        wxTemp = text("", 50, true);
         wxLine1 = line("");
+        wxLine1.setSingleLine(false);
+        wxLine1.setMaxLines(2);
         wxLine2 = line("");
         wxBox.addView(wxTemp);
         wxBox.addView(wxLine1);
@@ -314,29 +333,58 @@ final class HomeV29 extends FrameLayout {
         wxBox.setOnClickListener(host::weatherMenu);
         ai.setOnClickListener(host::aiMenu);
 
+        t3Box = new BoxView(a, s, tf);
+        t3Box.setLegend("t3 code", px(14), px(18));
+        t3RowHeight = 2 * text("", 24, false).getLineHeight() + px(12);
+        t3Box.focusBorder = true;
+        t3Box.setFocusable(true);
+        t3Box.setClickable(true);
+        t3Box.setOnClickListener(v -> host.sys("t3-code"));
+        t3Body = vbox();
+        t3Box.addView(t3Body);
+        LayoutParams t3l = new LayoutParams(px(640), -2);
+        t3l.leftMargin = px(32);
+        t3l.topMargin = px(360);
+        addView(t3Box, t3l);
+        t3Box.setVisibility(GONE);
+        t3Box.addOnLayoutChangeListener((v, l, top, r, bottom, ol, ot, or, ob) -> {
+            if (bottom - top != ob - ot && cfg != null && editPanel == null) post(() -> applyPanelPos(cfg));
+        });
+        term.addOnLayoutChangeListener((v, l, top, r, bottom, ol, ot, or, ob) -> {
+            if (bottom != ob) post(this::renderT3);
+        });
+
         // ---- 3.4 app window: margins 32, padding 20×28 ----
         appWin = new BoxView(a, s, tf);
         LayoutParams al = new LayoutParams(-1, -2, Gravity.BOTTOM);
         al.leftMargin = al.rightMargin = al.bottomMargin = px(32);
         addView(appWin, al);
-        appWin.setClipChildren(false);
-        appWin.setClipToPadding(false);
-        FrameLayout head = new FrameLayout(a);
-        appName = text("", 30, true);
+        appWin.setClipChildren(true);
+        LinearLayout head = appHead = hbox();
+        appName = text("", 32, true);
         appName.setSingleLine(true);
         appName.setEllipsize(TextUtils.TruncateAt.END);
-        head.addView(appName, new LayoutParams(-2, -2, Gravity.START | Gravity.CENTER_VERTICAL));
-        appHints = text("", 18, false);
-        head.addView(appHints, new LayoutParams(-2, -2, Gravity.END | Gravity.CENTER_VERTICAL));
+        appName.setPadding(0, 0, px(24), 0);
+        head.addView(appName, new LinearLayout.LayoutParams(0, -2, 1f));
+        appHints = text("", 22, false);
+        appHints.setSingleLine(true);
+        head.addView(appHints, new LinearLayout.LayoutParams(-2, -2));
         appWin.addView(head, new LinearLayout.LayoutParams(-1, -2));
         row = new RecyclerView(a);
-        row.setClipChildren(false);
-        row.setClipToPadding(false);
+        row.setClipChildren(true);
+        row.setClipToPadding(true);
+        row.setPadding(px(10), px(10), px(10), px(10));
         row.setOverScrollMode(OVER_SCROLL_NEVER);
         row.setItemAnimator(null);
-        row.setLayoutManager(new LinearLayoutManager(a, LinearLayoutManager.HORIZONTAL, false));
+        row.setLayoutManager(new GridLayoutManager(a, rowCols(0)));
         rowAdapter = new TileAdapter(true, rowCols(0), row);   // bind() applies Layout → App size
         row.setAdapter(rowAdapter);
+        appWin.addOnLayoutChangeListener((v, l, top, r, bottom, oldL, oldTop, oldR, oldBottom) -> {
+            if (top != oldTop && cfg != null && editPanel == null) post(() -> {
+                renderT3();
+                applyPanelPos(cfg);
+            });
+        });
         LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(-1, -2);
         rl.topMargin = px(16);
         appWin.addView(row, rl);
@@ -371,20 +419,23 @@ final class HomeV29 extends FrameLayout {
         tvBody = vbox();
         tvWin.addView(tvBody, new LinearLayout.LayoutParams(-1, -2));
         appsWin = window("app");
-        FrameLayout gh = new FrameLayout(a);
-        gridName = text("", 30, true);
+        LinearLayout gh = hbox();
+        gridName = text("", 32, true);
         gridName.setSingleLine(true);
-        gh.addView(gridName, new LayoutParams(-2, -2, Gravity.START | Gravity.CENTER_VERTICAL));
-        gridHints = text("", 18, false);
-        gh.addView(gridHints, new LayoutParams(-2, -2, Gravity.END | Gravity.CENTER_VERTICAL));
+        gridName.setEllipsize(TextUtils.TruncateAt.END);
+        gridName.setPadding(0, 0, px(24), 0);
+        gh.addView(gridName, new LinearLayout.LayoutParams(0, -2, 1f));
+        gridHints = text("", 22, false);
+        gridHints.setSingleLine(true);
+        gh.addView(gridHints, new LinearLayout.LayoutParams(-2, -2));
         appsWin.addView(gh, new LinearLayout.LayoutParams(-1, -2));
         grid = new RecyclerView(a);
-        grid.setClipChildren(false);
-        grid.setClipToPadding(false);
+        grid.setClipChildren(true);
+        grid.setClipToPadding(true);
         grid.setPadding(px(8), px(12), px(8), px(12));
         grid.setOverScrollMode(OVER_SCROLL_NEVER);
         grid.setItemAnimator(null);
-        grid.setLayoutManager(new androidx.recyclerview.widget.GridLayoutManager(a, 7));
+        grid.setLayoutManager(new GridLayoutManager(a, 7));
         gridAdapter = new TileAdapter(false, 7, grid);
         grid.setAdapter(gridAdapter);
         LinearLayout.LayoutParams gl = new LinearLayout.LayoutParams(-1, 0, 1f);
@@ -407,7 +458,7 @@ final class HomeV29 extends FrameLayout {
         b.setClipToPadding(false);
         LayoutParams l = new LayoutParams(-1, -2);
         l.leftMargin = l.rightMargin = l.bottomMargin = px(32);
-        l.topMargin = px(76);
+        l.topMargin = px(88);
         b.setVisibility(GONE);
         addView(b, l);
         return b;
@@ -443,11 +494,12 @@ final class HomeV29 extends FrameLayout {
         tv.setTypeface(bold ? tfBold : tf);
         tv.setTextSize(TypedValue.COMPLEX_UNIT_PX, sizePx * s * big);
         tv.setIncludeFontPadding(false);
+        tv.setTextColor(ink(Theme.cur().fg));
         return tv;
     }
 
     private TextView line(String v) {
-        TextView tv = text(v, 19, false);
+        TextView tv = text(v, 24, false);
         tv.setSingleLine(true);
         tv.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(-1, -2);
@@ -458,7 +510,7 @@ final class HomeV29 extends FrameLayout {
 
     private BoxView widget(LinearLayout parent, String title, int gapLeft) {
         BoxView b = new BoxView(act, s, tf);
-        b.setLegend(title, px(14), px(18));
+        b.setLegend(title, px(18), px(20));
         b.setFocusable(true);
         b.focusBorder = true;
         LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(0, -2, 1f);
@@ -474,7 +526,7 @@ final class HomeV29 extends FrameLayout {
         ImageView iv = new ImageView(act);
         iv.setImageResource(res);
         f.addView(iv, new LayoutParams(px(iconPx), px(iconPx), Gravity.CENTER));
-        f.setLayoutParams(new LinearLayout.LayoutParams(px(boxPx), px(44)));
+        f.setLayoutParams(new LinearLayout.LayoutParams(px(boxPx), px(56)));
         f.setBackground(new Underline());
         return f;
     }
@@ -489,9 +541,11 @@ final class HomeV29 extends FrameLayout {
             boolean on = false;
             for (int x : st) if (x == android.R.attr.state_focused) on = true;
             if (!on) return;
-            p.setColor(t != null ? t.accent : Color.WHITE);
             android.graphics.Rect b = getBounds();
-            c.drawRect(b.left + px(4), b.bottom - px(3), b.right - px(4), b.bottom, p);
+            p.setColor(Theme.withAlpha(t != null ? t.fg : Color.WHITE, 0.16f));
+            c.drawRect(b, p);
+            p.setColor(t != null ? ink(t.accent) : Color.WHITE);
+            c.drawRect(b.left + px(4), b.bottom - px(5), b.right - px(4), b.bottom, p);
         }
 
         @Override
@@ -537,8 +591,7 @@ final class HomeV29 extends FrameLayout {
         }
     }
 
-    // ---- alpha rules (spec §2): windows = opacity, bar = +0.10 (max 0.95), tiles = −0.15 (min 0.30); no blur
-    // below Android 12 → +0.10 everywhere. ----
+    // User opacity is the starting point; text windows raise it only as far as contrast requires.
 
     static float opacity(LauncherConfig c) {
         return 1f - Math.max(5, Math.min(60, c.transparency)) / 100f;
@@ -555,27 +608,28 @@ final class HomeV29 extends FrameLayout {
         cfg = c;
         t = Theme.cur();
         this.apps = apps;
-        float op = opacity(c), nb = noBlur();
-        int winBg = Theme.withAlpha(t.bg, Math.min(0.98f, op + nb));
-        bar.setBackgroundColor(Theme.withAlpha(t.bg, Math.min(0.95f, op + 0.10f) + nb > 0.98f ? 0.98f : Math.min(0.95f, op + 0.10f) + nb));
-        clock.setTextColor(t.fgBright);
+        catalog = apps.fullCatalog();
+        int winBg = windowBackground();
+        bar.setBackgroundColor(winBg);
+        clock.setTextColor(ink(t.fgBright));
+        buildStamp.setTextColor(ink(t.fgDim));
         for (int i = 0; i < 5; i++) {
             boolean on = c.workspaceAt(i + 1) == activeWs;
-            ws[i].setTextColor(on ? t.accent : t.fg);
+            ws[i].setTextColor(ink(on ? t.accent : t.fg));
             ws[i].setTypeface(on ? tfBold : tf);
             ws[i].setPaintFlags(on ? ws[i].getPaintFlags() | Paint.UNDERLINE_TEXT_FLAG : ws[i].getPaintFlags() & ~Paint.UNDERLINE_TEXT_FLAG);
             ws[i].setVisibility(c.workspaceAt(i + 1) > 0 ? VISIBLE : GONE);
             ws[i].setText(c.workspaceNamesInBar && c.workspaceAt(i + 1) > 0 ? c.workspaceName(c.workspaceAt(i + 1)) : String.valueOf(i + 1));
         }
-        tint(menuBtn, t.fgBright);
-        for (View b : barIcons) tint(b, t.fgBright);
-        tip.setBackgroundColor(Theme.withAlpha(t.bg, 0.98f));
-        tip.setTextColor(t.fgBright);
-        for (BoxView b : new BoxView[]{term, wxBox, pcBox, aiBoxRef, depBox, appWin, tvWin, appsWin, pcWin, sysWin, grokbotBox}) b.setColors(winBg, t.muted, t.accent, t.cyan);
-        barSpacex.setTextColor(t.accent2);
+        tint(menuBtn, ink(t.fgBright));
+        for (View b : barIcons) tint(b, ink(t.fgBright));
+        tip.setBackgroundColor(Theme.withAlpha(darkSurface(t.bg), 1f));
+        tip.setTextColor(ink(t.fgBright));
+        for (BoxView b : new BoxView[]{term, wxBox, pcBox, aiBoxRef, depBox, t3Box, appWin, tvWin, appsWin, pcWin, sysWin, grokbotBox}) b.setColors(winBg, t.muted, ink(t.accent), ink(t.cyan));
+        barSpacex.setTextColor(ink(t.accent2));
         barSpacex.setVisibility(c.pluginSpacexTv ? VISIBLE : GONE);
-        grokbotEyes.setTextColor(t.accent);
-        grokbotText.setTextColor(t.fgBright);
+        grokbotEyes.setTextColor(ink(t.accent));
+        grokbotText.setTextColor(ink(t.fgBright));
         boolean mirrored = c.grokbotBotName != null && !c.grokbotBotName.isEmpty();
         grokbotMark.setVisibility(VISIBLE);   // v2.13: Grok Bot's ball when nothing is mirrored
         grokbotEyes.setVisibility(GONE);
@@ -585,15 +639,15 @@ final class HomeV29 extends FrameLayout {
                 : gbMsg != null ? " " + gbMsg : " companion · ask");
         // The floating face is the one companion: this "companion · ask" tile only stands in when it is off.
         grokbotBox.setVisibility(activeWs == 1 && CompanionPlacement.homeTile(c.pluginGrokbot, c.companionOverlay) ? VISIBLE : GONE);
-        for (BoxView b : remoteBox) b.setColors(winBg, t.muted, t.accent, t.cyan);
+        for (BoxView b : remoteBox) b.setColors(winBg, t.muted, ink(t.accent), ink(t.cyan));
         // v2.10: every home widget can be switched off (Settings → Widgets); the clock lives only in the bar.
         wxBox.setVisibility(c.wWeather ? VISIBLE : GONE);
         pcBox.setVisibility(c.wPc ? VISIBLE : GONE);
         aiBoxRef.setVisibility(c.wAi ? VISIBLE : GONE);
         term.setVisibility(activeWs == 1 && c.wTerm ? VISIBLE : GONE);
         if (editPanel == null) post(() -> applyPanelPos(c));
-        gridName.setTextColor(t.accent);
-        gridHints.setTextColor(t.fg);
+        gridName.setTextColor(ink(t.accent));
+        gridHints.setTextColor(ink(t.fg));
         gridHints.setText(gridHintsText());
         term.setLegend(null, px(18), px(22));
         appWin.setLegend(null, px(20), px(28));
@@ -605,18 +659,22 @@ final class HomeV29 extends FrameLayout {
         span(p, "$ ", t.fg);
         int cs = p.length();
         p.append("█");
-        cursorSpan = new ForegroundColorSpan(t.fg);
+        cursorSpan = new ForegroundColorSpan(ink(t.fg));
         p.setSpan(cursorSpan, cs, p.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         promptText = p;
         termPrompt.setText(p, TextView.BufferType.SPANNABLE);
-        termLogo.setTextColor(t.accent);
-        appName.setTextColor(t.accent);
-        appHints.setTextColor(t.fg);
+        termLogo.setTextColor(ink(t.accent));
+        appName.setTextColor(ink(t.accent));
+        appHints.setTextColor(ink(t.fg));
         updateRowHeader();
         rowAdapter.cols = rowCols(c.columns);
-        // grokbot sits just above the app window: follow its height (296 px fits the 6-per-row tiles)
+        ((GridLayoutManager) row.getLayoutManager()).setSpanCount(rowAdapter.cols);
+        int rows = Math.min(2, Math.max(1, (rowAdapter.getItemCount() + rowAdapter.cols - 1) / rowAdapter.cols));
+        LinearLayout.LayoutParams rowLayout = (LinearLayout.LayoutParams) row.getLayoutParams();
+        rowLayout.height = rows * (rowAdapter.tileH(rowAdapter.cols) + px(20)) + row.getPaddingTop() + row.getPaddingBottom();
+        row.setLayoutParams(rowLayout);
         LayoutParams gbl = (LayoutParams) grokbotBox.getLayoutParams();
-        gbl.bottomMargin = px(296) + rowAdapter.tileH(rowAdapter.cols) - rowAdapter.tileH(6);
+        gbl.bottomMargin = rowLayout.height + px(140);
         grokbotBox.setLayoutParams(gbl);
         rowAdapter.notifyDataSetChanged();
         gridAdapter.notifyDataSetChanged();
@@ -624,15 +682,46 @@ final class HomeV29 extends FrameLayout {
         buildWorkspace();
     }
 
+    /** Home stays dark while keeping the selected theme's hue and accents. */
+    private int darkSurface(int color) {
+        return Surfaces.luminance(color) > 0.18 ? Theme.mix(color, Color.BLACK, 0.90f) : color;
+    }
+
+    private int ink(int color) {
+        return ink(color, darkSurface((t != null ? t : Theme.cur()).bg));
+    }
+
+    /** Contrast belongs to the surface being drawn, which may differ in a partial custom palette. */
+    private int ink(int color, int background) {
+        Theme theme = t != null ? t : Theme.cur();
+        int fallback = Surfaces.luminance(background) > 0.179 ? Color.BLACK : Color.WHITE;
+        int foreground = Theme.readable(theme.fg, fallback, background);
+        int readable = Theme.readable(color, foreground, background);
+        for (int i = 0; i <= 20; i++) {
+            int candidate = Theme.mix(readable, fallback, i / 20f);
+            if (Surfaces.contrast(Surfaces.luminance(candidate), Surfaces.luminance(background)) >= 7) return candidate;
+        }
+        return fallback;
+    }
+
+    private int tileBackground() { return darkSurface(t.bgLight); }
+
+    private int windowBackground() {
+        int background = darkSurface(t.bg);
+        float alpha = Surfaces.wallpaperAlpha(background, Math.max(0.90f, opacity(cfg) + noBlur()),
+                ink(t.fg), ink(t.fgBright), ink(t.accent), ink(t.accent2), ink(t.cyan), ink(t.green), ink(t.red), ink(t.yellow));
+        return Theme.withAlpha(background, alpha);
+    }
+
     private static void tint(View b, int color) {
         View iv = ((ViewGroup) b).getChildAt(0);
         if (iv instanceof ImageView) ((ImageView) iv).setColorFilter(color);
     }
 
-    private static void span(SpannableStringBuilder b, String s, int color) {
+    private void span(SpannableStringBuilder b, String s, int color) {
         int st = b.length();
         b.append(s);
-        b.setSpan(new ForegroundColorSpan(color), st, b.length(), 0);
+        b.setSpan(new ForegroundColorSpan(ink(color)), st, b.length(), 0);
     }
 
     /** Clock, fastfetch line, widgets; cheap (in-memory reads + small cached files). */
@@ -647,7 +736,7 @@ final class HomeV29 extends FrameLayout {
         span(info, act.getString(R.string.v29_theme) + " ", t.accent);
         span(info, t.name + "\n", t.fg);
         span(info, act.getString(R.string.v29_net) + " ", t.accent);
-        span(info, host.wifiName() + "\n", t.fg);
+        span(info, host.wifiName() + "  ·  ", t.fg);
         span(info, act.getString(R.string.v29_up) + " ", t.accent);
         span(info, (up / 60 > 0 ? (up / 60) + " h " : "") + (up % 60) + " min", t.fg);
         termInfo.setText(info);
@@ -655,7 +744,66 @@ final class HomeV29 extends FrameLayout {
         updatePc(pcBody, depBody, depBox, cfg.wDeploys);
         updateAi(aiBody);
         updateRemote();
+        JSONObject liveAgents = OmarchyLink.agents();
+        updateT3(liveAgents != null ? liveAgents : LauncherConfig.get(act).agentsData, OmarchyLink.connected());
         if (activeWs == 4) buildWorkspace();
+    }
+
+    /** One snapshot feeds the Home summary and the existing read-only agent details. */
+    void updateT3(JSONObject snapshot, boolean connected) {
+        t3Agents = com.omarchytv.home.link.Agents.parse(snapshot);
+        t3Connected = connected;
+        renderT3();
+    }
+
+    private void renderT3() {
+        if (cfg == null) return;
+        List<com.omarchytv.home.link.Agents.Agent> threads = new ArrayList<>();
+        for (com.omarchytv.home.link.Agents.Agent g : t3Agents.list) {
+            if ("t3-code".equals(g.agent) && (g.title.isEmpty() || "running".equals(g.status)
+                    || "thinking".equals(g.status) || "waiting".equals(g.status))) threads.add(g);
+        }
+        int top = term.isShown() && term.getBottom() > 0 ? term.getBottom() + px(24) : px(cfg.wTerm ? 360 : 88);
+        int bottom = appWin.getTop() > 0 ? appWin.getTop() - px(24) : px(740);
+        int slots = Math.min(3, Math.max(0,
+                (bottom - top - t3Box.getPaddingTop() - t3Box.getPaddingBottom() + px(12)) / t3RowHeight));
+        boolean show = activeWs == 1 && cfg.wT3 && t3Agents.enabled && !threads.isEmpty() && slots > 0;
+        if (!show && t3Box.hasFocus()) focusApp(lastApp);
+        t3Box.setVisibility(show ? VISIBLE : GONE);
+        if (!show) return;
+        LayoutParams lp = (LayoutParams) t3Box.getLayoutParams();
+        if (lp.topMargin != top) { lp.topMargin = top; t3Box.setLayoutParams(lp); }
+        t3Body.removeAllViews();
+        long active = threads.stream().filter(g -> !g.title.isEmpty()).count();
+        long received = t3Agents.rx > 0 ? t3Agents.rx : com.omarchytv.home.link.Agents.isoMs(t3Agents.at);
+        boolean stale = received <= 0 || System.currentTimeMillis() - received > 90000;
+        t3Box.setLegend("t3 code" + (active > 0 && t3Connected && !stale ? " · " + active + " · OK" : ""), px(14), px(18));
+        if (!t3Connected || stale) {
+            TextView off = line(act.getString(t3Connected ? R.string.t3_unavailable : R.string.link_offline));
+            off.setTextColor(ink(t.fg));
+            t3Body.addView(off);
+        } else {
+            for (int i = 0; i < Math.min(slots, threads.size()); i++) {
+                com.omarchytv.home.link.Agents.Agent g = threads.get(i);
+                TextView title = text(g.title.isEmpty() ? act.getString("idle".equals(g.status) ? R.string.t3_empty : R.string.t3_unavailable) : g.title, 24, true);
+                title.setTextColor(ink(t.fgBright));
+                title.setSingleLine(true);
+                title.setEllipsize(TextUtils.TruncateAt.END);
+                LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(-1, -2);
+                tl.topMargin = px(i == 0 ? 0 : 12);
+                t3Body.addView(title, tl);
+                if (!g.title.isEmpty()) {
+                    String state = "running".equals(g.status) ? act.getString(R.string.t3_working)
+                            : "thinking".equals(g.status) ? act.getString(R.string.t3_queued) : AgentUi.word(act, g.status);
+                    TextView status = text((g.project.isEmpty() ? "" : g.project + " · ") + state, 24, false);
+                    status.setTextColor(ink(AgentUi.color(g.status)));
+                    status.setSingleLine(true);
+                    status.setEllipsize(TextUtils.TruncateAt.END);
+                    t3Body.addView(status);
+                }
+            }
+        }
+        t3Box.setContentDescription(act.getString(R.string.t3_widget) + ", " + active + ", " + act.getString(R.string.t3_details));
     }
 
     /** Fetched panes (RemotePanes): "label … value" rows, value green/red by tone; dim after ttl, gone after 2 x ttl. */
@@ -680,13 +828,13 @@ final class HomeV29 extends FrameLayout {
                 if (l == null) continue;
                 LinearLayout r = hbox();
                 TextView n = text(l.optString("label"), REMOTE_TEXT, false);
-                n.setTextColor(t.fg);
+                n.setTextColor(ink(t.fg));
                 n.setSingleLine(true);
                 n.setEllipsize(TextUtils.TruncateAt.END);
                 r.addView(n, new LinearLayout.LayoutParams(0, -2, 1f));
                 String tone = l.optString("tone");
                 TextView v = text(l.optString("value"), REMOTE_TEXT, false);
-                v.setTextColor("up".equals(tone) ? t.green : "down".equals(tone) ? t.red : t.fgBright);
+                v.setTextColor(ink("up".equals(tone) ? t.green : "down".equals(tone) ? t.red : t.fgBright));
                 v.setSingleLine(true);
                 LinearLayout.LayoutParams vl = new LinearLayout.LayoutParams(-2, -2);
                 vl.leftMargin = px(12);
@@ -710,20 +858,20 @@ final class HomeV29 extends FrameLayout {
         }
     }
 
-    /** Fetched panes are read from across the room: larger than the 19 px widget text. */
+    /** Fetched panes share the home widgets’ couch-readable type size. */
     private static final float REMOTE_TEXT = 24;
 
     private void updateWeather() {
-        wxTemp.setTextColor(t.accent);
-        wxLine1.setTextColor(t.fg);
-        wxLine2.setTextColor(t.fg);
+        wxTemp.setTextColor(ink(t.accent));
+        wxLine1.setTextColor(ink(t.fg));
+        wxLine2.setTextColor(ink(t.fg));
         JSONObject w = Weather.cached(act);
         JSONObject cur = w != null ? w.optJSONObject("current") : null;
         barWx.setVisibility(cfg.barWeather && cur != null ? VISIBLE : GONE);
         if (cfg.barWeather && cur != null) {
             barWxIcon.setImageResource(Weather.icon(cur.optInt("weather_code")));
-            barWxIcon.setColorFilter(t.fgBright);
-            barWxTemp.setTextColor(t.fgBright);
+            barWxIcon.setColorFilter(ink(t.fgBright));
+            barWxTemp.setTextColor(ink(t.fgBright));
             barWxTemp.setText(Weather.temp(cur.optDouble("temperature_2m"), cfg.tempF) + (cfg.tempF ? "°F" : "°"));
             barWx.setContentDescription(act.getString(Weather.describe(cur.optInt("weather_code"))));
         }
@@ -736,7 +884,7 @@ final class HomeV29 extends FrameLayout {
         wxTemp.setText(Weather.temp(cur.optDouble("temperature_2m"), cfg.tempF) + (cfg.tempF ? "°F" : "°"));
         String place = Weather.place(act, cfg);
         String cond = act.getString(Weather.describe(cur.optInt("weather_code"))).toLowerCase(Locale.getDefault());
-        wxLine1.setText(place.isEmpty() ? cond : place + " · " + cond);
+        wxLine1.setText(place.isEmpty() ? cond : place + "\n" + cond);
         JSONObject daily = w.optJSONObject("daily");
         JSONArray mn = daily != null ? daily.optJSONArray("temperature_2m_min") : null, mx = daily != null ? daily.optJSONArray("temperature_2m_max") : null;
         wxLine2.setText(mn != null && mx != null ? "min " + Weather.temp(mn.optDouble(0), cfg.tempF) + "° · max " + Weather.temp(mx.optDouble(0), cfg.tempF) + "°" : "");
@@ -744,7 +892,7 @@ final class HomeV29 extends FrameLayout {
 
     private TextView offline() {
         TextView v = line(act.getString(R.string.v29_pc_off));
-        v.setTextColor(t.fg);
+        v.setTextColor(ink(t.fg));
         return v;
     }
 
@@ -754,19 +902,19 @@ final class HomeV29 extends FrameLayout {
         LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(-1, -2);
         l.topMargin = px(6);
         r.setLayoutParams(l);
-        TextView a = text(label, 19, false);
-        a.setTextColor(t.fg);
+        TextView a = text(label, 24, false);
+        a.setTextColor(ink(t.fg));
         a.setSingleLine(true);
         a.setEllipsize(TextUtils.TruncateAt.END);
         float cw = a.getPaint().measureText("M");
         r.addView(a, new LinearLayout.LayoutParams(Math.round(cw * labelCols), -2));
-        BarView b = new BarView(act, t.selection, fill, frac);
+        BarView b = new BarView(act, darkSurface(t.selection), fill, frac);
         LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(0, px(barH), 1f);
         bl.leftMargin = px(8);
         bl.rightMargin = px(10);
         r.addView(b, bl);
-        TextView pct = text(right, 19, false);
-        pct.setTextColor(t.fg);
+        TextView pct = text(right, 24, true);
+        pct.setTextColor(ink(t.fg));
         pct.setGravity(Gravity.END);
         r.addView(pct, new LinearLayout.LayoutParams(Math.round(cw * 4), -2));
         return r;
@@ -793,8 +941,8 @@ final class HomeV29 extends FrameLayout {
                 ic.setColorFilter(t.magenta);
                 r.addView(ic, new LinearLayout.LayoutParams(px(19), px(19)));
                 String a = np.optString("artist", "");
-                TextView tx = text((a.isEmpty() ? "" : a + " — ") + np.optString("title"), 19, false);
-                tx.setTextColor(t.fg);
+                TextView tx = text((a.isEmpty() ? "" : a + " — ") + np.optString("title"), 24, false);
+                tx.setTextColor(ink(t.fg));
                 tx.setSingleLine(true);
                 tx.setEllipsize(TextUtils.TruncateAt.END);
                 LinearLayout.LayoutParams txl = new LinearLayout.LayoutParams(0, -2, 1f);
@@ -810,13 +958,13 @@ final class HomeV29 extends FrameLayout {
             String stt = x.optString("status");
             int col = "green".equals(stt) || "ok".equals(stt) ? t.green : "yellow".equals(stt) || "building".equals(stt) ? t.yellow : t.red;
             LinearLayout r = hbox();
-            TextView n = text(x.optString("name"), 19, false);
-            n.setTextColor(t.fg);
+            TextView n = text(x.optString("name"), 24, false);
+            n.setTextColor(ink(t.fg));
             n.setSingleLine(true);
             n.setEllipsize(TextUtils.TruncateAt.END);
             r.addView(n, new LinearLayout.LayoutParams(0, -2, 1f));
-            TextView v = text(stt, 19, false);
-            v.setTextColor(col);
+            TextView v = text(stt, 24, false);
+            v.setTextColor(ink(col));
             v.setSingleLine(true);
             LinearLayout.LayoutParams vl = new LinearLayout.LayoutParams(-2, -2);
             vl.leftMargin = px(12);
@@ -848,7 +996,7 @@ final class HomeV29 extends FrameLayout {
                 aiBody.addView(barRow(a.name, nameW, f, col, 10, Math.round(f * 100) + "%"));
             } else {
                 TextView v = line(a.name + "  " + (a.usedUnknown() ? "?" : MainActivity.amountText(a.used, a.unit)));
-                v.setTextColor(t.fg);
+                v.setTextColor(ink(t.fg));
                 aiBody.addView(v);
             }
         }
@@ -874,7 +1022,7 @@ final class HomeV29 extends FrameLayout {
         anchor.getLocationInWindow(loc);
         getLocationInWindow(me);
         LayoutParams l = (LayoutParams) tip.getLayoutParams();
-        l.topMargin = px(56);
+        l.topMargin = px(72);
         l.leftMargin = Math.max(px(32), Math.min(getWidth() - px(32) - tip.getMeasuredWidth(), loc[0] - me[0] + anchor.getWidth() / 2 - tip.getMeasuredWidth() / 2));
         tip.setLayoutParams(l);
     }
@@ -1016,7 +1164,7 @@ final class HomeV29 extends FrameLayout {
         }
         if (src.isEmpty()) {
             TextView v = line(act.getString(R.string.no_inputs));
-            v.setTextColor(t.fg);
+            v.setTextColor(ink(t.fg));
             tvBody.addView(v);
         }
     }
@@ -1032,7 +1180,7 @@ final class HomeV29 extends FrameLayout {
         iv.setColorFilter(t.accent);
         col.addView(iv, new LinearLayout.LayoutParams(px(72), px(72)));
         TextView tv = text(label, 30, true);
-        tv.setTextColor(t.fgBright);
+        tv.setTextColor(ink(t.fgBright, tileBackground()));
         tv.setGravity(Gravity.CENTER);
         tv.setSingleLine(true);
         tv.setEllipsize(TextUtils.TruncateAt.END);
@@ -1041,14 +1189,14 @@ final class HomeV29 extends FrameLayout {
         col.addView(tv, tl);
         if (sub != null && !sub.isEmpty()) {
             TextView sv = text(sub, 20, false);
-            sv.setTextColor(t.fg);
+            sv.setTextColor(ink(t.fg, tileBackground()));
             sv.setSingleLine(true);
             sv.setEllipsize(TextUtils.TruncateAt.END);
             col.addView(sv, new LinearLayout.LayoutParams(-2, -2));
         }
         f.addView(col, new LayoutParams(-1, -1));
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(t.bgLight);
+        bg.setColor(tileBackground());
         f.setBackground(bg);
         f.setForeground(new FocusRing());
         styleTile(f, false, false);
@@ -1063,12 +1211,12 @@ final class HomeV29 extends FrameLayout {
         pcPaneBody.removeAllViews();
         if (!host.pcPaired()) {
             TextView m = text(act.getString(R.string.v210_pc_link), 34, true);
-            m.setTextColor(t.fgBright);
+            m.setTextColor(ink(t.fgBright));
             LinearLayout.LayoutParams ml = new LinearLayout.LayoutParams(-2, -2);
             ml.topMargin = px(24);
             pcPaneBody.addView(m, ml);
             TextView h = line(act.getString(R.string.v210_pc_link_hint));
-            h.setTextColor(t.fg);
+            h.setTextColor(ink(t.fg));
             h.setSingleLine(false);
             pcPaneBody.addView(h);
             LinearLayout actions = hbox();
@@ -1095,8 +1243,8 @@ final class HomeV29 extends FrameLayout {
         r.setBaselineAligned(false);
         pcPaneBody.addView(r, new LinearLayout.LayoutParams(-1, -2));
         BoxView pc = widget(r, "omarchy · pc", 0), ai = widget(r, "ai credits · pc", 24), dep = widget(r, "deploys · pc", 24);
-        int winBg = Theme.withAlpha(t.bg, Math.min(0.98f, opacity(cfg) + noBlur()));
-        for (BoxView b : new BoxView[]{pc, ai, dep}) b.setColors(winBg, t.muted, t.accent, t.cyan);
+        int winBg = windowBackground();
+        for (BoxView b : new BoxView[]{pc, ai, dep}) b.setColors(winBg, t.muted, ink(t.accent), ink(t.cyan));
         LinearLayout pb = vbox(), ab = vbox(), db = vbox();
         pc.addView(pb, new LinearLayout.LayoutParams(-1, -2));
         ai.addView(ab, new LinearLayout.LayoutParams(-1, -2));
@@ -1105,7 +1253,7 @@ final class HomeV29 extends FrameLayout {
         if (dep.getVisibility() != VISIBLE) {
             dep.setVisibility(VISIBLE);
             TextView v = line("—");
-            v.setTextColor(t.fg);
+            v.setTextColor(ink(t.fg));
             db.addView(v);
         }
         updateAi(ab);
@@ -1137,7 +1285,7 @@ final class HomeV29 extends FrameLayout {
         b.setFocusable(true);
         b.setClickable(true);
         b.setPadding(px(18), px(10), px(18), px(10));
-        b.setTextColor(t.fgBright);
+        b.setTextColor(ink(t.fgBright));
         b.setBackground(new Underline());
         b.setOnClickListener(v -> r.run());
         return b;
@@ -1177,10 +1325,10 @@ final class HomeV29 extends FrameLayout {
         r.setClickable(true);
         r.setPadding(px(16), px(10), px(16), px(10));
         TextView a = text(act.getString(label), 24, false);
-        a.setTextColor(t.fgBright);
+        a.setTextColor(ink(t.fgBright));
         r.addView(a, new LayoutParams(-2, -2, Gravity.START | Gravity.CENTER_VERTICAL));
         TextView b = text(value != null ? value : "›", 24, false);
-        b.setTextColor(t.accent);
+        b.setTextColor(ink(t.accent));
         r.addView(b, new LayoutParams(-2, -2, Gravity.END | Gravity.CENTER_VERTICAL));
         r.setBackground(new Underline());
         r.setOnClickListener(v -> host.sys(id));
@@ -1191,7 +1339,7 @@ final class HomeV29 extends FrameLayout {
 
     // ---- v2.10 "Disponi riquadri": move home panels on a 12x8 grid (fractions of the screen: same at 1080p and 4K) ----
     static final int GRID_X = 12, GRID_Y = 8;
-    static final String[] PANEL_IDS = {"term", "weather", "pc", "ai", "deploys"};
+    static final String[] PANEL_IDS = {"term", "weather", "pc", "ai", "deploys", "t3"};
     private View editPanel;
     private String editId;
     private int editCx, editCy, editOldCx, editOldCy;
@@ -1203,6 +1351,7 @@ final class HomeV29 extends FrameLayout {
             case "pc": return pcBox;
             case "ai": return aiBoxRef;
             case "deploys": return depBox;
+            case "t3": return t3Box;
             default: return null;
         }
     }
@@ -1211,11 +1360,35 @@ final class HomeV29 extends FrameLayout {
     private float cellH() { return getHeight() / (float) GRID_Y; }
 
     void applyPanelPos(LauncherConfig c) {
+        if (activeWs != 1 || getWidth() == 0) return;
+        // Restore the complete arrangement before checking collisions, including saved swaps.
         for (String id : PANEL_IDS) {
             View v = panelView(id);
             int[] p = c.panelPos.get(id);
-            v.setTranslationX(p != null ? p[0] * cellW() : 0);
-            v.setTranslationY(p != null ? p[1] * cellH() : 0);
+            v.setTranslationX(p == null ? 0 : p[0] * cellW());
+            v.setTranslationY(p == null ? 0 : p[1] * cellH());
+        }
+        for (String id : PANEL_IDS) {
+            View v = panelView(id);
+            int[] p = c.panelPos.get(id);
+            if (!v.isShown() || (p == null && !"t3".equals(id))) continue;
+            int sx = p == null ? 0 : p[0], sy = p == null ? 0 : p[1];
+            int cx = sx, cy = sy;
+            if (!fits(v, cx, cy)) {
+                cx = cy = 0;
+                // Prefer the aligned deck when an old offset no longer fits this layout.
+                if (!fits(v, 0, 0)) {
+                    int distance = Integer.MAX_VALUE;
+                    for (int y = -GRID_Y; y <= GRID_Y; y++) {
+                        for (int x = -GRID_X; x <= GRID_X; x++) {
+                            int d = Math.abs(x - sx) + Math.abs(y - sy);
+                            if (d < distance && fits(v, x, y)) { cx = x; cy = y; distance = d; }
+                        }
+                    }
+                }
+            }
+            v.setTranslationX(cx * cellW());
+            v.setTranslationY(cy * cellH());
         }
     }
 
@@ -1224,8 +1397,8 @@ final class HomeV29 extends FrameLayout {
         float x = v.getLeft() + tx, y = v.getTop() + ty;
         for (android.view.ViewParent p = v.getParent(); p instanceof View && p != this; p = p.getParent()) {
             View pv = (View) p;
-            x += pv.getLeft() + pv.getTranslationX();
-            y += pv.getTop() + pv.getTranslationY();
+            x += pv.getLeft() + (pv == widgets ? 0 : pv.getTranslationX());
+            y += pv.getTop() + (pv == widgets ? 0 : pv.getTranslationY());
         }
         return new android.graphics.RectF(x, y, x + v.getWidth(), y + v.getHeight());
     }
@@ -1234,7 +1407,7 @@ final class HomeV29 extends FrameLayout {
     private boolean fits(View v, int cx, int cy) {
         android.graphics.RectF r = rectAt(v, cx * cellW(), cy * cellH());
         if (r.left < 0 || r.right > getWidth() || r.top < barHeight() || r.bottom > getHeight()) return false;
-        if (appWin.getVisibility() == VISIBLE && android.graphics.RectF.intersects(r, rectAt(appWin, appWin.getTranslationX(), appWin.getTranslationY()))) return false;
+        if (appWin.getVisibility() == VISIBLE && android.graphics.RectF.intersects(r, rectAt(appWin, 0, 0))) return false;
         for (String id : PANEL_IDS) {
             View o = panelView(id);
             if (o == v || o.getVisibility() != VISIBLE) continue;
@@ -1301,11 +1474,12 @@ final class HomeV29 extends FrameLayout {
             v.setTranslationX(editOldCx * cellW());
             v.setTranslationY(editOldCy * cellH());
         }
+        v.setFocusable(v == wxBox || v == aiBoxRef || v == t3Box);
         focusApp(lastApp);
     }
 
     int barHeight() {
-        return px(52);
+        return px(64);
     }
 
     // ---- animated OMARCHY TV logo (v2.10): 1-2 s "decrypt" or "print" when the home opens, then still ----
@@ -1383,6 +1557,7 @@ final class HomeV29 extends FrameLayout {
         for (View v = f; v != null; v = v.getParent() instanceof View ? (View) v.getParent() : null) {
             if (v == bar) return 0;
             if (v == widgets) return 1;
+            if (v == t3Box) return 1;
             if (v == row) return 2;
             if (v == grid) return 3;
             if (v == tvWin || v == pcWin || v == sysWin) return 4;
@@ -1415,7 +1590,7 @@ final class HomeV29 extends FrameLayout {
             if (k == KeyEvent.KEYCODE_DPAD_UP) return true;
             if (k == KeyEvent.KEYCODE_DPAD_DOWN) {
                 if (activeWs == 1) {
-                    if (!focusFirstVisible(widgets)) focusApp(lastApp);
+                    if (!focusNearestWidget(f)) focusApp(lastApp);
                 } else restoreFocus();
                 return true;
             }
@@ -1442,34 +1617,26 @@ final class HomeV29 extends FrameLayout {
             }
             return false;
         }
-        if (z == 3) {   // 3 · app grid: up from the first row goes to the bar
+        if (z == 2 || z == 3) {
+            RecyclerView list = z == 2 ? row : grid;
+            int columns = z == 2 ? rowAdapter.cols : 7;
+            int count = z == 2 ? rowAdapter.getItemCount() : gridAdapter.getItemCount();
+            int pos = list.getChildAdapterPosition(list.findContainingItemView(f));
+            if (pos < 0) return arrow;
+            int to = -1;
             if (k == KeyEvent.KEYCODE_DPAD_UP) {
-                int pos = grid.getChildAdapterPosition(grid.findContainingItemView(f));
-                if (pos >= 0 && pos < 7) {
-                    wsFocus.put(3, f);
-                    activeWsButton().requestFocus();
-                    return true;
-                }
-                if (pos >= 7) {
-                    focusGrid(pos - 7);
-                    return true;
-                }
-            }
-            if (k == KeyEvent.KEYCODE_DPAD_DOWN) {
-                int pos = grid.getChildAdapterPosition(grid.findContainingItemView(f));
-                if (pos >= 0) {
-                    int to = Math.min(gridAdapter.getItemCount() - 1, pos + 7);
-                    if (to / 7 > pos / 7) focusGrid(to);
-                    return true;
-                }
-            }
-            if (k == KeyEvent.KEYCODE_DPAD_LEFT || k == KeyEvent.KEYCODE_DPAD_RIGHT) {
-                int pos = grid.getChildAdapterPosition(grid.findContainingItemView(f));
-                int to = pos + (k == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1);
-                if (pos >= 0 && to >= 0 && to < gridAdapter.getItemCount()) focusGrid(to);
-                return true;
-            }
-            return false;
+                if (pos >= columns) to = pos - columns;
+                else if (z == 2) { if (!focusNearestWidget(f)) activeWsButton().requestFocus(); }
+                else { wsFocus.put(3, f); activeWsButton().requestFocus(); }
+            } else if (k == KeyEvent.KEYCODE_DPAD_DOWN) {
+                int next = Math.min(count - 1, pos + columns);
+                if (next / columns > pos / columns) to = next;
+            } else if (k == KeyEvent.KEYCODE_DPAD_LEFT || k == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                int next = pos + (k == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1);
+                if (next >= 0 && next < count && next / columns == pos / columns) to = next;
+            } else return false;
+            if (to >= 0) { if (z == 2) focusApp(to); else focusGrid(to); }
+            return true;
         }
         if (z == 4) {   // 2 / 4 / 5: default focus search inside the window; nothing above = the bar
             if (k == KeyEvent.KEYCODE_DPAD_UP) {
@@ -1490,31 +1657,18 @@ final class HomeV29 extends FrameLayout {
         }
         switch (k) {
             case KeyEvent.KEYCODE_DPAD_UP:
-                if (z == 2) {
-                    if (!focusFirstVisible(widgets)) ws[0].requestFocus();
-                } else if (z == 1) activeWsButton().requestFocus();
+                if (z == 1) activeWsButton().requestFocus();
                 return true;
             case KeyEvent.KEYCODE_DPAD_DOWN:
                 if (z == 1) {
-                    if (f.getParent() == ((ViewGroup) widgets.getChildAt(0)) && depBox.getVisibility() == VISIBLE && f == aiBoxRef) depBox.requestFocus();
-                    else focusApp(lastApp);
+                    focusApp(lastApp);
                     return true;
                 }
                 return true;
             case KeyEvent.KEYCODE_DPAD_LEFT:
             case KeyEvent.KEYCODE_DPAD_RIGHT: {
-                boolean r = k == KeyEvent.KEYCODE_DPAD_RIGHT;
-                if (z == 2) {
-                    int pos = row.getChildAdapterPosition(row.findContainingItemView(f));
-                    int to = pos + (r ? 1 : -1);
-                    if (to >= 0 && to < rowAdapter.getItemCount()) focusApp(to);
-                    return true;
-                }
-                if (f == depBox) return true;
-                ViewGroup g = (ViewGroup) f.getParent();
-                int i = g.indexOfChild(f), to = i + (r ? 1 : -1);
-                while (to >= 0 && to < g.getChildCount() && (g.getChildAt(to).getVisibility() != VISIBLE || !g.getChildAt(to).isFocusable())) to += r ? 1 : -1;
-                if (to >= 0 && to < g.getChildCount()) g.getChildAt(to).requestFocus();
+                View next = f.focusSearch(k == KeyEvent.KEYCODE_DPAD_RIGHT ? FOCUS_RIGHT : FOCUS_LEFT);
+                if (next != null && zone(next) == 1) next.requestFocus();
                 return true;
             }
             default:
@@ -1522,14 +1676,20 @@ final class HomeV29 extends FrameLayout {
         }
     }
 
-    private boolean focusFirstVisible(ViewGroup g) {
-        ViewGroup r1 = (ViewGroup) g.getChildAt(0);
-        for (int i = 0; i < r1.getChildCount(); i++) {
-            View v = r1.getChildAt(i);
-            if (v.getVisibility() == VISIBLE && v.isFocusable()) return v.requestFocus();
+    /** Use screen geometry so user-arranged panels keep the same remote path. Read-only panes are skipped. */
+    private boolean focusNearestWidget(View from) {
+        int[] location = new int[2];
+        if (from != null) from.getLocationOnScreen(location);
+        float x = location[0] + (from != null ? from.getWidth() / 2f : 0);
+        View nearest = null;
+        float distance = Float.MAX_VALUE;
+        for (View v : new View[]{t3Box, wxBox, aiBoxRef}) {
+            if (!v.isShown() || !v.isFocusable()) continue;
+            v.getLocationOnScreen(location);
+            float d = Math.abs(location[0] + v.getWidth() / 2f - x);
+            if (d < distance) { nearest = v; distance = d; }
         }
-        if (depBox.getVisibility() == VISIBLE) return depBox.requestFocus();
-        return false;
+        return nearest != null && nearest.requestFocus();
     }
 
     /** The TV tile is the first item of the home row unless "tv.enabled" is false. */
@@ -1542,14 +1702,14 @@ final class HomeV29 extends FrameLayout {
     }
 
     void focusApp(int pos) {
-        focusIn(row, rowAdapter, pos, true);
+        focusIn(row, rowAdapter, pos);
     }
 
     void focusGrid(int pos) {
-        focusIn(grid, gridAdapter, pos, false);
+        focusIn(grid, gridAdapter, pos);
     }
 
-    private void focusIn(RecyclerView rv, TileAdapter ad, int pos, boolean horizontal) {
+    private void focusIn(RecyclerView rv, TileAdapter ad, int pos) {
         int n = ad.getItemCount();
         if (n == 0) {
             activeWsButton().requestFocus();
@@ -1566,15 +1726,9 @@ final class HomeV29 extends FrameLayout {
             RecyclerView.ViewHolder h2 = rv.findViewHolderForAdapterPosition(p);
             if (h2 != null) {
                 h2.itemView.requestFocus();
-                if (horizontal) {
-                    int l = h2.itemView.getLeft(), r = h2.itemView.getRight(), w = rv.getWidth();
-                    if (r > w) rv.scrollBy(r - w + px(6), 0);
-                    else if (l < 0) rv.scrollBy(l - px(6), 0);
-                } else {
-                    int tp = h2.itemView.getTop(), b = h2.itemView.getBottom(), hh = rv.getHeight();
-                    if (b > hh) rv.scrollBy(0, b - hh + px(12));
-                    else if (tp < 0) rv.scrollBy(0, tp - px(12));
-                }
+                int tp = h2.itemView.getTop(), b = h2.itemView.getBottom(), hh = rv.getHeight();
+                if (b > hh) rv.scrollBy(0, b - hh + px(12));
+                else if (tp < 0) rv.scrollBy(0, tp - px(12));
             }
         });
     }
@@ -1617,6 +1771,7 @@ final class HomeV29 extends FrameLayout {
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
         int n = apps != null ? apps.getItemCount() : 0;
         int to = -1;
+        int columns = movingInGrid ? 7 : rowAdapter.cols;
         switch (k) {
             case KeyEvent.KEYCODE_DPAD_LEFT:
                 if (down && movingApp > 0) to = movingApp - 1;
@@ -1625,10 +1780,10 @@ final class HomeV29 extends FrameLayout {
                 if (down && movingApp < n - 1) to = movingApp + 1;
                 break;
             case KeyEvent.KEYCODE_DPAD_UP:
-                if (down && movingInGrid && movingApp - 7 >= 0) to = movingApp - 7;
+                if (down && movingApp - columns >= 0) to = movingApp - columns;
                 break;
             case KeyEvent.KEYCODE_DPAD_DOWN:
-                if (down && movingInGrid && movingApp + 7 < n) to = movingApp + 7;
+                if (down && movingApp + columns < n) to = movingApp + columns;
                 break;
             case KeyEvent.KEYCODE_DPAD_CENTER:
             case KeyEvent.KEYCODE_ENTER:
@@ -1654,6 +1809,7 @@ final class HomeV29 extends FrameLayout {
     }
 
     private void updateRowHeader() {
+        appHead.setVisibility(movingApp >= 0 ? VISIBLE : GONE);
         if (t == null) return;
         if (movingApp >= 0 && !movingInGrid) {
             appHints.setText(R.string.move_hint);
@@ -1661,7 +1817,10 @@ final class HomeV29 extends FrameLayout {
         }
         boolean tvFocused = lastApp == 0 && tvShown();
         appHints.setText(tvFocused ? R.string.v210_tv_hints : R.string.v210_app_hints);
-        if (tvFocused) appName.setText("TV");
+        int count = rowAdapter.getItemCount();
+        int pos = Math.max(0, Math.min(lastApp, count - 1));
+        String name = tvFocused ? "TV" : apps != null && count > 0 ? apps.labelAt(pos - tvOffset()) : "";
+        appName.setText(count > 0 ? name + "  ·  " + (pos + 1) + "/" + count : "");
     }
 
     /** Home row tiles visible at once: Layout → App size (4..7); 0 (no config yet) gives the v2.9 six. */
@@ -1675,7 +1834,7 @@ final class HomeV29 extends FrameLayout {
     }
 
     // ---- tiles: home row (TV + apps, App size per row, 16:9) and the 7-per-row grid of workspace 3 ----
-    // Focus (spec): 4 px accent border + 2 px dark outer outline + scale 1.05; unfocused: 2 px muted border.
+    // Focus uses scale plus a wide accent border and a contrasting outer outline.
 
     private final class TileAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         private final boolean tvFirst;
@@ -1697,9 +1856,11 @@ final class HomeV29 extends FrameLayout {
             return tvOn() ? pos - 1 : pos;
         }
 
+        private AppAdapter data() { return tvFirst ? apps : catalog; }
+
         @Override
         public int getItemCount() {
-            return (apps != null ? apps.getItemCount() : 0) + (tvOn() ? 1 : 0);
+            return (data() != null ? data().getItemCount() : 0) + (tvOn() ? 1 : 0);
         }
 
         @Override
@@ -1719,10 +1880,8 @@ final class HomeV29 extends FrameLayout {
                 ImageView iv = new ImageView(act);
                 iv.setImageResource(R.drawable.ln_monitor);
                 col.addView(iv, new LinearLayout.LayoutParams(px(56), px(56)));
-                TextView tv = text("TV", 28, true);
-                LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(-2, -2);
-                tl.topMargin = px(8);
-                col.addView(tv, tl);
+                TextView label = text("TV", 24, true);
+                col.addView(label);
                 f.addView(col, new LayoutParams(-1, -1));
             } else {
                 ImageView iv = new ImageView(act);
@@ -1742,37 +1901,41 @@ final class HomeV29 extends FrameLayout {
 
         private int inner() {
             return rv.getWidth() > 0 ? rv.getWidth() - rv.getPaddingLeft() - rv.getPaddingRight()
-                    : Math.round(1920 * s) - px(64) - px(56) - px(4) - (tvFirst ? 0 : px(16));
+                    : Math.round(1920 * s) - px(64) - px(56) - px(4) - (tvFirst ? px(20) : px(16));
         }
 
-        /** Tile height with n per row (the row's height follows it). */
+        /** Uncaptioned 16:9 artwork; the selected app is named in the window header. */
         int tileH(int n) {
-            return tileW(inner(), px(20), n) * 9 / 16;
+            int width = tileW(inner() - px(20), px(20), n);
+            if (tvFirst) width = Math.min(width, px(360));   // two Large rows must clear the widget deck
+            return width * 9 / 16;
         }
 
         @Override
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder h, int pos) {
+            AppAdapter apps = data();
             FrameLayout f = (FrameLayout) h.itemView;
             int inner = inner();
             int gap = px(20);
-            int w = tileW(inner, gap, cols);
-            RecyclerView.LayoutParams lp = new RecyclerView.LayoutParams(tvFirst ? w : (inner / cols), w * 9 / 16);
-            if (tvFirst) lp.rightMargin = pos == getItemCount() - 1 ? 0 : gap;
-            else {
-                lp.width = w;
-                lp.leftMargin = gap / 2;
-                lp.rightMargin = gap / 2;
-                lp.bottomMargin = gap;
-            }
+            int w = tileW(inner - gap, gap, cols);
+            if (tvFirst) w = Math.min(w, px(360));
+            int bannerHeight = w * 9 / 16;
+            RecyclerView.LayoutParams lp = new RecyclerView.LayoutParams(w, bannerHeight);
+            lp.leftMargin = (inner / cols - w) / 2;
+            lp.rightMargin = inner / cols - w - lp.leftMargin;
+            lp.bottomMargin = gap;
             f.setLayoutParams(lp);
             boolean tvTile = tvOn() && pos == 0;
             final int app = appIndex(pos);
+            View art = f.getChildAt(0);
+            art.setLayoutParams(new LayoutParams(-1, bannerHeight));
+            f.setContentDescription(tvTile ? "TV" : apps.labelAt(app));
             if (tvTile) {
                 LinearLayout col = (LinearLayout) f.getChildAt(0);
                 ((ImageView) col.getChildAt(0)).setColorFilter(t.accent);
-                ((TextView) col.getChildAt(1)).setTextColor(t.fgBright);
+                ((TextView) col.getChildAt(1)).setTextColor(ink(t.fgBright, tileBackground()));
                 GradientDrawable bg = new GradientDrawable();
-                bg.setColor(t.bgLight);
+                bg.setColor(tileBackground());
                 f.setBackground(bg);
             } else {
                 ImageView iv = (ImageView) f.getChildAt(0);
@@ -1783,9 +1946,10 @@ final class HomeV29 extends FrameLayout {
                 iv.setPadding(px(2), px(2), px(2), px(2));
                 tv.setText(apps.labelAt(app));
                 tv.setVisibility(banner != null ? GONE : VISIBLE);
-                tv.setTextColor(cfg.textTiles ? t.fg : t.fgBright);
+                tv.setLayoutParams(new LayoutParams(-1, -1));
+                tv.setTextColor(ink(cfg.textTiles ? t.fg : t.fgBright, tileBackground()));
                 GradientDrawable bg = new GradientDrawable();
-                bg.setColor(cfg.textTiles ? t.bgLight : Theme.withAlpha(t.bgLight, Math.max(0.30f, opacity(cfg) + noBlur() - 0.15f)));
+                bg.setColor(tileBackground());
                 f.setBackground(bg);
             }
             f.setAlpha(movingApp >= 0 && app == movingApp && (movingInGrid != tvFirst) ? 0.85f : 1f);
@@ -1808,13 +1972,13 @@ final class HomeV29 extends FrameLayout {
                 int p = rv.getChildAdapterPosition(v);
                 if (p < 0) return;
                 if (tvOn() && p == 0) host.openTv();
-                else host.launchApp(appIndex(p));
+                else host.launchApp(apps, appIndex(p));
             });
             f.setOnLongClickListener(v -> {
                 int p = rv.getChildAdapterPosition(v);
                 if (p < 0) return true;
                 if (tvOn() && p == 0) host.openWalker();   // the TV tile cannot be moved or hidden
-                else host.tileMenu(appIndex(p), v);
+                else host.tileMenu(apps, appIndex(p), v);
                 return true;
             });
             if (tvFirst && pos == lastApp && appName.getText().length() == 0) appName.setText(tvTile ? "TV" : apps.labelAt(app));
@@ -1825,9 +1989,9 @@ final class HomeV29 extends FrameLayout {
         Drawable d = f.getForeground();
         if (d instanceof FocusRing) ((FocusRing) d).set(focused);
         View label = f.getChildAt(f.getChildCount() - 1);
-        if (label instanceof TextView && cfg != null && cfg.textTiles) {
+        if (label instanceof TextView) {
             ((TextView) label).setTypeface(focused ? tfBold : tf);
-            ((TextView) label).setTextColor(focused ? t.fgBright : t.fg);
+            ((TextView) label).setTextColor(ink(focused ? t.fgBright : t.fg, tileBackground()));
         }
         float sc = focused ? 1.05f : 1f;
         f.setZ(focused ? 2f : 0f);
@@ -1838,7 +2002,7 @@ final class HomeV29 extends FrameLayout {
         }
     }
 
-    /** Tile border: unfocused 2 px muted; focused 2 px dark outer outline + 4 px accent inside it. */
+    /** A contrasting outline keeps the accent focus border visible on both dark and light banners. */
     private final class FocusRing extends Drawable {
         private final Paint p = new Paint();
         private boolean on;
@@ -1865,9 +2029,9 @@ final class HomeV29 extends FrameLayout {
                 c.drawRect(b.left + w / 2, b.top + w / 2, b.right - w / 2, b.bottom - w / 2, p);
                 return;
             }
-            float o = px(2), a = px(4);
+            float o = px(3), a = px(6);
             p.setStrokeWidth(o);
-            p.setColor(0xE6000000);
+            p.setColor(ink(t.fgBright));
             c.drawRect(b.left + o / 2, b.top + o / 2, b.right - o / 2, b.bottom - o / 2, p);
             p.setStrokeWidth(a);
             p.setColor(t.accent);

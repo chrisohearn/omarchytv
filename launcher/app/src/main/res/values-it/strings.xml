@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="ctx_show_home">Mostra nella Home</string>
+    <string name="ctx_hide_home">Nascondi dalla Home</string>
     <string name="app_name">OmarchyTV</string>
     <string name="inputs">Ingressi</string>
     <string name="wifi">Wi-Fi</string>
@@ -304,9 +306,9 @@
     <string name="v29_set_omarchy">Impostazioni OmarchyTV</string>
     <string name="v29_set_network">Rete e Internet</string>
     <string name="v29_set_input">Ingressi</string>
-    <string name="v210_tv_hints">OK guarda la TV · ▲ barra · OK lungo: Walker</string>
-    <string name="v210_app_hints">OK apri · ▲ barra · OK lungo: Sposta / Nascondi</string>
-    <string name="v210_grid_hints">OK apri · OK lungo: Sposta / Nascondi · 1-%1$d workspace</string>
+    <string name="v210_tv_hints">OK guarda la TV · OK lungo: Walker</string>
+    <string name="v210_app_hints">OK apri · OK lungo: Sposta / Nascondi</string>
+    <string name="v210_grid_hints">OK apri · OK lungo: Home / Info · 1-%1$d workspace</string>
     <string name="v210_pc_link">Collega Omarchy Linux</string>
     <string name="v210_pc_link_hint">Abbina il PC per vedere qui stato, crediti AI e deploy.</string>
     <string name="v210_pc_pair">abbina</string>
@@ -402,4 +404,12 @@
     <string name="keys_none">Nessun telecomando supportato collegato.</string>
     <string name="keys_default">Senza assegnazione: %1$s</string>
     <string name="wp_loop">Sfondo sempre animato</string>
+
+    <string name="t3_widget">T3 Code</string>
+    <string name="t3_empty">Nessun thread attivo</string>
+    <string name="t3_unavailable">Stato non disponibile</string>
+    <string name="t3_working">In esecuzione</string>
+    <string name="t3_queued">In coda</string>
+    <string name="t3_details">OK: dettagli thread</string>
+    <string name="t3_detail_hint">◀ ▶ thread   indietro chiudi</string>
 </resources>

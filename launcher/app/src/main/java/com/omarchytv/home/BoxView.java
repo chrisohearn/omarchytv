@@ -28,7 +28,7 @@ final class BoxView extends LinearLayout {
         setOrientation(VERTICAL);
         setWillNotDraw(false);
         title.setTypeface(tf);
-        title.setTextSize(19 * s);
+        title.setTextSize(24 * s);
         line.setStyle(Paint.Style.FILL);
     }
 
@@ -60,7 +60,7 @@ final class BoxView extends LinearLayout {
         int w = getWidth(), h = getHeight();
         float b = Math.max(2f, 2 * s);
         boolean f = focusBorder && hasFocus();
-        if (f) b = Math.max(3f, 3 * s);
+        if (f) b = Math.max(5f, 5 * s);
         float y0 = legend == null ? 0 : legendHalf() - b / 2f;
         fill.setColor(bg);
         c.drawRect(0, y0, w, h, fill);

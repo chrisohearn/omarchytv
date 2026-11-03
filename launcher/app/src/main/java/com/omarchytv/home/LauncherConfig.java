@@ -263,6 +263,7 @@ final class LauncherConfig {
     final String dataSig;
     /** Unix seconds of the last PUT /v1/agents (link.agentsAt), 0 = this TV never saw the agent monitor. */
     final long agentsAt;
+    final JSONObject agentsData;
 
     /** "> tv" section with the single Live TV tile (omarchytv.json "tv": {"enabled": true}). */
     final boolean tvEnabled;
@@ -484,7 +485,7 @@ final class LauncherConfig {
     /** v2.10: text tiles (terminal style) instead of banners (default off). */
     final boolean textTiles;
     /** v2.10: home widgets on/off: weather, pc, ai, deploys (default all on). */
-    final boolean wWeather, wPc, wAi, wDeploys, wTerm;
+    final boolean wWeather, wPc, wAi, wDeploys, wTerm, wT3;
     /** v2.10 "Disponi riquadri": panel id -> {cellX, cellY} offset on a 12x8 screen grid (empty = default layout). */
     final java.util.Map<String, int[]> panelPos;
     /** v2.10: Send to TV (cast) is off until switched on (omarchytv.json "cast": {"enabled": true}). */
@@ -589,6 +590,7 @@ final class LauncherConfig {
         restSig = sig.toString();
         JSONObject lk2 = j != null ? j.optJSONObject("link") : null;
         agentsAt = lk2 != null ? lk2.optLong("agentsAt", 0) : 0;
+        agentsData = lk2 != null ? lk2.optJSONObject("agents") : null;
         StringBuilder ds = new StringBuilder();
         if (j != null) ds.append(j.opt("ai")).append('\u0001').append(j.opt("aiAt")).append('\u0001').append(j.opt("aiSources")).append('\u0001');
         if (lk2 != null) {
@@ -746,6 +748,7 @@ final class LauncherConfig {
         wAi = hw == null || hw.optBoolean("ai", true);
         wDeploys = hw == null || hw.optBoolean("deploys", true);
         wTerm = hw == null || hw.optBoolean("term", true);
+        wT3 = hw == null || hw.optBoolean("t3", true);
         java.util.Map<String, int[]> ppos = new java.util.HashMap<>();
         JSONObject pj = j != null ? j.optJSONObject("panelPos") : null;
         if (pj != null) for (java.util.Iterator<String> it = pj.keys(); it.hasNext(); ) {

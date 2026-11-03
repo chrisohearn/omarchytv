@@ -12,6 +12,7 @@ android {
         targetSdk 34
         versionCode 25
         versionName '2.13.8'
+        resValue 'string', 'build_stamp', "v${new Date().format('yyyy.MM.dd')}"
     }
 
     buildTypes {
@@ -40,6 +41,7 @@ android {
 
     testOptions {
         unitTests.returnDefaultValues = true
+        unitTests.includeAndroidResources = true
     }
 
     compileOptions {
@@ -57,4 +59,6 @@ dependencies {
     // JVM unit tests of the Omarchy Link core against omarchy-link/docs/vectors.json
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20231013'
+    // Render the actual launcher and exercise remote focus without installing on a household TV.
+    testImplementation 'org.robolectric:robolectric:4.17'
 }
