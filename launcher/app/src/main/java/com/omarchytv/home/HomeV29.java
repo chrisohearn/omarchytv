@@ -259,7 +259,7 @@ final class HomeV29 extends FrameLayout {
         term.addView(termLogo, ll);
         term.addView(termInfo);
 
-        // ---- Widgets: weather and PC stack beside AI, with a shared 24 px gutter ----
+        // ---- Widgets: weather beside the AI/PC stack, with a shared 24 px gutter ----
         widgets = new LinearLayout(a);
         widgets.setOrientation(LinearLayout.VERTICAL);
         LayoutParams wl = new LayoutParams(px(1192), -2, Gravity.END | Gravity.TOP);
@@ -278,13 +278,15 @@ final class HomeV29 extends FrameLayout {
         LinearLayout.LayoutParams r2l = new LinearLayout.LayoutParams(-1, -2);
         r2l.topMargin = px(16);
         widgets.addView(r2, r2l);
+        wxBox = widget(r1, act.getString(R.string.v29_weather), 0);
         LinearLayout statsColumn = vbox();
         statsColumn.setClipChildren(false);
-        r1.addView(statsColumn, new LinearLayout.LayoutParams(px(584), -2));
-        wxBox = widget(statsColumn, act.getString(R.string.v29_weather), 0);
+        LinearLayout.LayoutParams statsLayout = new LinearLayout.LayoutParams(px(584), -2);
+        statsLayout.leftMargin = px(24);
+        r1.addView(statsColumn, statsLayout);
+        BoxView ai = widget(statsColumn, "ai credits · pc", 0);
         pcBox = widget(statsColumn, "omarchy · pc", 0);
         pcBox.setFocusable(false);
-        BoxView ai = widget(r1, "ai credits · pc", 24);
         // Explicit widths keep a lone widget from stretching when other panels are hidden.
         for (View col : new View[]{wxBox, pcBox, ai}) {
             LinearLayout.LayoutParams cl = (LinearLayout.LayoutParams) col.getLayoutParams();

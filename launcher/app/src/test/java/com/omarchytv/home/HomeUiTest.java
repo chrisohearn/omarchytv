@@ -383,7 +383,8 @@ public class HomeUiTest {
         JSONObject json = config("tokyo-night", 6);
         json.getJSONObject("theme").put("colors", new JSONObject()
                 .put("background", "#f0f0f0").put("foreground", "#eeeeee").put("accent", "#dddddd"));
-        json.put("panelPos", new JSONObject().put("ai", new JSONArray().put(0).put(1)));
+        json.put("panelPos", new JSONObject().put("ai", new JSONArray().put(0).put(1))
+                .put("pc", new JSONArray().put(0).put(1)));
         create(json);
         assertEquals(0f, home.panelView("ai").getTranslationX(), 0.1f);
         assertEquals(135f, home.panelView("ai").getTranslationY(), 0.1f);
@@ -416,9 +417,9 @@ public class HomeUiTest {
         weather.getLocationOnScreen(wxAt);
         pc.getLocationOnScreen(pcAt);
         ai.getLocationOnScreen(aiAt);
-        assertEquals("weather and PC align", wxAt[0], pcAt[0]);
+        assertEquals("AI and PC align", aiAt[0], pcAt[0]);
         assertEquals("top cards align", wxAt[1], aiAt[1]);
-        assertTrue("PC sits below weather", pcAt[1] >= wxAt[1] + weather.getHeight() + 16);
+        assertTrue("PC sits below AI", pcAt[1] >= aiAt[1] + ai.getHeight() + 16);
         assertTrue("PC fits its content", pc.getHeight() < weather.getHeight());
         for (View panel : new View[]{weather, pc, ai}) {
             for (TextView t : texts(panel)) assertTrue(t.getTextSize() >= 24);
@@ -428,15 +429,15 @@ public class HomeUiTest {
         capture("light-theme-dark-panels");
     }
 
-    @Test public void sixAppsUseOneRowAndOldPcOffsetFallsBackToTheAlignedDeck() throws Exception {
+    @Test public void sixAppsUseOneRowAndOutsidePcOffsetFallsBackToTheAlignedDeck() throws Exception {
         appCount = 6;
         JSONObject json = config("tokyo-night", 6).put("panelPos", new JSONObject()
-                .put("pc", new JSONArray().put(-7).put(2)));
+                .put("pc", new JSONArray().put(-12).put(2)));
         create(json);
         assertTrue("one app row", home.row.getHeight() < 300);
         assertEquals(0f, home.panelView("pc").getTranslationX(), 0.1f);
         assertEquals(0f, home.panelView("pc").getTranslationY(), 0.1f);
-        assertEquals(-7, json.getJSONObject("panelPos").getJSONArray("pc").getInt(0));
+        assertEquals(-12, json.getJSONObject("panelPos").getJSONArray("pc").getInt(0));
         key(KeyEvent.KEYCODE_DPAD_DOWN);
         assertEquals("no second row", 0, home.lastApp);
         capture("six-app-home");
@@ -467,11 +468,14 @@ public class HomeUiTest {
     @Test public void completeSavedArrangementIsRestoredBeforeCollisionChecks() throws Exception {
         appCount = 6;
         JSONObject json = config("tokyo-night", 6).put("panelPos", new JSONObject()
-                .put("weather", new JSONArray().put(0).put(2))
-                .put("pc", new JSONArray().put(-4).put(1)));
+                .put("weather", new JSONArray().put(3).put(0))
+                .put("ai", new JSONArray().put(0).put(2))
+                .put("pc", new JSONArray().put(-7).put(1)));
         create(json);
-        assertEquals(270f, home.panelView("weather").getTranslationY(), 0.1f);
-        assertEquals(-640f, home.panelView("pc").getTranslationX(), 0.1f);
+        assertEquals(480f, home.panelView("weather").getTranslationX(), 0.1f);
+        assertEquals(0f, home.panelView("weather").getTranslationY(), 0.1f);
+        assertEquals(270f, home.panelView("ai").getTranslationY(), 0.1f);
+        assertEquals(-1120f, home.panelView("pc").getTranslationX(), 0.1f);
         assertEquals(135f, home.panelView("pc").getTranslationY(), 0.1f);
         assertFalse(calls.contains("savePanelPos"));
     }

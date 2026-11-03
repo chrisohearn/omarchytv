@@ -13,7 +13,7 @@ The tests write PNGs to `launcher/app/build/ui-evidence/`:
 - `light-theme-dark-panels.png`: light-theme accents on dark panels, focused app, aligned widget cards.
 - `dark-app-focus.png`: dark theme and two rows of labeled app banners.
 - `dark-widget-focus.png`: an actionable widget selected with the D-pad.
-- `six-app-home.png`: one app row, compact greeting, and the weather/PC stack beside AI credits.
+- `six-app-home.png`: one app row, compact greeting, and weather beside the AI/PC stack.
 - `bounded-app-scroll.png`: a later app row selected without drawing over the header or widgets.
 - `four-k-six-app-home.png`: the native 3840×2160 layout with uncaptioned artwork and no Home name/count header.
 - `full-apps-desktop.png`: a Home-hidden app remains available in the complete catalog.
@@ -25,7 +25,7 @@ The home window fits its visible apps, showing one row when they fit and up to t
 
 Home panels stay dark with both dark and light themes. Theme accents and wallpapers remain configurable. The home panels use at least 90% opacity to protect text over bright wallpaper; the saved transparency value remains available to the rest of the launcher. Large app banners are capped at 360 px wide at 1080p so both rows clear the widget deck. Home shows 16:9 artwork without captions or a name/count header. Move mode retains its instructions. Cards without artwork display their name inside the tile, and every card retains its accessibility label.
 
-Weather and PC stats share a column beside AI credits. PC stats fit their content, and weather puts the location and condition on separate lines. The greeting combines network and uptime on one line. Text remains at least 24 px at 1080p.
+PC stats align directly below AI credits, with weather in the adjacent column. PC stats fit their content, and weather puts the location and condition on separate lines. The greeting combines network and uptime on one line. Text remains at least 24 px at 1080p.
 
 All saved widget offsets are restored before collision checks. A position that no longer fits the measured app window falls back to its aligned default, or the nearest available grid cell when that default is occupied, without overwriting the saved coordinates.
 
