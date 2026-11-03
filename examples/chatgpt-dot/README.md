@@ -38,8 +38,14 @@ configuration's `grokbotDesktopDir` to the private directory and keep
 takes precedence over this directory's roster. Reconcile it before activation.
 
 Select the native companion's Grok Bot bridge route and the configured bot on
-the TV, rather than the separate Ask route. Keep `voiceKey` set to `assistant`
-to preserve the normal Google microphone button. No Android rebuild is needed.
+the TV, rather than the separate Ask route. To use the remote microphone button,
+set `voiceKey` to `companion` and select OmarchyTV as Android's default assistant.
+Keep `voiceKey` set to `assistant` to retain Google Assistant on that button.
+You can also open the native pet and select **Speak**. Speech recognition sends
+the recognized question to the Dot, and its reply appears as text in the chat.
+The paired PC and its signed-in agent browser must remain available.
+This workflow does not start a voice call or use a voice API.
+No Android rebuild is needed for the PC helper.
 The stock native avatar shapes, branding, and Home-only overlay still apply.
 This helper does not reproduce a ChatGPT pet sprite or place an overlay over Plex.
 
@@ -53,7 +59,9 @@ Prompts are limited to 400 characters, covering the native TV keyboard's
 ## Recover from a failed request
 
 The helper opens one owned tab, checks its exact Dot URL and title, preserves an
-existing draft, and submits once. Each turn asks for a uniquely marked, brief
+existing draft, and submits once. With several agent Chrome windows open, it
+selects the window containing its unique marker tab. If the window remains
+ambiguous, it sends nothing. Each turn asks for a uniquely marked, brief
 reply. An old answer cannot match the new turn. Sign-in, page changes, an
 incomplete response frame, a clipped text node, a busy browser lease, and missing reply framing return
 an error. The helper closes its tab and session and releases its browser leases.
