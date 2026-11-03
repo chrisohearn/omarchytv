@@ -17,6 +17,7 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import org.json.JSONArray;
@@ -233,6 +234,48 @@ public class HomeUiTest {
             assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, out));
         }
         bitmap.recycle();
+    }
+
+    @Test @Config(qualifiers = "w3840dp-h2160dp-land-television-mdpi")
+    public void weatherArtworkTracksConditionsAndKeepsLongPlacesBounded() throws Exception {
+        appCount = 6;
+        viewportWidth = 3840; viewportHeight = 2160;
+        String place = "A very long weather location that must stay inside its card";
+        JSONObject json = config("tokyo-night", 6).put("tempUnit", "F");
+        json.getJSONObject("weather").put("place", place);
+        create(json);
+        TextView temperature = text("64°F"), location = text(place);
+        ViewGroup hero = (ViewGroup) temperature.getParent().getParent();
+        ImageView icon = (ImageView) hero.getChildAt(1);
+        assertEquals(1, location.getLineCount());
+        assertEquals(android.text.TextUtils.TruncateAt.END, location.getEllipsize());
+        assertFalse(icon.isFocusable());
+        assertTrue(icon.getWidth() >= 240 && icon.getHeight() >= 200);
+        int[] tempAt = new int[2], iconAt = new int[2];
+        temperature.getLocationOnScreen(tempAt);
+        icon.getLocationOnScreen(iconAt);
+        assertTrue(iconAt[0] >= tempAt[0] + temperature.getWidth() + 40);
+        JSONObject weather = Weather.cached(activity);
+        for (int code : new int[]{3, 61, 71, 95, 0}) {
+            weather.getJSONObject("current").put("weather_code", code);
+            Files.write(Weather.cacheFile(activity).toPath(), weather.toString().getBytes(StandardCharsets.UTF_8));
+            home.refresh(); settle();
+            assertTrue(icon.isShown());
+            assertEquals(Weather.icon(code), Shadows.shadowOf(icon.getDrawable()).getCreatedFromResId());
+            assertNotNull(text(activity.getString(Weather.describe(code))));
+            assertNotNull(text("min 54° · max 68°"));
+            if (code == 3) capture("four-k-weather-conditions");
+        }
+        home.bind(new LauncherConfig(activity, json.put("tempUnit", "C"), 2), apps);
+        settle();
+        assertNotNull(text("18°"));
+        Files.delete(Weather.cacheFile(activity).toPath());
+        home.refresh(); settle();
+        assertFalse(icon.isShown());
+        assertNull(icon.getDrawable());
+        assertNotNull(text("--°"));
+        assertNotNull(text(activity.getString(R.string.weather_loading)));
+        capture("four-k-weather-loading");
     }
 
     @Test public void remoteSkipsInformationAndReturnsToTheSelectedApp() throws Exception {
