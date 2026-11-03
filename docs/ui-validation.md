@@ -17,6 +17,7 @@ The tests write PNGs to `launcher/app/build/ui-evidence/`:
 - `bounded-app-scroll.png`: a later app row selected without drawing over the header or widgets.
 - `four-k-six-app-home.png`: the native 3840×2160 layout with uncaptioned artwork and no Home name/count header.
 - `full-apps-desktop.png`: a Home-hidden app remains available in the complete catalog.
+- `four-k-t3-active-threads.png`: active T3 threads, status, and the focused read-only details target at 4K.
 
 The tests cover four through seven app columns, both app rows, scrolling, spatial D-pad navigation, app-position feedback, hidden widgets, read-only panels, panel-edit cancellation, app/menu callbacks, partial custom palettes, and old panel positions near the app window. `SurfacesTest` checks stock theme foreground contrast over black, white, gray, and saturated wallpaper colors.
 
@@ -39,6 +40,8 @@ To place Apps on desktop 2 and omit the unused TV desktop, use the existing work
 This changes visible desktop positions while retaining configurable workspace support.
 
 These renders prove local layout and focus behavior. They do not establish hardware performance, overscan, remote long-press timing, or readability at a particular viewing distance.
+
+The T3 widget uses the existing paired PC agent feed. Its native test checks four through seven app columns, active-thread filtering, bounded rows, D-pad focus, the details action, the widget switch, and offline/stale messages. T3 details hide the input and microphone controls. PC fixture checks in `test_agents.py` cover active and queued runs, pending input, completion, archive exclusion, redaction, stable opaque IDs, read-only SQLite access, and unavailable schemas. Run them from `pc-plugin/omarchy-link/tests` with `python3 -m unittest test_agents`.
 
 ## Run a separate TV pilot after approval
 

@@ -88,6 +88,7 @@ public class HomeUiTest {
         HomeV29.Host host = (HomeV29.Host) Proxy.newProxyInstance(HomeV29.Host.class.getClassLoader(),
                 new Class[]{HomeV29.Host.class}, (proxy, method, args) -> {
                     calls.add(method.getName());
+                    if (method.getName().equals("sys")) calls.add("sys:" + args[0]);
                     if (method.getName().equals("launchApp") && args[0] instanceof AppAdapter) {
                         launchedApps = (AppAdapter) args[0];
                         launchedPosition = (Integer) args[1];
@@ -136,6 +137,59 @@ public class HomeUiTest {
             @Override public void setColorFilter(android.graphics.ColorFilter filter) { }
             @Override public int getOpacity() { return android.graphics.PixelFormat.OPAQUE; }
         };
+    }
+
+    @Test @Config(qualifiers = "w3840dp-h2160dp-land-television-mdpi")
+    public void t3WidgetShowsActiveThreadsAndHasRemoteDetailsWithoutControls() throws Exception {
+        appCount = 6;
+        viewportWidth = 3840; viewportHeight = 2160;
+        create(config("tokyo-night", 6));
+        JSONArray rows = new JSONArray();
+        for (int i = 0; i < 5; i++) rows.put(new JSONObject().put("id", "t3-code:" + i).put("agent", "t3-code")
+                .put("title", "Task " + i).put("project", "Sample project").put("status", i == 0 ? "waiting" : "running")
+                .put("canAsk", false));
+        rows.put(new JSONObject().put("id", "other").put("agent", "codex").put("title", "Other provider"));
+        rows.put(new JSONObject().put("id", "old").put("agent", "t3-code").put("title", "Completed task").put("status", "done"));
+        JSONObject data = new JSONObject().put("enabled", true).put("rx", System.currentTimeMillis()).put("agents", rows);
+        home.updateT3(data, true);
+        settle();
+        View pane = home.panelView("t3");
+        assertTrue(pane.isShown());
+        assertTrue(texts(pane).stream().anyMatch(v -> v.getText().toString().equals("Task 0")));
+        assertFalse(texts(pane).stream().anyMatch(v -> v.getText().toString().equals("Task 4")));
+        assertFalse(texts(pane).stream().anyMatch(v -> v.getText().toString().equals("Other provider")));
+        assertFalse(texts(pane).stream().anyMatch(v -> v.getText().toString().equals("Completed task")));
+        assertTrue(pane.getBottom() + pane.getTranslationY() < home.row.getTop() + ((View) home.row.getParent()).getTop());
+        key(KeyEvent.KEYCODE_DPAD_UP);
+        assertSame(pane, activity.getCurrentFocus());
+        pane.performClick();
+        assertTrue(calls.contains("sys:t3-code"));
+        capture("four-k-t3-active-threads");
+        for (int columns = 4; columns <= 7; columns++) {
+            home.bind(new LauncherConfig(activity, config("tokyo-night", columns), 1), apps);
+            home.updateT3(data, true); settle();
+            assertTrue("T3 visible at " + columns + " columns", pane.isShown());
+            View appWindow = (View) home.row.getParent();
+            assertTrue("T3 clears app window at " + columns + " columns", pane.getY() + pane.getHeight() <= appWindow.getY());
+        }
+        home.updateT3(data, false); settle();
+        assertTrue(texts(pane).stream().anyMatch(v -> v.getText().toString().equals(activity.getString(R.string.link_offline))));
+        assertFalse(texts(pane).stream().anyMatch(v -> v.getText().toString().equals("Task 0")));
+        data.put("rx", 1);
+        home.updateT3(data, true); settle();
+        assertTrue(texts(pane).stream().anyMatch(v -> v.getText().toString().equals(activity.getString(R.string.t3_unavailable))));
+        home.bind(new LauncherConfig(activity, config("tokyo-night", 6).put("homeWidgets", new JSONObject().put("t3", false)), 1), apps);
+        home.updateT3(data, true); settle();
+        assertFalse(pane.isShown());
+        ActivityController<AgentActivity> details = Robolectric.buildActivity(AgentActivity.class,
+                new Intent(activity, AgentActivity.class).putExtra(AgentActivity.EXTRA_T3, true)).setup();
+        try {
+            assertEquals(View.GONE, details.get().findViewById(R.id.agentInput).getVisibility());
+            assertEquals(View.GONE, details.get().findViewById(R.id.agentMic).getVisibility());
+            TextView hint = details.get().findViewById(R.id.agentHint);
+            assertEquals(details.get().getString(R.string.t3_detail_hint), hint.getText().toString());
+            assertTrue(hint.getTextSize() >= 48);
+        } finally { details.pause().stop().destroy(); }
     }
 
     private void layout() {

@@ -105,8 +105,12 @@ final class HomeV29 extends FrameLayout {
     private final TextView termInfo, termLogo, termPrompt;
     // widgets
     private final LinearLayout widgets;
-    private final BoxView wxBox, pcBox, depBox;
+    private final BoxView wxBox, pcBox, depBox, t3Box;
     private final LinearLayout pcBody, aiBody, depBody;
+    private final LinearLayout t3Body;
+    private final int t3RowHeight;
+    private com.omarchytv.home.link.Agents t3Agents = new com.omarchytv.home.link.Agents();
+    private boolean t3Connected;
     /** Up to 3 panes the TV fetches itself (RemotePanes), in their own row under the widgets. */
     private final LinearLayout remoteRow;
     private final BoxView[] remoteBox = new BoxView[3];
@@ -322,6 +326,27 @@ final class HomeV29 extends FrameLayout {
         wxBox.setOnClickListener(host::weatherMenu);
         ai.setOnClickListener(host::aiMenu);
 
+        t3Box = new BoxView(a, s, tf);
+        t3Box.setLegend("t3 code", px(14), px(18));
+        t3RowHeight = 2 * text("", 24, false).getLineHeight() + px(12);
+        t3Box.focusBorder = true;
+        t3Box.setFocusable(true);
+        t3Box.setClickable(true);
+        t3Box.setOnClickListener(v -> host.sys("t3-code"));
+        t3Body = vbox();
+        t3Box.addView(t3Body);
+        LayoutParams t3l = new LayoutParams(px(640), -2);
+        t3l.leftMargin = px(32);
+        t3l.topMargin = px(360);
+        addView(t3Box, t3l);
+        t3Box.setVisibility(GONE);
+        t3Box.addOnLayoutChangeListener((v, l, top, r, bottom, ol, ot, or, ob) -> {
+            if (bottom - top != ob - ot && cfg != null && editPanel == null) post(() -> applyPanelPos(cfg));
+        });
+        term.addOnLayoutChangeListener((v, l, top, r, bottom, ol, ot, or, ob) -> {
+            if (bottom != ob) post(this::renderT3);
+        });
+
         // ---- 3.4 app window: margins 32, padding 20×28 ----
         appWin = new BoxView(a, s, tf);
         LayoutParams al = new LayoutParams(-1, -2, Gravity.BOTTOM);
@@ -348,7 +373,10 @@ final class HomeV29 extends FrameLayout {
         rowAdapter = new TileAdapter(true, rowCols(0), row);   // bind() applies Layout → App size
         row.setAdapter(rowAdapter);
         appWin.addOnLayoutChangeListener((v, l, top, r, bottom, oldL, oldTop, oldR, oldBottom) -> {
-            if (top != oldTop && cfg != null && editPanel == null) post(() -> applyPanelPos(cfg));
+            if (top != oldTop && cfg != null && editPanel == null) post(() -> {
+                renderT3();
+                applyPanelPos(cfg);
+            });
         });
         LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(-1, -2);
         rl.topMargin = px(16);
@@ -589,7 +617,7 @@ final class HomeV29 extends FrameLayout {
         for (View b : barIcons) tint(b, ink(t.fgBright));
         tip.setBackgroundColor(Theme.withAlpha(darkSurface(t.bg), 1f));
         tip.setTextColor(ink(t.fgBright));
-        for (BoxView b : new BoxView[]{term, wxBox, pcBox, aiBoxRef, depBox, appWin, tvWin, appsWin, pcWin, sysWin, grokbotBox}) b.setColors(winBg, t.muted, ink(t.accent), ink(t.cyan));
+        for (BoxView b : new BoxView[]{term, wxBox, pcBox, aiBoxRef, depBox, t3Box, appWin, tvWin, appsWin, pcWin, sysWin, grokbotBox}) b.setColors(winBg, t.muted, ink(t.accent), ink(t.cyan));
         barSpacex.setTextColor(ink(t.accent2));
         barSpacex.setVisibility(c.pluginSpacexTv ? VISIBLE : GONE);
         grokbotEyes.setTextColor(ink(t.accent));
@@ -708,7 +736,66 @@ final class HomeV29 extends FrameLayout {
         updatePc(pcBody, depBody, depBox, cfg.wDeploys);
         updateAi(aiBody);
         updateRemote();
+        JSONObject liveAgents = OmarchyLink.agents();
+        updateT3(liveAgents != null ? liveAgents : LauncherConfig.get(act).agentsData, OmarchyLink.connected());
         if (activeWs == 4) buildWorkspace();
+    }
+
+    /** One snapshot feeds the Home summary and the existing read-only agent details. */
+    void updateT3(JSONObject snapshot, boolean connected) {
+        t3Agents = com.omarchytv.home.link.Agents.parse(snapshot);
+        t3Connected = connected;
+        renderT3();
+    }
+
+    private void renderT3() {
+        if (cfg == null) return;
+        List<com.omarchytv.home.link.Agents.Agent> threads = new ArrayList<>();
+        for (com.omarchytv.home.link.Agents.Agent g : t3Agents.list) {
+            if ("t3-code".equals(g.agent) && (g.title.isEmpty() || "running".equals(g.status)
+                    || "thinking".equals(g.status) || "waiting".equals(g.status))) threads.add(g);
+        }
+        int top = term.isShown() && term.getBottom() > 0 ? term.getBottom() + px(24) : px(cfg.wTerm ? 360 : 88);
+        int bottom = appWin.getTop() > 0 ? appWin.getTop() - px(24) : px(740);
+        int slots = Math.min(3, Math.max(0,
+                (bottom - top - t3Box.getPaddingTop() - t3Box.getPaddingBottom() + px(12)) / t3RowHeight));
+        boolean show = activeWs == 1 && cfg.wT3 && t3Agents.enabled && !threads.isEmpty() && slots > 0;
+        if (!show && t3Box.hasFocus()) focusApp(lastApp);
+        t3Box.setVisibility(show ? VISIBLE : GONE);
+        if (!show) return;
+        LayoutParams lp = (LayoutParams) t3Box.getLayoutParams();
+        if (lp.topMargin != top) { lp.topMargin = top; t3Box.setLayoutParams(lp); }
+        t3Body.removeAllViews();
+        long active = threads.stream().filter(g -> !g.title.isEmpty()).count();
+        long received = t3Agents.rx > 0 ? t3Agents.rx : com.omarchytv.home.link.Agents.isoMs(t3Agents.at);
+        boolean stale = received <= 0 || System.currentTimeMillis() - received > 90000;
+        t3Box.setLegend("t3 code" + (active > 0 && t3Connected && !stale ? " · " + active + " · OK" : ""), px(14), px(18));
+        if (!t3Connected || stale) {
+            TextView off = line(act.getString(t3Connected ? R.string.t3_unavailable : R.string.link_offline));
+            off.setTextColor(ink(t.fg));
+            t3Body.addView(off);
+        } else {
+            for (int i = 0; i < Math.min(slots, threads.size()); i++) {
+                com.omarchytv.home.link.Agents.Agent g = threads.get(i);
+                TextView title = text(g.title.isEmpty() ? act.getString("idle".equals(g.status) ? R.string.t3_empty : R.string.t3_unavailable) : g.title, 24, true);
+                title.setTextColor(ink(t.fgBright));
+                title.setSingleLine(true);
+                title.setEllipsize(TextUtils.TruncateAt.END);
+                LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(-1, -2);
+                tl.topMargin = px(i == 0 ? 0 : 12);
+                t3Body.addView(title, tl);
+                if (!g.title.isEmpty()) {
+                    String state = "running".equals(g.status) ? act.getString(R.string.t3_working)
+                            : "thinking".equals(g.status) ? act.getString(R.string.t3_queued) : AgentUi.word(act, g.status);
+                    TextView status = text((g.project.isEmpty() ? "" : g.project + " · ") + state, 24, false);
+                    status.setTextColor(ink(AgentUi.color(g.status)));
+                    status.setSingleLine(true);
+                    status.setEllipsize(TextUtils.TruncateAt.END);
+                    t3Body.addView(status);
+                }
+            }
+        }
+        t3Box.setContentDescription(act.getString(R.string.t3_widget) + ", " + active + ", " + act.getString(R.string.t3_details));
     }
 
     /** Fetched panes (RemotePanes): "label … value" rows, value green/red by tone; dim after ttl, gone after 2 x ttl. */
@@ -1244,7 +1331,7 @@ final class HomeV29 extends FrameLayout {
 
     // ---- v2.10 "Disponi riquadri": move home panels on a 12x8 grid (fractions of the screen: same at 1080p and 4K) ----
     static final int GRID_X = 12, GRID_Y = 8;
-    static final String[] PANEL_IDS = {"term", "weather", "pc", "ai", "deploys"};
+    static final String[] PANEL_IDS = {"term", "weather", "pc", "ai", "deploys", "t3"};
     private View editPanel;
     private String editId;
     private int editCx, editCy, editOldCx, editOldCy;
@@ -1256,6 +1343,7 @@ final class HomeV29 extends FrameLayout {
             case "pc": return pcBox;
             case "ai": return aiBoxRef;
             case "deploys": return depBox;
+            case "t3": return t3Box;
             default: return null;
         }
     }
@@ -1275,8 +1363,9 @@ final class HomeV29 extends FrameLayout {
         for (String id : PANEL_IDS) {
             View v = panelView(id);
             int[] p = c.panelPos.get(id);
-            if (p == null || !v.isShown()) continue;
-            int cx = p[0], cy = p[1];
+            if (!v.isShown() || (p == null && !"t3".equals(id))) continue;
+            int sx = p == null ? 0 : p[0], sy = p == null ? 0 : p[1];
+            int cx = sx, cy = sy;
             if (!fits(v, cx, cy)) {
                 cx = cy = 0;
                 // Prefer the aligned deck when an old offset no longer fits this layout.
@@ -1284,7 +1373,7 @@ final class HomeV29 extends FrameLayout {
                     int distance = Integer.MAX_VALUE;
                     for (int y = -GRID_Y; y <= GRID_Y; y++) {
                         for (int x = -GRID_X; x <= GRID_X; x++) {
-                            int d = Math.abs(x - p[0]) + Math.abs(y - p[1]);
+                            int d = Math.abs(x - sx) + Math.abs(y - sy);
                             if (d < distance && fits(v, x, y)) { cx = x; cy = y; distance = d; }
                         }
                     }
@@ -1377,7 +1466,7 @@ final class HomeV29 extends FrameLayout {
             v.setTranslationX(editOldCx * cellW());
             v.setTranslationY(editOldCy * cellH());
         }
-        v.setFocusable(v == wxBox || v == aiBoxRef);
+        v.setFocusable(v == wxBox || v == aiBoxRef || v == t3Box);
         focusApp(lastApp);
     }
 
@@ -1460,6 +1549,7 @@ final class HomeV29 extends FrameLayout {
         for (View v = f; v != null; v = v.getParent() instanceof View ? (View) v.getParent() : null) {
             if (v == bar) return 0;
             if (v == widgets) return 1;
+            if (v == t3Box) return 1;
             if (v == row) return 2;
             if (v == grid) return 3;
             if (v == tvWin || v == pcWin || v == sysWin) return 4;
@@ -1585,7 +1675,7 @@ final class HomeV29 extends FrameLayout {
         float x = location[0] + (from != null ? from.getWidth() / 2f : 0);
         View nearest = null;
         float distance = Float.MAX_VALUE;
-        for (View v : new View[]{wxBox, aiBoxRef}) {
+        for (View v : new View[]{t3Box, wxBox, aiBoxRef}) {
             if (!v.isShown() || !v.isFocusable()) continue;
             v.getLocationOnScreen(location);
             float d = Math.abs(location[0] + v.getWidth() / 2f - x);

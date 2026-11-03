@@ -404,4 +404,12 @@
     <string name="keys_none">Nessun telecomando supportato collegato.</string>
     <string name="keys_default">Senza assegnazione: %1$s</string>
     <string name="wp_loop">Sfondo sempre animato</string>
+
+    <string name="t3_widget">T3 Code</string>
+    <string name="t3_empty">Nessun thread attivo</string>
+    <string name="t3_unavailable">Stato non disponibile</string>
+    <string name="t3_working">In esecuzione</string>
+    <string name="t3_queued">In coda</string>
+    <string name="t3_details">OK: dettagli thread</string>
+    <string name="t3_detail_hint">◀ ▶ thread   indietro chiudi</string>
 </resources>

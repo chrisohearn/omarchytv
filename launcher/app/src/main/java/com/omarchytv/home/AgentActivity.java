@@ -39,6 +39,7 @@ import java.util.Map;
 public class AgentActivity extends Activity implements OmarchyLink.Listener {
 
     static final String EXTRA_AGENT = "agent";
+    static final String EXTRA_T3 = "t3-only";
     private static final int REQ_SPEECH = 22;
 
     private TextView header, log, hint, prompt, mic;
@@ -48,6 +49,8 @@ public class AgentActivity extends Activity implements OmarchyLink.Listener {
 
     private Agents data = new Agents();
     private String selected;
+    private boolean t3Only;
+    private float t3Scale = 1f;
     private String tabsSig = "";
     /** What was asked from this TV, per agent id (memory only, gone when the view closes). */
     private final Map<String, SpannableStringBuilder> transcripts = new HashMap<>();
@@ -89,8 +92,26 @@ public class AgentActivity extends Activity implements OmarchyLink.Listener {
         prompt = findViewById(R.id.agentPrompt);
         mic = findViewById(R.id.agentMic);
         input = findViewById(R.id.agentInput);
+        t3Only = getIntent().getBooleanExtra(EXTRA_T3, false);
+        for (View v : new View[]{input, mic, prompt}) v.setVisibility(t3Only ? View.GONE : View.VISIBLE);
         tabs = findViewById(R.id.agentTabs);
         scroll = findViewById(R.id.agentScroll);
+        if (t3Only) {
+            android.util.DisplayMetrics dm = new android.util.DisplayMetrics();
+            getWindowManager().getDefaultDisplay().getRealMetrics(dm);
+            t3Scale = Math.min(dm.widthPixels / 1920f, dm.heightPixels / 1080f);
+            header.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 26 * t3Scale);
+            log.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24 * t3Scale);
+            hint.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24 * t3Scale);
+            android.view.ViewGroup parent = (android.view.ViewGroup) tabs.getParent();
+            int index = parent.indexOfChild(tabs);
+            android.view.ViewGroup.LayoutParams layout = tabs.getLayoutParams();
+            parent.removeView(tabs);
+            android.widget.HorizontalScrollView strip = new android.widget.HorizontalScrollView(this);
+            strip.setHorizontalScrollBarEnabled(false);
+            strip.addView(tabs, new android.widget.FrameLayout.LayoutParams(-2, -2));
+            parent.addView(strip, index, layout);
+        }
         float d = getResources().getDisplayMetrics().density;
         prompt.setText("> ");
         mic.setText(getString(R.string.agent_mic));
@@ -104,7 +125,7 @@ public class AgentActivity extends Activity implements OmarchyLink.Listener {
             }
             return false;
         });
-        hint.setText(R.string.agent_hint);
+        hint.setText(t3Only ? R.string.t3_detail_hint : R.string.agent_hint);
         selected = getIntent().getStringExtra(EXTRA_AGENT);
         load();
         TextFx.type(header, headerText(), 260);
@@ -138,6 +159,7 @@ public class AgentActivity extends Activity implements OmarchyLink.Listener {
 
     private void load() {
         data = Agents.parse(OmarchyLink.agents());
+        if (t3Only) data.list.removeIf(g -> !"t3-code".equals(g.agent));
         if (agent() == null) selected = data.list.isEmpty() ? null : data.list.get(0).id;
     }
 
@@ -147,7 +169,7 @@ public class AgentActivity extends Activity implements OmarchyLink.Listener {
     }
 
     private String headerText() {
-        return "> agents  ·  " + getString(OmarchyLink.connected() ? R.string.link_connected_word : R.string.link_offline);
+        return (t3Only ? "> t3 code  ·  " : "> agents  ·  ") + getString(OmarchyLink.connected() ? R.string.link_connected_word : R.string.link_offline);
     }
 
     @Override
@@ -290,6 +312,7 @@ public class AgentActivity extends Activity implements OmarchyLink.Listener {
                 TextView t = new TextView(this);
                 t.setTypeface(CastUi.font(this));
                 t.setTextSize(14);
+                if (t3Only) t.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24 * t3Scale);
                 t.setPadding((int) (10 * d), (int) (4 * d), (int) (10 * d), (int) (4 * d));
                 t.setFocusable(true);
                 t.setBackground(Theme.cur().control(d));
@@ -314,7 +337,8 @@ public class AgentActivity extends Activity implements OmarchyLink.Listener {
             boolean sel = g.id.equals(selected);
             SpannableStringBuilder s = new SpannableStringBuilder();
             s.append(color(AgentUi.glyph(g.status), AgentUi.color(g.status))).append(' ');
-            s.append(color(AgentUi.clip(g.name, 16), sel ? accent : th.fg));
+            String label = t3Only && !g.title.isEmpty() ? g.title : g.name;
+            s.append(color(AgentUi.clip(label, t3Only ? 28 : 16), sel ? accent : th.fg));
             if (g.needsInput) s.append(' ').append(color("!", th.yellow));
             t.setBackground(g.needsInput ? needsInputBg(d) : Theme.cur().control(d));
             t.setText(s);

@@ -633,6 +633,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             case "agents":
                 open(new Intent(this, AgentActivity.class));
                 break;
+            case "t3-code":
+                open(new Intent(this, AgentActivity.class).putExtra(AgentActivity.EXTRA_T3, true));
+                break;
             case "about":
                 showAbout();
                 break;
@@ -879,7 +882,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                 }
                 break;
             case "agent_activity":
-                if (resumed) updateAgentsPane();
+                if (resumed) {
+                    updateAgentsPane();
+                    if (home != null) home.refresh();
+                }
                 break;
             case "stats":
                 if (resumed && home != null) home.refresh();
@@ -2832,7 +2838,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
     /** v2.10 "Disponi riquadri": pick a home panel, move it with the D-pad (OK saves, Back cancels), or reset. */
     private AsciiMenu.Page arrangePage() {
         AsciiMenu.Page p = new AsciiMenu.Page(str(R.string.v210_arrange));
-        int[] names = {R.string.v210_w_term, R.string.v210_w_weather, R.string.v210_w_pc, R.string.v210_w_ai, R.string.v210_w_deploys};
+        int[] names = {R.string.v210_w_term, R.string.v210_w_weather, R.string.v210_w_pc, R.string.v210_w_ai, R.string.v210_w_deploys, R.string.t3_widget};
         for (int i = 0; i < HomeV29.PANEL_IDS.length; i++) {
             final String id = HomeV29.PANEL_IDS[i];
             View v = home.panelView(id);
@@ -3191,8 +3197,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                 lOff = str(R.string.ai_offline_row);
         // v2.10: each home widget can be switched off ("No" really hides it); the clock widget is gone (bar only).
         String[][] hw = {{"term", str(R.string.v210_w_term)}, {"weather", str(R.string.v210_w_weather)}, {"pc", str(R.string.v210_w_pc)},
-                {"ai", str(R.string.v210_w_ai)}, {"deploys", str(R.string.v210_w_deploys)}};
-        boolean[] hwOn = {cfg.wTerm, cfg.wWeather, cfg.wPc, cfg.wAi, cfg.wDeploys};
+                {"ai", str(R.string.v210_w_ai)}, {"deploys", str(R.string.v210_w_deploys)}, {"t3", str(R.string.t3_widget)}};
+        boolean[] hwOn = {cfg.wTerm, cfg.wWeather, cfg.wPc, cfg.wAi, cfg.wDeploys, cfg.wT3};
         for (int i = 0; i < hw.length; i++) {
             final String id = hw[i][0], label = hw[i][1];
             final boolean on = hwOn[i];

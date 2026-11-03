@@ -417,4 +417,12 @@
     <string name="keys_none">No supported remote connected.</string>
     <string name="keys_default">Unbound: %1$s</string>
     <string name="wp_loop">Always-animated wallpaper</string>
+
+    <string name="t3_widget">T3 Code</string>
+    <string name="t3_empty">No active threads</string>
+    <string name="t3_unavailable">Status unavailable</string>
+    <string name="t3_working">Working</string>
+    <string name="t3_queued">Queued</string>
+    <string name="t3_details">OK: thread details</string>
+    <string name="t3_detail_hint">◀ ▶ threads   back close</string>
 </resources>

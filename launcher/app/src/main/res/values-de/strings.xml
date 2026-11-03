@@ -404,4 +404,12 @@
     <string name="keys_none">Keine unterstützte Fernbedienung verbunden.</string>
     <string name="keys_default">Ohne Belegung: %1$s</string>
     <string name="wp_loop">Immer animierter Hintergrund</string>
+
+    <string name="t3_widget">T3 Code</string>
+    <string name="t3_empty">Keine aktiven Threads</string>
+    <string name="t3_unavailable">Status nicht verfügbar</string>
+    <string name="t3_working">Aktiv</string>
+    <string name="t3_queued">In Warteschlange</string>
+    <string name="t3_details">OK: Thread-Details</string>
+    <string name="t3_detail_hint">◀ ▶ Threads   Zurück schließen</string>
 </resources>
