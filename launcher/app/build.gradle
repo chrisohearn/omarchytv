@@ -12,6 +12,7 @@ android {
         targetSdk 34
         versionCode 25
         versionName '2.13.8'
+        resValue 'string', 'build_stamp', "v${new Date().format('yyyy.MM.dd')}"
     }
 
     buildTypes {

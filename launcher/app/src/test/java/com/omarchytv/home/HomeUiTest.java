@@ -481,7 +481,8 @@ public class HomeUiTest {
         appCount = 6;
         viewportWidth = 3840;
         viewportHeight = 2160;
-        create(config("tokyo-night", 6));
+        create(config("tokyo-night", 6).put("workspaces", new JSONObject().put("order", new JSONArray()
+                .put("home").put("apps").put("pc").put("system"))));
         View tile = activity.getCurrentFocus();
         assertEquals(tile.getWidth() * 9 / 16, tile.getHeight());
         assertTrue("no words below banner", texts(tile).isEmpty());

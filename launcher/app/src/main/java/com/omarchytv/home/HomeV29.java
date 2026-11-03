@@ -95,6 +95,7 @@ final class HomeV29 extends FrameLayout {
     // bar
     private final FrameLayout bar;
     private final TextView clock;
+    private final TextView buildStamp;
     private final TextView[] ws = new TextView[5];
     private final View menuBtn;
     private final List<View> barIcons = new ArrayList<>();
@@ -180,6 +181,10 @@ final class HomeV29 extends FrameLayout {
             ws[i] = w;
             left.addView(w, new LinearLayout.LayoutParams(-2, -1));
         }
+        buildStamp = text(a.getString(R.string.build_stamp), 16, false);
+        buildStamp.setGravity(Gravity.CENTER_VERTICAL);
+        buildStamp.setPadding(px(12), 0, 0, 0);
+        left.addView(buildStamp, new LinearLayout.LayoutParams(-2, -1));
         clock = text("", 26, true);
         bar.addView(clock, new LayoutParams(-2, -2, Gravity.CENTER));
         LinearLayout right = hbox();
@@ -605,6 +610,7 @@ final class HomeV29 extends FrameLayout {
         int winBg = windowBackground();
         bar.setBackgroundColor(winBg);
         clock.setTextColor(ink(t.fgBright));
+        buildStamp.setTextColor(ink(t.fgDim));
         for (int i = 0; i < 5; i++) {
             boolean on = c.workspaceAt(i + 1) == activeWs;
             ws[i].setTextColor(ink(on ? t.accent : t.fg));

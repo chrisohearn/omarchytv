@@ -5,7 +5,7 @@ owner: Chris
 status: active
 canonical_repository: chrisohearn/omarchytv
 last_reviewed: 2026-11-03
-source_head: d1a6de7e14ed15fce9665bcffeb412f7fd1f5518
+source_head: f9ad70a12d4598f23dc1e9f190b36d327e05f8f3
 runtime_last_verified: unverified
 ---
 
@@ -23,6 +23,12 @@ Report the installed source and artifact identity, the behavior actually checked
 and any remaining limits. Inspect the actual screen after a UI update. Preserve
 review gates, task authority, signing, pairing, app data, and active media and
 device state. Coordinate shared repository and device ownership before effects.
+
+Every launcher update displays `vYYYY.MM.DD` after the workspace buttons in the
+top bar. Build a fresh APK on the installation day, using the build machine's
+local calendar date. If the date changes before installation, rebuild. Verify
+that the installed screen shows today's date. The date label supplements the
+source commit and APK hash used for precise update and rollback records.
 
 ## UI direction
 
