@@ -15,12 +15,13 @@ The tests write PNGs to `launcher/app/build/ui-evidence/`:
 - `dark-widget-focus.png`: an actionable widget selected with the D-pad.
 - `six-app-home.png`: one app row, compact greeting, and the weather/PC stack beside AI credits.
 - `bounded-app-scroll.png`: a later app row selected without drawing over the header or widgets.
+- `four-k-six-app-home.png`: the native 3840×2160 layout, uncaptioned artwork, and the selected app named in the header.
 
 The tests cover four through seven app columns, both app rows, scrolling, spatial D-pad navigation, app-position feedback, hidden widgets, read-only panels, panel-edit cancellation, app/menu callbacks, partial custom palettes, and old panel positions near the app window. `SurfacesTest` checks stock theme foreground contrast over black, white, gray, and saturated wallpaper colors.
 
 The home window fits its visible apps, showing one row when they fit and up to two rows otherwise. Left and Right stay within the current row. Down moves to the next app row, and Up from the first row selects the nearest actionable widget. Down from a widget returns to the selected app. Additional app rows scroll inside the app panel; pixel comparisons check that they do not draw over its header or the widgets.
 
-Home panels stay dark with both dark and light themes. Theme accents and wallpapers remain configurable. The home panels use at least 90% opacity to protect text over bright wallpaper; the saved transparency value remains available to the rest of the launcher. Large app banners are capped at 360 px wide at 1080p so both rows clear the widget deck. Banner artwork keeps its 16:9 shape, with a label beneath it.
+Home panels stay dark with both dark and light themes. Theme accents and wallpapers remain configurable. The home panels use at least 90% opacity to protect text over bright wallpaper; the saved transparency value remains available to the rest of the launcher. Large app banners are capped at 360 px wide at 1080p so both rows clear the widget deck. Banner artwork keeps its 16:9 shape without captions. The header names the selected app, and cards without artwork display their name inside the tile. Each card retains its accessibility label.
 
 Weather and PC stats share a column beside AI credits. PC stats fit their content, and weather puts the location and condition on separate lines. The greeting combines network and uptime on one line. Text remains at least 24 px at 1080p.
 

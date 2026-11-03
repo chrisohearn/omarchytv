@@ -49,6 +49,7 @@ public class HomeUiTest {
     private AppAdapter apps;
     private String firstAppName = "Cinema";
     private int appCount = 12;
+    private int viewportWidth = 1920, viewportHeight = 1080;
     private final List<String> calls = new ArrayList<>();
 
     // ShadowActivity stores a manual focus field. Read the actual Android view hierarchy instead.
@@ -127,9 +128,9 @@ public class HomeUiTest {
     }
 
     private void layout() {
-        scene.measure(View.MeasureSpec.makeMeasureSpec(1920, View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY));
-        scene.layout(0, 0, 1920, 1080);
+        scene.measure(View.MeasureSpec.makeMeasureSpec(viewportWidth, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(viewportHeight, View.MeasureSpec.EXACTLY));
+        scene.layout(0, 0, viewportWidth, viewportHeight);
     }
 
     private void settle() {
@@ -161,7 +162,7 @@ public class HomeUiTest {
     private void capture(String name) throws Exception {
         File directory = new File("build/ui-evidence");
         assertTrue(directory.isDirectory() || directory.mkdirs());
-        Bitmap bitmap = Bitmap.createBitmap(1920, 1080, Bitmap.Config.ARGB_8888);
+        Bitmap bitmap = Bitmap.createBitmap(viewportWidth, viewportHeight, Bitmap.Config.ARGB_8888);
         scene.draw(new Canvas(bitmap));
         try (FileOutputStream out = new FileOutputStream(new File(directory, name + ".png"))) {
             assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, out));
@@ -412,5 +413,22 @@ public class HomeUiTest {
         assertEquals(-640f, home.panelView("pc").getTranslationX(), 0.1f);
         assertEquals(135f, home.panelView("pc").getTranslationY(), 0.1f);
         assertFalse(calls.contains("savePanelPos"));
+    }
+
+    @Test @Config(qualifiers = "w3840dp-h2160dp-land-television-mdpi")
+    public void fourKHomeUsesUncaptionedArtworkAndReadableSelectedAppName() throws Exception {
+        appCount = 6;
+        viewportWidth = 3840;
+        viewportHeight = 2160;
+        create(config("tokyo-night", 6));
+        View tile = activity.getCurrentFocus();
+        assertEquals(tile.getWidth() * 9 / 16, tile.getHeight());
+        assertTrue("no words below banner", texts(tile).isEmpty());
+        assertEquals("Cinema", tile.getContentDescription());
+        assertTrue("4K selected app text", text("Cinema  ·  1/6").getTextSize() >= 64);
+        key(KeyEvent.KEYCODE_DPAD_RIGHT);
+        assertEquals(1, home.lastApp);
+        assertNotNull(text("Music  ·  2/6"));
+        capture("four-k-six-app-home");
     }
 }

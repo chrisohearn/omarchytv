@@ -1776,6 +1776,8 @@ final class HomeV29 extends FrameLayout {
                 ImageView iv = new ImageView(act);
                 iv.setImageResource(R.drawable.ln_monitor);
                 col.addView(iv, new LinearLayout.LayoutParams(px(56), px(56)));
+                TextView label = text("TV", 24, true);
+                col.addView(label);
                 f.addView(col, new LayoutParams(-1, -1));
             } else {
                 ImageView iv = new ImageView(act);
@@ -1788,12 +1790,6 @@ final class HomeV29 extends FrameLayout {
                 tv.setEllipsize(TextUtils.TruncateAt.END);
                 f.addView(tv, new LayoutParams(-1, -1));
             }
-            TextView caption = text("", 24, false);
-            caption.setSingleLine(true);
-            caption.setEllipsize(TextUtils.TruncateAt.END);
-            caption.setGravity(Gravity.CENTER);
-            caption.setPadding(px(10), 0, px(10), 0);
-            f.addView(caption, new LayoutParams(-1, px(44), Gravity.BOTTOM));
             f.setForeground(new FocusRing());
             return new RecyclerView.ViewHolder(f) {
             };
@@ -1804,11 +1800,11 @@ final class HomeV29 extends FrameLayout {
                     : Math.round(1920 * s) - px(64) - px(56) - px(4) - (tvFirst ? px(20) : px(16));
         }
 
-        /** Banner plus readable app caption; the home window shows up to two rows. */
+        /** Uncaptioned 16:9 artwork; the selected app is named in the window header. */
         int tileH(int n) {
             int width = tileW(inner() - px(20), px(20), n);
             if (tvFirst) width = Math.min(width, px(360));   // two Large rows must clear the widget deck
-            return width * 9 / 16 + px(44);
+            return width * 9 / 16;
         }
 
         @Override
@@ -1819,7 +1815,7 @@ final class HomeV29 extends FrameLayout {
             int w = tileW(inner - gap, gap, cols);
             if (tvFirst) w = Math.min(w, px(360));
             int bannerHeight = w * 9 / 16;
-            RecyclerView.LayoutParams lp = new RecyclerView.LayoutParams(w, bannerHeight + px(44));
+            RecyclerView.LayoutParams lp = new RecyclerView.LayoutParams(w, bannerHeight);
             lp.leftMargin = (inner / cols - w) / 2;
             lp.rightMargin = inner / cols - w - lp.leftMargin;
             lp.bottomMargin = gap;
@@ -1828,13 +1824,11 @@ final class HomeV29 extends FrameLayout {
             final int app = appIndex(pos);
             View art = f.getChildAt(0);
             art.setLayoutParams(new LayoutParams(-1, bannerHeight));
-            TextView caption = (TextView) f.getChildAt(f.getChildCount() - 1);
-            caption.setText(tvTile ? "TV" : apps.labelAt(app));
-            caption.setTextColor(ink(t.fgBright, tileBackground()));
-            caption.setVisibility(VISIBLE);
+            f.setContentDescription(tvTile ? "TV" : apps.labelAt(app));
             if (tvTile) {
                 LinearLayout col = (LinearLayout) f.getChildAt(0);
                 ((ImageView) col.getChildAt(0)).setColorFilter(t.accent);
+                ((TextView) col.getChildAt(1)).setTextColor(ink(t.fgBright, tileBackground()));
                 GradientDrawable bg = new GradientDrawable();
                 bg.setColor(tileBackground());
                 f.setBackground(bg);
@@ -1848,7 +1842,6 @@ final class HomeV29 extends FrameLayout {
                 tv.setText(apps.labelAt(app));
                 tv.setVisibility(banner != null ? GONE : VISIBLE);
                 tv.setLayoutParams(new LayoutParams(-1, -1));
-                caption.setVisibility(banner != null ? VISIBLE : GONE);
                 tv.setTextColor(ink(cfg.textTiles ? t.fg : t.fgBright, tileBackground()));
                 GradientDrawable bg = new GradientDrawable();
                 bg.setColor(tileBackground());
