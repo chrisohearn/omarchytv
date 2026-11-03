@@ -40,7 +40,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Waybar, fastfetch and btop-style widgets above two rows of labeled apps. Geometry scales from
+ * Waybar, fastfetch and btop-style widgets above app artwork. Geometry scales from
  * 1920×1080 to 4K. The selected theme supplies hues and accents; home surfaces stay dark.
  */
 final class HomeV29 extends FrameLayout {
@@ -53,13 +53,13 @@ final class HomeV29 extends FrameLayout {
         void openWalker();
         void weatherMenu(View anchor);
         void aiMenu(View anchor);
-        void launchApp(int position);
+        void launchApp(AppAdapter source, int position);
         String wifiName();
         // v2.10
         void wifiClick();
         void openBluetooth();
         void openTv();
-        void tileMenu(int appPos, View anchor);
+        void tileMenu(AppAdapter source, int appPos, View anchor);
         void moveApp(int from, int to);
         void finishMove(boolean save);
         List<Source> sources();
@@ -123,9 +123,11 @@ final class HomeV29 extends FrameLayout {
     // apps
     private final BoxView appWin;
     private final TextView appName, appHints;
+    private final LinearLayout appHead;
     final RecyclerView row;
     private final TileAdapter rowAdapter;
     private AppAdapter apps;
+    private AppAdapter catalog;
     /** Adapter position in the home row (0 = TV tile). */
     int lastApp;
     // v2.10 workspaces 2-5
@@ -326,7 +328,7 @@ final class HomeV29 extends FrameLayout {
         al.leftMargin = al.rightMargin = al.bottomMargin = px(32);
         addView(appWin, al);
         appWin.setClipChildren(true);
-        LinearLayout head = hbox();
+        LinearLayout head = appHead = hbox();
         appName = text("", 32, true);
         appName.setSingleLine(true);
         appName.setEllipsize(TextUtils.TruncateAt.END);
@@ -571,6 +573,7 @@ final class HomeV29 extends FrameLayout {
         cfg = c;
         t = Theme.cur();
         this.apps = apps;
+        catalog = apps.fullCatalog();
         int winBg = windowBackground();
         bar.setBackgroundColor(winBg);
         clock.setTextColor(ink(t.fgBright));
@@ -1708,6 +1711,7 @@ final class HomeV29 extends FrameLayout {
     }
 
     private void updateRowHeader() {
+        appHead.setVisibility(movingApp >= 0 ? VISIBLE : GONE);
         if (t == null) return;
         if (movingApp >= 0 && !movingInGrid) {
             appHints.setText(R.string.move_hint);
@@ -1754,9 +1758,11 @@ final class HomeV29 extends FrameLayout {
             return tvOn() ? pos - 1 : pos;
         }
 
+        private AppAdapter data() { return tvFirst ? apps : catalog; }
+
         @Override
         public int getItemCount() {
-            return (apps != null ? apps.getItemCount() : 0) + (tvOn() ? 1 : 0);
+            return (data() != null ? data().getItemCount() : 0) + (tvOn() ? 1 : 0);
         }
 
         @Override
@@ -1809,6 +1815,7 @@ final class HomeV29 extends FrameLayout {
 
         @Override
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder h, int pos) {
+            AppAdapter apps = data();
             FrameLayout f = (FrameLayout) h.itemView;
             int inner = inner();
             int gap = px(20);
@@ -1867,13 +1874,13 @@ final class HomeV29 extends FrameLayout {
                 int p = rv.getChildAdapterPosition(v);
                 if (p < 0) return;
                 if (tvOn() && p == 0) host.openTv();
-                else host.launchApp(appIndex(p));
+                else host.launchApp(apps, appIndex(p));
             });
             f.setOnLongClickListener(v -> {
                 int p = rv.getChildAdapterPosition(v);
                 if (p < 0) return true;
                 if (tvOn() && p == 0) host.openWalker();   // the TV tile cannot be moved or hidden
-                else host.tileMenu(appIndex(p), v);
+                else host.tileMenu(apps, appIndex(p), v);
                 return true;
             });
             if (tvFirst && pos == lastApp && appName.getText().length() == 0) appName.setText(tvTile ? "TV" : apps.labelAt(app));

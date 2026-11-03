@@ -15,19 +15,28 @@ The tests write PNGs to `launcher/app/build/ui-evidence/`:
 - `dark-widget-focus.png`: an actionable widget selected with the D-pad.
 - `six-app-home.png`: one app row, compact greeting, and the weather/PC stack beside AI credits.
 - `bounded-app-scroll.png`: a later app row selected without drawing over the header or widgets.
-- `four-k-six-app-home.png`: the native 3840×2160 layout, uncaptioned artwork, and the selected app named in the header.
+- `four-k-six-app-home.png`: the native 3840×2160 layout with uncaptioned artwork and no Home name/count header.
+- `full-apps-desktop.png`: a Home-hidden app remains available in the complete catalog.
 
 The tests cover four through seven app columns, both app rows, scrolling, spatial D-pad navigation, app-position feedback, hidden widgets, read-only panels, panel-edit cancellation, app/menu callbacks, partial custom palettes, and old panel positions near the app window. `SurfacesTest` checks stock theme foreground contrast over black, white, gray, and saturated wallpaper colors.
 
 The home window fits its visible apps, showing one row when they fit and up to two rows otherwise. Left and Right stay within the current row. Down moves to the next app row, and Up from the first row selects the nearest actionable widget. Down from a widget returns to the selected app. Additional app rows scroll inside the app panel; pixel comparisons check that they do not draw over its header or the widgets.
 
-Home panels stay dark with both dark and light themes. Theme accents and wallpapers remain configurable. The home panels use at least 90% opacity to protect text over bright wallpaper; the saved transparency value remains available to the rest of the launcher. Large app banners are capped at 360 px wide at 1080p so both rows clear the widget deck. Banner artwork keeps its 16:9 shape without captions. The header names the selected app, and cards without artwork display their name inside the tile. Each card retains its accessibility label.
+Home panels stay dark with both dark and light themes. Theme accents and wallpapers remain configurable. The home panels use at least 90% opacity to protect text over bright wallpaper; the saved transparency value remains available to the rest of the launcher. Large app banners are capped at 360 px wide at 1080p so both rows clear the widget deck. Home shows 16:9 artwork without captions or a name/count header. Move mode retains its instructions. Cards without artwork display their name inside the tile, and every card retains its accessibility label.
 
 Weather and PC stats share a column beside AI credits. PC stats fit their content, and weather puts the location and condition on separate lines. The greeting combines network and uptime on one line. Text remains at least 24 px at 1080p.
 
 All saved widget offsets are restored before collision checks. A position that no longer fits the measured app window falls back to its aligned default, or the nearest available grid cell when that default is occupied, without overwriting the saved coordinates.
 
-Use the existing hidden-app setting to remove unused tiles. Hiding apps preserves their installation and data; Settings → Hidden apps restores them. Personal app selections belong in the device configuration, not the source defaults.
+Use the existing hidden-app setting to remove unused Home tiles. The Apps desktop retains the complete TV-app catalog. Long OK there offers **Show on Home** or **Hide from Home** and the existing app actions. Launch and menu callbacks retain the catalog's app identity, so a hidden app cannot accidentally launch a different Home app at the same index. Hiding apps preserves installation and data. Personal selections belong in device configuration.
+
+To place Apps on desktop 2 and omit the unused TV desktop, use the existing workspace order:
+
+```json
+"workspaces": {"order": ["home", "apps", "pc", "system"]}
+```
+
+This changes visible desktop positions while retaining configurable workspace support.
 
 These renders prove local layout and focus behavior. They do not establish hardware performance, overscan, remote long-press timing, or readability at a particular viewing distance.
 

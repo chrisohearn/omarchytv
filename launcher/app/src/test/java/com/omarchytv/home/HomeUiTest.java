@@ -3,6 +3,10 @@ package com.omarchytv.home;
 import static org.junit.Assert.*;
 
 import android.app.Activity;
+import android.content.Intent;
+import android.content.pm.ActivityInfo;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -50,6 +54,8 @@ public class HomeUiTest {
     private String firstAppName = "Cinema";
     private int appCount = 12;
     private int viewportWidth = 1920, viewportHeight = 1080;
+    private AppAdapter launchedApps;
+    private int launchedPosition = -1;
     private final List<String> calls = new ArrayList<>();
 
     // ShadowActivity stores a manual focus field. Read the actual Android view hierarchy instead.
@@ -82,6 +88,10 @@ public class HomeUiTest {
         HomeV29.Host host = (HomeV29.Host) Proxy.newProxyInstance(HomeV29.Host.class.getClassLoader(),
                 new Class[]{HomeV29.Host.class}, (proxy, method, args) -> {
                     calls.add(method.getName());
+                    if (method.getName().equals("launchApp") && args[0] instanceof AppAdapter) {
+                        launchedApps = (AppAdapter) args[0];
+                        launchedPosition = (Integer) args[1];
+                    }
                     if (method.getName().equals("wifiName")) return "Ethernet";
                     if (method.getName().equals("sources")) return Collections.emptyList();
                     if (method.getReturnType() == boolean.class) return false;
@@ -99,6 +109,7 @@ public class HomeUiTest {
             @Override public int getItemCount() { return appCount; }
             @Override String labelAt(int pos) { return names[pos % names.length]; }
             @Override Drawable bannerAt(int pos) { return banner(labelAt(pos), pos); }
+            @Override AppAdapter fullCatalog() { return this; }
         };
         home.bind(new LauncherConfig(activity, json, 1), apps);
         layout();
@@ -177,7 +188,7 @@ public class HomeUiTest {
         key(KeyEvent.KEYCODE_DPAD_RIGHT);
         View selected = activity.getCurrentFocus();
         assertEquals(1, home.lastApp);
-        assertNotNull(text("Music  ·  2/12"));
+        assertEquals("Music", selected.getContentDescription());
         key(KeyEvent.KEYCODE_DPAD_UP);
         assertSame(home.panelView("weather"), activity.getCurrentFocus());
         key(KeyEvent.KEYCODE_DPAD_RIGHT);
@@ -322,9 +333,7 @@ public class HomeUiTest {
         create(json);
         assertEquals(0f, home.panelView("ai").getTranslationX(), 0.1f);
         assertEquals(135f, home.panelView("ai").getTranslationY(), 0.1f);
-        TextView name = text(firstAppName + "  ·  1/12");
-        ViewGroup header = (ViewGroup) name.getParent();
-        assertTrue(name.getRight() <= header.getChildAt(1).getLeft());
+        assertEquals(firstAppName, activity.getCurrentFocus().getContentDescription());
         key(KeyEvent.KEYCODE_DPAD_UP);
         assertSame(home.panelView("weather"), activity.getCurrentFocus());
         Bitmap bitmap = Bitmap.createBitmap(1920, 1080, Bitmap.Config.ARGB_8888);
@@ -360,9 +369,7 @@ public class HomeUiTest {
         for (View panel : new View[]{weather, pc, ai}) {
             for (TextView t : texts(panel)) assertTrue(t.getTextSize() >= 24);
         }
-        TextView name = text("Cinema  ·  1/12");
-        ViewGroup header = (ViewGroup) name.getParent();
-        assertTrue(name.getRight() <= header.getChildAt(1).getLeft());
+        assertFalse(texts(home).stream().anyMatch(v -> v.getText().toString().contains("1/12")));
         assertTrue(ai.getBottom() < home.row.getTop() + ((View) home.row.getParent()).getTop());
         capture("light-theme-dark-panels");
     }
@@ -416,7 +423,7 @@ public class HomeUiTest {
     }
 
     @Test @Config(qualifiers = "w3840dp-h2160dp-land-television-mdpi")
-    public void fourKHomeUsesUncaptionedArtworkAndReadableSelectedAppName() throws Exception {
+    public void fourKHomeUsesUncaptionedArtworkWithoutANameCounterHeader() throws Exception {
         appCount = 6;
         viewportWidth = 3840;
         viewportHeight = 2160;
@@ -425,10 +432,50 @@ public class HomeUiTest {
         assertEquals(tile.getWidth() * 9 / 16, tile.getHeight());
         assertTrue("no words below banner", texts(tile).isEmpty());
         assertEquals("Cinema", tile.getContentDescription());
-        assertTrue("4K selected app text", text("Cinema  ·  1/6").getTextSize() >= 64);
+        assertFalse(texts(home).stream().anyMatch(v -> v.getText().toString().contains("1/6")));
         key(KeyEvent.KEYCODE_DPAD_RIGHT);
         assertEquals(1, home.lastApp);
-        assertNotNull(text("Music  ·  2/6"));
+        assertEquals("Music", activity.getCurrentFocus().getContentDescription());
         capture("four-k-six-app-home");
+    }
+
+    @Test public void appsDesktopIncludesHomeHiddenAppsAndLaunchesFromTheCatalog() throws Exception {
+        JSONObject json = config("tokyo-night", 6)
+                .put("webapps", new JSONArray())
+                .put("dock", new JSONArray().put("sample.visible"))
+                .put("hidden", new JSONArray().put("sample.hidden"))
+                .put("workspaces", new JSONObject().put("order", new JSONArray()
+                        .put("home").put("apps").put("pc").put("system")));
+        create(json);
+        Intent probe = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER);
+        for (String pkg : new String[]{"sample.visible", "sample.hidden"}) {
+            ResolveInfo info = new ResolveInfo();
+            info.activityInfo = new ActivityInfo();
+            info.activityInfo.packageName = pkg;
+            info.activityInfo.name = pkg + ".Main";
+            info.activityInfo.applicationInfo = new ApplicationInfo();
+            info.activityInfo.applicationInfo.packageName = pkg;
+            info.nonLocalizedLabel = pkg;
+            Shadows.shadowOf(activity.getPackageManager()).addResolveInfoForIntent(probe, info);
+        }
+        Files.write(LauncherConfig.file(activity).toPath(), json.toString().getBytes(StandardCharsets.UTF_8));
+        AppAdapter discovered = new AppAdapter(activity, null, 6);
+        discovered.reload();
+        assertEquals(1, discovered.getItemCount());
+        LauncherConfig cfg = LauncherConfig.get(activity);
+        home.bind(cfg, discovered);
+        settle();
+        assertEquals(1, home.row.getAdapter().getItemCount());
+        home.setWorkspace(cfg.workspaceAt(2));
+        settle();
+        assertEquals(2, home.grid.getAdapter().getItemCount());
+        assertFalse(cfg.workspaceShown(2));
+        home.focusGrid(1);
+        settle();
+        activity.getCurrentFocus().performClick();
+        assertNotNull(launchedApps);
+        assertEquals("sample.hidden", launchedApps.packageAt(launchedPosition));
+        assertTrue(LauncherConfig.get(activity).isHidden("sample.hidden"));
+        capture("full-apps-desktop");
     }
 }

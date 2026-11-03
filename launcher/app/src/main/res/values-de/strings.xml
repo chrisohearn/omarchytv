@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="ctx_show_home">Auf der Startseite anzeigen</string>
+    <string name="ctx_hide_home">Auf der Startseite ausblenden</string>
     <string name="app_name">OmarchyTV</string>
     <string name="inputs">Quellen</string>
     <string name="wifi">WLAN</string>
@@ -306,7 +308,7 @@
     <string name="v29_set_input">Eingänge</string>
     <string name="v210_tv_hints">OK fernsehen · lang OK: Walker</string>
     <string name="v210_app_hints">OK öffnen · lang OK: Verschieben / Ausblenden</string>
-    <string name="v210_grid_hints">OK öffnen · lang OK: Verschieben / Ausblenden · 1-%1$d Workspaces</string>
+    <string name="v210_grid_hints">OK öffnen · lang OK: Startseite / Info · 1-%1$d Workspaces</string>
     <string name="v210_pc_link">Omarchy Linux verbinden</string>
     <string name="v210_pc_link_hint">Koppel den PC, um hier Status, AI-Guthaben und Deploys zu sehen.</string>
     <string name="v210_pc_pair">koppeln</string>

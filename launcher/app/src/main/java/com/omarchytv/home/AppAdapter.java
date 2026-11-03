@@ -30,7 +30,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 /**
  * App tiles: every installed app with a leanback launcher activity. The first {@link MainActivity#COLUMNS}
@@ -83,9 +82,8 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
     private List<String> favourites;
     /** Saved grid order (omarchytv.json "order"). */
     private List<String> order;
-    /** Never shown as tiles (omarchytv.json "hidden", else config.xml hidden_apps). */
-    private Set<String> hidden;
     private final List<Entry> items = new ArrayList<>();
+    private final List<Entry> catalog = new ArrayList<>();
     static final java.util.Set<String> SONY_HIDDEN = new HashSet<>(java.util.Arrays.asList(
             "recorded title list", "elenco titoli registrati", "help", "guida", "aiuto", "hilfe"));
 
@@ -102,7 +100,6 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
         LauncherConfig cfg = LauncherConfig.get(ctx);
         favourites = cfg.dock;
         order = cfg.order;
-        hidden = new HashSet<>(cfg.hidden);
         boolean showSony = LauncherConfig.readJson(ctx).optBoolean("showSonySystem", true);
         PackageManager pm = ctx.getPackageManager();
         Intent probe = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER);
@@ -113,7 +110,7 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
         for (ResolveInfo ri : found) {
             if (ri.activityInfo == null) continue;
             String pkg = ri.activityInfo.packageName;
-            if (pkg.equals(ctx.getPackageName()) || cfg.isHidden(pkg) || pkg.equals(liveTv)) continue;
+            if (pkg.equals(ctx.getPackageName())) continue;
             Drawable banner = ri.activityInfo.loadBanner(pm);
             if (banner == null) banner = ri.activityInfo.applicationInfo.loadBanner(pm);
             Drawable custom = bannerOverride(pkg);
@@ -129,7 +126,6 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
         }
         for (LauncherConfig.WebApp w : cfg.webapps) {
             String key = "web:" + w.id;
-            if (cfg.isHidden(key)) continue;
             Drawable icon = null;
             if (w.icon.startsWith("/")) {
                 try {
@@ -154,8 +150,19 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
             return a.label.compareToIgnoreCase(b.label);
         });
         items.clear();
-        items.addAll(fresh);
+        catalog.clear();
+        catalog.addAll(fresh);
+        for (Entry entry : fresh) {
+            if (!cfg.isHidden(entry.pkg) && !entry.pkg.equals(liveTv)) items.add(entry);
+        }
         notifyDataSetChanged();
+    }
+
+    /** Same discovered apps and artwork, including apps hidden from Home. */
+    AppAdapter fullCatalog() {
+        AppAdapter all = new AppAdapter(ctx, null, dockSize);
+        all.items.addAll(catalog);
+        return all;
     }
 
     /** Tile size, gaps and border from settings (omarchytv.json "geometry"). */

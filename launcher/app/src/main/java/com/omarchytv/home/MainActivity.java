@@ -342,8 +342,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             }
 
             @Override
-            public void tileMenu(int appPos, View anchor) {
-                appTileMenu(appPos, anchor);
+            public void tileMenu(AppAdapter source, int appPos, View anchor) {
+                appTileMenu(source, appPos, anchor);
             }
 
             @Override
@@ -419,9 +419,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             }
 
             @Override
-            public void launchApp(int position) {
-                lastFocusedKey = adapter.keyAt(position);
-                adapter.launchAt(position);
+            public void launchApp(AppAdapter source, int position) {
+                lastFocusedKey = source.keyAt(position);
+                source.launchAt(position);
             }
 
             @Override
@@ -463,25 +463,31 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         return false;
     }
 
-    /** OK lungo on an app tile (home row or workspace 3): Sposta / Nascondi. The TV tile never gets here. */
+    /** Home supports move/hide; the full catalog supports Home visibility and app actions. */
     private void appTileMenu(int position, View anchor) {
-        if (home.movingApp >= 0 || position < 0 || position >= adapter.getItemCount()) return;
-        String pkg = adapter.packageAt(position);
+        appTileMenu(adapter, position, anchor);
+    }
+
+    private void appTileMenu(AppAdapter source, int position, View anchor) {
+        if (home.movingApp >= 0 || position < 0 || position >= source.getItemCount()) return;
+        String pkg = source.packageAt(position);
         if (pkg == null) return;
         if (menu != null && menu.isShowing()) menu.dismiss();
         menu = new AsciiMenu(this, 300);
-        AsciiMenu.Page p = new AsciiMenu.Page(adapter.labelAt(position));
-        p.add(str(R.string.ctx_move), "←↑↓→", r -> {
+        AsciiMenu.Page p = new AsciiMenu.Page(source.labelAt(position));
+        if (source == adapter) p.add(str(R.string.ctx_move), "←↑↓→", r -> {
             home.post(() -> {
                 moveSnapshot = adapter.packagesInOrder();
                 home.startMove(position);
             });
             return false;
         });
-        p.add(str(R.string.ctx_hide), null, r -> {
+        boolean hidden = LauncherConfig.get(this).isHidden(pkg);
+        p.add(str(hidden ? R.string.ctx_show_home : R.string.ctx_hide_home), null, r -> {
             LauncherConfig.update(this, j -> {
                 List<String> list = new ArrayList<>(LauncherConfig.get(this).hidden);
-                if (!list.contains(pkg)) list.add(pkg);
+                if (list.contains(pkg)) list.remove(pkg);
+                else list.add(pkg);
                 j.put("hidden", LauncherConfig.array(list));
             });
             builtWith = LauncherConfig.get(this);
@@ -490,7 +496,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             home.post(home::focusDefault);
             return false;
         });
-        LauncherConfig.WebApp webApp = adapter.webAt(position);
+        LauncherConfig.WebApp webApp = source.webAt(position);
         if (webApp != null) {
             p.add(str(R.string.web_remove), null, r -> {
                 removeWebApp(webApp.id);
