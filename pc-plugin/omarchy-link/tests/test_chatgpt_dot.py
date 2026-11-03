@@ -108,6 +108,32 @@ class DotRelayTests(unittest.TestCase):
             self.assertEqual(browser.snapshot(query="Message", wait_ready=True), ready)
             self.assertEqual([c.args[0] for c in cua.call_args_list], ["get_browser_state", "get_browser_state"])
 
+    def test_open_selects_the_owned_marker_window_and_refuses_ambiguity(self):
+        marker = "about:blank?agent-tab=owned-unique-marker"
+        field = {"role": "textbox", "name": "Message", "ref": "input", "actions": ["type"]}
+        own = {"pid": 12, "window_id": 34, "app_name": "Google-chrome", "title": marker}
+        for other_title, succeeds in (("Another Chrome window", True), (marker, False)):
+            with self.subTest(other_title=other_title):
+                browser = dot.Browser(CFG)
+                windows = [{**own, "pid": 56, "window_id": 78, "title": other_title}, own]
+                bound = {"binding_quality": "exact", "mutation_allowed": True,
+                         "target_id": "owned-browser", "tabs": [{"url": marker, "tab_id": "owned-tab"}]}
+                with patch.object(browser, "renew"), patch.object(browser, "command", side_effect=[
+                    {"status": "ACQUIRED", "token": "chrome"},
+                    {"status": "ACQUIRED", "token": "computer-use"}, {"url": marker},
+                ]), patch.object(browser, "cua", side_effect=[{"windows": windows}, {}, bound, {}]) as cua, \
+                        patch.object(browser, "snapshot", side_effect=[
+                            state(refs=[field]), state('- textbox "Message"', refs=[field]),
+                        ]):
+                    if succeeds:
+                        self.assertEqual(browser.open(), "input")
+                        self.assertEqual(cua.call_args_list[1].kwargs["window_id"], 34)
+                        self.assertEqual((browser.target, browser.tab), ("owned-browser", "owned-tab"))
+                    else:
+                        with self.assertRaises(dot.RelayError):
+                            browser.open()
+                        self.assertEqual([c.args[0] for c in cua.call_args_list], ["list_windows"])
+
     def test_submit_uses_one_current_send_control(self):
         browser = dot.Browser(CFG)
         field = {"role": "textbox", "name": "Message", "ref": "new-field", "actions": ["type"]}

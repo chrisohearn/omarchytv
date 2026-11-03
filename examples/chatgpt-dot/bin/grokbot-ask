@@ -167,6 +167,9 @@ class Browser:
         opened = self.command([self.local / "agent-desktop", "tab", "new", "--owner", self.owner])
         windows = self.cua("list_windows").get("windows", [])
         windows = [w for w in windows if w.get("app_name") == "Google-chrome"]
+        owned_windows = [w for w in windows if opened["url"] in w.get("title", "")]
+        if len(owned_windows) == 1:
+            windows = owned_windows
         if len(windows) != 1:
             raise RelayError("Cannot identify the agent Chrome window")
         window = windows[0]
