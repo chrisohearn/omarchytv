@@ -22,6 +22,8 @@ The tests write PNGs to `launcher/app/build/ui-evidence/`:
 - `four-k-six-app-home.png`: the native 3840×2160 layout with uncaptioned artwork and no Home name/count header.
 - `full-apps-desktop.png`: a Home-hidden app remains available in the complete catalog.
 - `four-k-t3-active-threads.png`: active T3 threads, status, and the focused read-only details target at 4K.
+- `four-k-weather-conditions.png`: long location, large temperature, current-condition artwork and daily range at 4K.
+- `four-k-weather-loading.png`: missing weather data clears the condition artwork and shows the loading state.
 
 The tests cover four through seven app columns, both app rows, scrolling, spatial D-pad navigation, app-position feedback, hidden widgets, read-only panels, panel-edit cancellation, app/menu callbacks, partial custom palettes, and old panel positions near the app window. `SurfacesTest` checks stock theme foreground contrast over black, white, gray, and saturated wallpaper colors.
 
@@ -29,7 +31,7 @@ The home window fits its visible apps, showing one row when they fit and up to t
 
 Home panels stay dark with both dark and light themes. Theme accents and wallpapers remain configurable. The home panels use at least 90% opacity to protect text over bright wallpaper; the saved transparency value remains available to the rest of the launcher. Large app banners are capped at 360 px wide at 1080p so both rows clear the widget deck. Home shows 16:9 artwork without captions or a name/count header. Move mode retains its instructions. Cards without artwork display their name inside the tile, and every card retains its accessibility label.
 
-PC stats align directly below AI credits, with weather in the adjacent column. PC stats fit their content, and weather puts the location and condition on separate lines. The greeting combines network and uptime on one line. Text remains at least 24 px at 1080p.
+PC stats align directly below AI credits, with weather in the adjacent column. The weather card has a bounded location header, a large temperature beside scalable condition artwork, a separate condition label and a spaced daily range. Artwork uses the existing weather-code mapping and disappears when current data is absent. The native check covers cloud, rain, snow, storm and clear icons, Fahrenheit/Celsius, long locations and loading. PC stats fit their content. The greeting combines network and uptime on one line. Text remains at least 24 px at 1080p.
 
 All saved widget offsets are restored before collision checks. A position that no longer fits the measured app window falls back to its aligned default, or the nearest available grid cell when that default is occupied, without overwriting the saved coordinates.
 

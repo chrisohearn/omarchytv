@@ -124,7 +124,8 @@ final class HomeV29 extends FrameLayout {
     private final LinearLayout barWx;
     private final ImageView barWxIcon;
     private final TextView barWxTemp;
-    private final TextView wxTemp, wxLine1, wxLine2;
+    private final TextView wxTemp, wxPlace, wxCondition, wxRange;
+    private final ImageView wxIcon;
     // apps
     private final BoxView appWin;
     private final TextView appName, appHints;
@@ -294,7 +295,7 @@ final class HomeV29 extends FrameLayout {
             cl.weight = 0f;
         }
         ((LinearLayout.LayoutParams) pcBox.getLayoutParams()).topMargin = px(16);
-        wxBox.setMinimumHeight(px(208));
+        wxBox.setMinimumHeight(px(232));
         ai.setMinimumHeight(px(208));
         r2.setGravity(Gravity.END);
         depBox = widget(r2, "deploys · pc", 0);
@@ -302,14 +303,32 @@ final class HomeV29 extends FrameLayout {
         ((LinearLayout.LayoutParams) depBox.getLayoutParams()).width = px(584);
         ((LinearLayout.LayoutParams) depBox.getLayoutParams()).weight = 0f;
         this.aiBoxRef = ai;
-        wxTemp = text("", 50, true);
-        wxLine1 = line("");
-        wxLine1.setSingleLine(false);
-        wxLine1.setMaxLines(2);
-        wxLine2 = line("");
-        wxBox.addView(wxTemp);
-        wxBox.addView(wxLine1);
-        wxBox.addView(wxLine2);
+        wxPlace = text("", 24, true);
+        wxPlace.setSingleLine(true);
+        wxPlace.setEllipsize(TextUtils.TruncateAt.END);
+        wxBox.addView(wxPlace, new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout weatherNow = hbox(), weatherReading = vbox();
+        LinearLayout.LayoutParams nowLayout = new LinearLayout.LayoutParams(-1, -2);
+        nowLayout.topMargin = px(12);
+        wxBox.addView(weatherNow, nowLayout);
+        weatherNow.addView(weatherReading, new LinearLayout.LayoutParams(0, -2, 1f));
+        wxTemp = text("", 64, true);
+        wxTemp.setSingleLine(true);
+        wxCondition = line("");
+        wxCondition.setSingleLine(true);
+        wxCondition.setEllipsize(TextUtils.TruncateAt.END);
+        weatherReading.addView(wxTemp);
+        weatherReading.addView(wxCondition);
+        wxIcon = new ImageView(a);
+        wxIcon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        wxIcon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        LinearLayout.LayoutParams iconLayout = new LinearLayout.LayoutParams(px(128), px(112));
+        iconLayout.leftMargin = px(24);
+        weatherNow.addView(wxIcon, iconLayout);
+        wxRange = line("");
+        LinearLayout.LayoutParams rangeLayout = new LinearLayout.LayoutParams(-1, -2);
+        rangeLayout.topMargin = px(12);
+        wxBox.addView(wxRange, rangeLayout);
         pcBody = vbox();
         pcBox.addView(pcBody, new LinearLayout.LayoutParams(-1, -2));
         aiBody = vbox();
@@ -863,8 +882,13 @@ final class HomeV29 extends FrameLayout {
 
     private void updateWeather() {
         wxTemp.setTextColor(ink(t.accent));
-        wxLine1.setTextColor(ink(t.fg));
-        wxLine2.setTextColor(ink(t.fg));
+        wxPlace.setTextColor(ink(t.fgBright));
+        wxCondition.setTextColor(ink(t.fg));
+        wxRange.setTextColor(ink(t.fg));
+        wxIcon.setColorFilter(ink(t.cyan));
+        String place = Weather.place(act, cfg);
+        wxPlace.setText(place);
+        wxPlace.setVisibility(place.isEmpty() ? GONE : VISIBLE);
         JSONObject w = Weather.cached(act);
         JSONObject cur = w != null ? w.optJSONObject("current") : null;
         barWx.setVisibility(cfg.barWeather && cur != null ? VISIBLE : GONE);
@@ -877,17 +901,20 @@ final class HomeV29 extends FrameLayout {
         }
         if (cur == null) {
             wxTemp.setText("--°");
-            wxLine1.setText(Weather.where(act, cfg) == null ? act.getString(R.string.v29_wx_locating) : act.getString(R.string.weather_loading));
-            wxLine2.setText("");
+            wxCondition.setText(Weather.where(act, cfg) == null ? act.getString(R.string.v29_wx_locating) : act.getString(R.string.weather_loading));
+            wxRange.setText("");
+            wxIcon.setImageDrawable(null);
+            wxIcon.setVisibility(INVISIBLE);
             return;
         }
         wxTemp.setText(Weather.temp(cur.optDouble("temperature_2m"), cfg.tempF) + (cfg.tempF ? "°F" : "°"));
-        String place = Weather.place(act, cfg);
         String cond = act.getString(Weather.describe(cur.optInt("weather_code"))).toLowerCase(Locale.getDefault());
-        wxLine1.setText(place.isEmpty() ? cond : place + "\n" + cond);
+        wxCondition.setText(cond);
+        wxIcon.setImageResource(Weather.icon(cur.optInt("weather_code")));
+        wxIcon.setVisibility(VISIBLE);
         JSONObject daily = w.optJSONObject("daily");
         JSONArray mn = daily != null ? daily.optJSONArray("temperature_2m_min") : null, mx = daily != null ? daily.optJSONArray("temperature_2m_max") : null;
-        wxLine2.setText(mn != null && mx != null ? "min " + Weather.temp(mn.optDouble(0), cfg.tempF) + "° · max " + Weather.temp(mx.optDouble(0), cfg.tempF) + "°" : "");
+        wxRange.setText(mn != null && mx != null ? "min " + Weather.temp(mn.optDouble(0), cfg.tempF) + "° · max " + Weather.temp(mx.optDouble(0), cfg.tempF) + "°" : "");
     }
 
     private TextView offline() {
