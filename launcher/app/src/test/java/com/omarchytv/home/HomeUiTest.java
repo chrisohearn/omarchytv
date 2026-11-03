@@ -48,6 +48,7 @@ public class HomeUiTest {
     private FrameLayout scene;
     private AppAdapter apps;
     private String firstAppName = "Cinema";
+    private int appCount = 12;
     private final List<String> calls = new ArrayList<>();
 
     // ShadowActivity stores a manual focus field. Read the actual Android view hierarchy instead.
@@ -94,9 +95,9 @@ public class HomeUiTest {
         activity.setContentView(scene);
         apps = new AppAdapter(activity, null, 6) {
             private final String[] names = {firstAppName, "Music", "Photos", "Browser", "Radio", "Library", "Streams", "Gallery", "Podcasts", "Games", "Search", "Downloads"};
-            @Override public int getItemCount() { return names.length; }
-            @Override String labelAt(int pos) { return names[pos]; }
-            @Override Drawable bannerAt(int pos) { return banner(names[pos], pos); }
+            @Override public int getItemCount() { return appCount; }
+            @Override String labelAt(int pos) { return names[pos % names.length]; }
+            @Override Drawable bannerAt(int pos) { return banner(labelAt(pos), pos); }
         };
         home.bind(new LauncherConfig(activity, json, 1), apps);
         layout();
@@ -316,10 +317,10 @@ public class HomeUiTest {
         JSONObject json = config("tokyo-night", 6);
         json.getJSONObject("theme").put("colors", new JSONObject()
                 .put("background", "#f0f0f0").put("foreground", "#eeeeee").put("accent", "#dddddd"));
-        json.put("panelPos", new JSONObject().put("weather", new JSONArray().put(0).put(1)));
+        json.put("panelPos", new JSONObject().put("ai", new JSONArray().put(0).put(1)));
         create(json);
-        assertEquals(0f, home.panelView("weather").getTranslationX(), 0.1f);
-        assertEquals(135f, home.panelView("weather").getTranslationY(), 0.1f);
+        assertEquals(0f, home.panelView("ai").getTranslationX(), 0.1f);
+        assertEquals(135f, home.panelView("ai").getTranslationY(), 0.1f);
         TextView name = text(firstAppName + "  ·  1/12");
         ViewGroup header = (ViewGroup) name.getParent();
         assertTrue(name.getRight() <= header.getChildAt(1).getLeft());
@@ -347,9 +348,14 @@ public class HomeUiTest {
         View weather = home.panelView("weather"), pc = home.panelView("pc"), ai = home.panelView("ai");
         assertEquals(weather.getWidth(), pc.getWidth());
         assertEquals(weather.getWidth(), ai.getWidth());
-        assertEquals(weather.getHeight(), pc.getHeight());
-        assertEquals(weather.getHeight(), ai.getHeight());
-        assertTrue(weather.getHeight() >= 248);
+        int[] wxAt = new int[2], pcAt = new int[2], aiAt = new int[2];
+        weather.getLocationOnScreen(wxAt);
+        pc.getLocationOnScreen(pcAt);
+        ai.getLocationOnScreen(aiAt);
+        assertEquals("weather and PC align", wxAt[0], pcAt[0]);
+        assertEquals("top cards align", wxAt[1], aiAt[1]);
+        assertTrue("PC sits below weather", pcAt[1] >= wxAt[1] + weather.getHeight() + 16);
+        assertTrue("PC fits its content", pc.getHeight() < weather.getHeight());
         for (View panel : new View[]{weather, pc, ai}) {
             for (TextView t : texts(panel)) assertTrue(t.getTextSize() >= 24);
         }
@@ -358,5 +364,53 @@ public class HomeUiTest {
         assertTrue(name.getRight() <= header.getChildAt(1).getLeft());
         assertTrue(ai.getBottom() < home.row.getTop() + ((View) home.row.getParent()).getTop());
         capture("light-theme-dark-panels");
+    }
+
+    @Test public void sixAppsUseOneRowAndOldPcOffsetFallsBackToTheAlignedDeck() throws Exception {
+        appCount = 6;
+        JSONObject json = config("tokyo-night", 6).put("panelPos", new JSONObject()
+                .put("pc", new JSONArray().put(-7).put(2)));
+        create(json);
+        assertTrue("one app row", home.row.getHeight() < 300);
+        assertEquals(0f, home.panelView("pc").getTranslationX(), 0.1f);
+        assertEquals(0f, home.panelView("pc").getTranslationY(), 0.1f);
+        assertEquals(-7, json.getJSONObject("panelPos").getJSONArray("pc").getInt(0));
+        key(KeyEvent.KEYCODE_DPAD_DOWN);
+        assertEquals("no second row", 0, home.lastApp);
+        capture("six-app-home");
+    }
+
+    @Test public void scrollingNeverPaintsAppsOverTheHeaderOrWidgets() throws Exception {
+        appCount = 24;
+        create(config("tokyo-night", 6));
+        int[] at = new int[2];
+        home.row.getLocationOnScreen(at);
+        Bitmap before = Bitmap.createBitmap(1920, 1080, Bitmap.Config.ARGB_8888);
+        scene.draw(new Canvas(before));
+        home.focusApp(12);
+        settle();
+        Bitmap after = Bitmap.createBitmap(1920, 1080, Bitmap.Config.ARGB_8888);
+        scene.draw(new Canvas(after));
+        for (int y = at[1] - 120; y < at[1] - 50; y++) {
+            for (int x = at[0] + 40; x < at[0] + 200; x++) {
+                assertEquals("app content escaped above the viewport", before.getPixel(x, y), after.getPixel(x, y));
+            }
+        }
+        assertEquals(12, home.lastApp);
+        before.recycle();
+        after.recycle();
+        capture("bounded-app-scroll");
+    }
+
+    @Test public void completeSavedArrangementIsRestoredBeforeCollisionChecks() throws Exception {
+        appCount = 6;
+        JSONObject json = config("tokyo-night", 6).put("panelPos", new JSONObject()
+                .put("weather", new JSONArray().put(0).put(2))
+                .put("pc", new JSONArray().put(-4).put(1)));
+        create(json);
+        assertEquals(270f, home.panelView("weather").getTranslationY(), 0.1f);
+        assertEquals(-640f, home.panelView("pc").getTranslationX(), 0.1f);
+        assertEquals(135f, home.panelView("pc").getTranslationY(), 0.1f);
+        assertFalse(calls.contains("savePanelPos"));
     }
 }

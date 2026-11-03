@@ -234,13 +234,12 @@ final class HomeV29 extends FrameLayout {
         tl.leftMargin = px(32);
         tl.topMargin = px(88);
         addView(term, tl);
-        term.setMinimumHeight(px(248));
         termPrompt = text("", 24, false);
         termLogo = text(logoText(), 8, false);
         termLogo.setLineSpacing(0, 1.15f);
         termLogo.setHorizontallyScrolling(true);
         termInfo = text("", 24, false);
-        termInfo.setMaxLines(3);   // v2.10: one item per line (the single line was cut to "up" on the TV)
+        termInfo.setMaxLines(2);
         termInfo.setLineSpacing(px(4), 1f);
         term.addView(termPrompt);
         LinearLayout.LayoutParams ll = new LinearLayout.LayoutParams(-1, -2);
@@ -249,10 +248,10 @@ final class HomeV29 extends FrameLayout {
         term.addView(termLogo, ll);
         term.addView(termInfo);
 
-        // ---- Widgets: three aligned columns with 24 px gutters ----
+        // ---- Widgets: weather and PC stack beside AI, with a shared 24 px gutter ----
         widgets = new LinearLayout(a);
         widgets.setOrientation(LinearLayout.VERTICAL);
-        LayoutParams wl = new LayoutParams(px(1120), -2, Gravity.END | Gravity.TOP);
+        LayoutParams wl = new LayoutParams(px(1192), -2, Gravity.END | Gravity.TOP);
         wl.rightMargin = px(32);
         wl.topMargin = px(88);
         addView(widgets, wl);
@@ -268,28 +267,32 @@ final class HomeV29 extends FrameLayout {
         LinearLayout.LayoutParams r2l = new LinearLayout.LayoutParams(-1, -2);
         r2l.topMargin = px(16);
         widgets.addView(r2, r2l);
-        wxBox = widget(r1, act.getString(R.string.v29_weather), 0);
-        pcBox = widget(r1, "omarchy · pc", 24);
+        LinearLayout statsColumn = vbox();
+        statsColumn.setClipChildren(false);
+        r1.addView(statsColumn, new LinearLayout.LayoutParams(px(584), -2));
+        wxBox = widget(statsColumn, act.getString(R.string.v29_weather), 0);
+        pcBox = widget(statsColumn, "omarchy · pc", 0);
         pcBox.setFocusable(false);
         BoxView ai = widget(r1, "ai credits · pc", 24);
-        // Keep each top-row panel one column wide, (1120 - 2 x 24) / 3, even when its siblings are switched off.
-        // With weight 1 a lone panel (e.g. only the weather widget on) stretched across the whole 1120 px row.
+        // Explicit widths keep a lone widget from stretching when other panels are hidden.
         for (View col : new View[]{wxBox, pcBox, ai}) {
             LinearLayout.LayoutParams cl = (LinearLayout.LayoutParams) col.getLayoutParams();
-            cl.width = px((1120 - 48) / 3f);
-            col.setMinimumHeight(px(248));
+            cl.width = px(584);
             cl.weight = 0f;
         }
-        r2.addView(new View(a), new LinearLayout.LayoutParams(0, 1, 2f));
-        View gap = new View(a);
-        r2.addView(gap, new LinearLayout.LayoutParams(px(32), 1));
+        ((LinearLayout.LayoutParams) pcBox.getLayoutParams()).topMargin = px(16);
+        wxBox.setMinimumHeight(px(208));
+        ai.setMinimumHeight(px(208));
+        r2.setGravity(Gravity.END);
         depBox = widget(r2, "deploys · pc", 0);
         depBox.setFocusable(false);
-        ((LinearLayout.LayoutParams) depBox.getLayoutParams()).weight = 1f;
-        // 2 columns + 1 gap left of the third column: weights 2 : 1 with a 32 px spacer ≈ 3 equal columns, 16 gaps
+        ((LinearLayout.LayoutParams) depBox.getLayoutParams()).width = px(584);
+        ((LinearLayout.LayoutParams) depBox.getLayoutParams()).weight = 0f;
         this.aiBoxRef = ai;
-        wxTemp = text("", 58, true);
+        wxTemp = text("", 50, true);
         wxLine1 = line("");
+        wxLine1.setSingleLine(false);
+        wxLine1.setMaxLines(2);
         wxLine2 = line("");
         wxBox.addView(wxTemp);
         wxBox.addView(wxLine1);
@@ -322,8 +325,7 @@ final class HomeV29 extends FrameLayout {
         LayoutParams al = new LayoutParams(-1, -2, Gravity.BOTTOM);
         al.leftMargin = al.rightMargin = al.bottomMargin = px(32);
         addView(appWin, al);
-        appWin.setClipChildren(false);
-        appWin.setClipToPadding(false);
+        appWin.setClipChildren(true);
         LinearLayout head = hbox();
         appName = text("", 32, true);
         appName.setSingleLine(true);
@@ -335,8 +337,8 @@ final class HomeV29 extends FrameLayout {
         head.addView(appHints, new LinearLayout.LayoutParams(-2, -2));
         appWin.addView(head, new LinearLayout.LayoutParams(-1, -2));
         row = new RecyclerView(a);
-        row.setClipChildren(false);
-        row.setClipToPadding(false);
+        row.setClipChildren(true);
+        row.setClipToPadding(true);
         row.setPadding(px(10), px(10), px(10), px(10));
         row.setOverScrollMode(OVER_SCROLL_NEVER);
         row.setItemAnimator(null);
@@ -391,8 +393,8 @@ final class HomeV29 extends FrameLayout {
         gh.addView(gridHints, new LinearLayout.LayoutParams(-2, -2));
         appsWin.addView(gh, new LinearLayout.LayoutParams(-1, -2));
         grid = new RecyclerView(a);
-        grid.setClipChildren(false);
-        grid.setClipToPadding(false);
+        grid.setClipChildren(true);
+        grid.setClipToPadding(true);
         grid.setPadding(px(8), px(12), px(8), px(12));
         grid.setOverScrollMode(OVER_SCROLL_NEVER);
         grid.setItemAnimator(null);
@@ -695,7 +697,7 @@ final class HomeV29 extends FrameLayout {
         span(info, act.getString(R.string.v29_theme) + " ", t.accent);
         span(info, t.name + "\n", t.fg);
         span(info, act.getString(R.string.v29_net) + " ", t.accent);
-        span(info, host.wifiName() + "\n", t.fg);
+        span(info, host.wifiName() + "  ·  ", t.fg);
         span(info, act.getString(R.string.v29_up) + " ", t.accent);
         span(info, (up / 60 > 0 ? (up / 60) + " h " : "") + (up % 60) + " min", t.fg);
         termInfo.setText(info);
@@ -784,7 +786,7 @@ final class HomeV29 extends FrameLayout {
         wxTemp.setText(Weather.temp(cur.optDouble("temperature_2m"), cfg.tempF) + (cfg.tempF ? "°F" : "°"));
         String place = Weather.place(act, cfg);
         String cond = act.getString(Weather.describe(cur.optInt("weather_code"))).toLowerCase(Locale.getDefault());
-        wxLine1.setText(place.isEmpty() ? cond : place + " · " + cond);
+        wxLine1.setText(place.isEmpty() ? cond : place + "\n" + cond);
         JSONObject daily = w.optJSONObject("daily");
         JSONArray mn = daily != null ? daily.optJSONArray("temperature_2m_min") : null, mx = daily != null ? daily.optJSONArray("temperature_2m_max") : null;
         wxLine2.setText(mn != null && mx != null ? "min " + Weather.temp(mn.optDouble(0), cfg.tempF) + "° · max " + Weather.temp(mx.optDouble(0), cfg.tempF) + "°" : "");
@@ -1260,11 +1262,12 @@ final class HomeV29 extends FrameLayout {
 
     void applyPanelPos(LauncherConfig c) {
         if (activeWs != 1 || getWidth() == 0) return;
-        // Validate against the new measured grid before restoring old offsets; keep saved config intact.
+        // Restore the complete arrangement before checking collisions, including saved swaps.
         for (String id : PANEL_IDS) {
             View v = panelView(id);
-            v.setTranslationX(0);
-            v.setTranslationY(0);
+            int[] p = c.panelPos.get(id);
+            v.setTranslationX(p == null ? 0 : p[0] * cellW());
+            v.setTranslationY(p == null ? 0 : p[1] * cellH());
         }
         for (String id : PANEL_IDS) {
             View v = panelView(id);
@@ -1272,12 +1275,15 @@ final class HomeV29 extends FrameLayout {
             if (p == null || !v.isShown()) continue;
             int cx = p[0], cy = p[1];
             if (!fits(v, cx, cy)) {
-                int distance = Integer.MAX_VALUE;
                 cx = cy = 0;
-                for (int y = -GRID_Y; y <= GRID_Y; y++) {
-                    for (int x = -GRID_X; x <= GRID_X; x++) {
-                        int d = Math.abs(x - p[0]) + Math.abs(y - p[1]);
-                        if (d < distance && fits(v, x, y)) { cx = x; cy = y; distance = d; }
+                // Prefer the aligned deck when an old offset no longer fits this layout.
+                if (!fits(v, 0, 0)) {
+                    int distance = Integer.MAX_VALUE;
+                    for (int y = -GRID_Y; y <= GRID_Y; y++) {
+                        for (int x = -GRID_X; x <= GRID_X; x++) {
+                            int d = Math.abs(x - p[0]) + Math.abs(y - p[1]);
+                            if (d < distance && fits(v, x, y)) { cx = x; cy = y; distance = d; }
+                        }
                     }
                 }
             }
@@ -1560,12 +1566,8 @@ final class HomeV29 extends FrameLayout {
                 return true;
             case KeyEvent.KEYCODE_DPAD_LEFT:
             case KeyEvent.KEYCODE_DPAD_RIGHT: {
-                boolean r = k == KeyEvent.KEYCODE_DPAD_RIGHT;
-                if (f == depBox) return true;
-                ViewGroup g = (ViewGroup) f.getParent();
-                int i = g.indexOfChild(f), to = i + (r ? 1 : -1);
-                while (to >= 0 && to < g.getChildCount() && (g.getChildAt(to).getVisibility() != VISIBLE || !g.getChildAt(to).isFocusable())) to += r ? 1 : -1;
-                if (to >= 0 && to < g.getChildCount()) g.getChildAt(to).requestFocus();
+                View next = f.focusSearch(k == KeyEvent.KEYCODE_DPAD_RIGHT ? FOCUS_RIGHT : FOCUS_LEFT);
+                if (next != null && zone(next) == 1) next.requestFocus();
                 return true;
             }
             default:

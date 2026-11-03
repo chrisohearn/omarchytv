@@ -13,14 +13,20 @@ The tests write PNGs to `launcher/app/build/ui-evidence/`:
 - `light-theme-dark-panels.png`: light-theme accents on dark panels, focused app, aligned widget cards.
 - `dark-app-focus.png`: dark theme and two rows of labeled app banners.
 - `dark-widget-focus.png`: an actionable widget selected with the D-pad.
+- `six-app-home.png`: one app row, compact greeting, and the weather/PC stack beside AI credits.
+- `bounded-app-scroll.png`: a later app row selected without drawing over the header or widgets.
 
 The tests cover four through seven app columns, both app rows, scrolling, spatial D-pad navigation, app-position feedback, hidden widgets, read-only panels, panel-edit cancellation, app/menu callbacks, partial custom palettes, and old panel positions near the app window. `SurfacesTest` checks stock theme foreground contrast over black, white, gray, and saturated wallpaper colors.
 
-The home window shows up to two app rows. Left and Right stay within the current row. Down moves to the next app row, and Up from the first row selects the nearest actionable widget. Down from a widget returns to the selected app. Additional app rows scroll into view.
+The home window fits its visible apps, showing one row when they fit and up to two rows otherwise. Left and Right stay within the current row. Down moves to the next app row, and Up from the first row selects the nearest actionable widget. Down from a widget returns to the selected app. Additional app rows scroll inside the app panel; pixel comparisons check that they do not draw over its header or the widgets.
 
 Home panels stay dark with both dark and light themes. Theme accents and wallpapers remain configurable. The home panels use at least 90% opacity to protect text over bright wallpaper; the saved transparency value remains available to the rest of the launcher. Large app banners are capped at 360 px wide at 1080p so both rows clear the widget deck. Banner artwork keeps its 16:9 shape, with a label beneath it.
 
-Saved widget positions are checked against the measured app window. A position that no longer fits moves to the nearest available grid cell for display, without overwriting the saved coordinates.
+Weather and PC stats share a column beside AI credits. PC stats fit their content, and weather puts the location and condition on separate lines. The greeting combines network and uptime on one line. Text remains at least 24 px at 1080p.
+
+All saved widget offsets are restored before collision checks. A position that no longer fits the measured app window falls back to its aligned default, or the nearest available grid cell when that default is occupied, without overwriting the saved coordinates.
+
+Use the existing hidden-app setting to remove unused tiles. Hiding apps preserves their installation and data; Settings → Hidden apps restores them. Personal app selections belong in the device configuration, not the source defaults.
 
 These renders prove local layout and focus behavior. They do not establish hardware performance, overscan, remote long-press timing, or readability at a particular viewing distance.
 
