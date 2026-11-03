@@ -49,11 +49,11 @@ Obtain approval for a named device, test window, candidate APK, and rollback bef
 
 1. Record the installed version, signing certificate, APK, and launcher configuration. Keep credentials and pairing data private.
 2. Verify that the candidate preserves the installed signing identity and update path. Stop if they differ.
-   Verify that its generated `build_stamp` is today's local date. Rebuild if the date changed before installation.
+   Verify that its generated `build_stamp` has today's local date and the next same-day revision under the [dated-version rule](../PROJECT.md#delivery-expectation). Rebuild if the date changed before installation.
 3. Install without clearing application data. Keep the TV on and preserve volume and device settings.
 4. Check one light and one dark theme, the current wallpaper, four and seven app columns, and the existing widget positions.
 5. Navigate both app rows, the widgets, and the bar with the remote. Check focus visibility, scrolling, OK, long OK, Back, and the return from an app.
-   Inspect the small `vYYYY.MM.DD` label after the workspace buttons and confirm today's date.
+   Inspect the small dated label after the workspace buttons and confirm that the complete date and revision match the candidate.
 6. If the pilot fails, restore the recorded compatible APK and configuration using the agreed rollback. If a downgrade needs data removal, stop for a decision.
 
 Merge and TV installation are separate approvals. This source change does not change signing, pairing, assistant identity, or the companion call flow.
