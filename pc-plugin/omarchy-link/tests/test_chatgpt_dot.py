@@ -180,12 +180,12 @@ class DotRelayTests(unittest.TestCase):
                 dot.request({"botId": cfg["id"], "prompt": "x" * 1001}, cfg)
 
     def test_inbox_correlation_post_preference_and_display_cap(self):
-        for post in (True, False):
+        for post in (True,):
             for length in (900, 5000):
                 with self.subTest(post=post, length=length), patch.object(dot, "Inbox") as cls, \
                         patch.object(dot.secrets, "token_hex", return_value="new"), patch.object(dot, "Browser") as browser:
                     client = cls.return_value
-                    client.tools = {"t3_thread_post"} if post else {"t3_thread_send"}
+                    client.tools = {"t3_thread_post"}
                     client.deadline = dot.time.monotonic() + 30
                     direct = {"type": "user_message", "creationSource": "mcp", "textTruncated": False}
                     reply = "OMARCHYTV_REPLY new\n" + "x" * length + "\nOMARCHYTV_END new"
@@ -214,11 +214,12 @@ class DotRelayTests(unittest.TestCase):
     def test_inbox_check_and_uncertain_submission_never_send_twice(self):
         with patch.object(dot, "Inbox") as cls:
             client = cls.return_value
+            client.tools = {"t3_thread_post"}
             client.call.return_value = {"thread": {"title": "OmarchyTV relay replies"}}
             self.assertIn("no message sent", dot.inbox_relay({"replyThreadId": "replies"}))
             self.assertEqual(client.call.call_count, 1)
             client.call.reset_mock()
-            client.tools = {"t3_thread_send"}
+            client.tools = {"t3_thread_post"}
             client.call.side_effect = [client.call.return_value, dot.RelayError("uncertain")]
             with self.assertRaises(dot.RelayError):
                 dot.inbox_relay({"replyThreadId": "replies"}, "hello")
@@ -238,6 +239,84 @@ class DotRelayTests(unittest.TestCase):
                 with self.assertRaises(dot.RelayError) as error:
                     dot.t3_token()
                 self.assertNotIn("secret-never-log", str(error.exception))
+
+    def test_inbox_refuses_active_reply_fallback_before_submission(self):
+        with patch.object(dot, "Inbox") as cls:
+            cls.return_value.tools = {"t3_thread_send"}
+            for prompt in (None, "hello"):
+                with self.assertRaisesRegex(dot.RelayError, "passive replies"):
+                    dot.inbox_relay({"replyThreadId": "replies"}, prompt)
+            cls.return_value.call.assert_not_called()
+            self.assertEqual(cls.return_value.close.call_count, 2)
+
+    def test_keyring_checks_alternate_entry_after_invalid_candidate(self):
+        from types import SimpleNamespace
+        good = {"server_name": "t3_omarchy", "url": dot.T3_URL,
+                "expires_at": (dot.time.time() + 60) * 1000,
+                "token_response": {"access_token": "alternate"}}
+        for bad in ("malformed", json.dumps({**good, "expires_at": 0}),
+                    json.dumps({**good, "url": "https://wrong/mcp"})):
+            with self.subTest(bad=bad), patch.object(dot.subprocess, "run", side_effect=[
+                    SimpleNamespace(returncode=0, stdout=bad),
+                    SimpleNamespace(returncode=0, stdout=json.dumps(good))]) as run:
+                self.assertEqual(dot.t3_token(), "alternate")
+                self.assertEqual(run.call_count, 2)
+
+    def test_session_delete_on_success_check_error_and_failed_initialization(self):
+        from unittest.mock import MagicMock
+        client = dot.Inbox.__new__(dot.Inbox)
+        client.token, client.session, client.protocol = "private", "session", "2025-06-18"
+        client.http = MagicMock()
+        client.close()
+        req = client.http.open.call_args.args[0]
+        self.assertEqual(req.method, "DELETE")
+        self.assertEqual(req.get_header("Mcp-session-id"), "session")
+        self.assertIsNone(client.session)
+        client.session = "session"
+        client.http.open.side_effect = OSError("sensitive")
+        client.close()
+        self.assertIsNone(client.session)
+        with patch.object(dot, "Inbox") as cls:
+            cls.return_value.tools = {"t3_thread_post"}
+            cls.return_value.call.return_value = {"thread": {"title": "OmarchyTV relay replies"}}
+            dot.inbox_relay({"replyThreadId": "replies"})
+            cls.return_value.close.assert_called_once()
+            cls.return_value.close.reset_mock()
+            cls.return_value.call.side_effect = dot.RelayError("failed")
+            with self.assertRaises(dot.RelayError):
+                dot.inbox_relay({"replyThreadId": "replies"})
+            cls.return_value.close.assert_called_once()
+        with patch.object(dot, "t3_token", return_value="private"), \
+                patch.object(dot.Inbox, "initialize", side_effect=dot.RelayError("failed")), \
+                patch.object(dot.Inbox, "close") as close:
+            with self.assertRaises(dot.RelayError):
+                dot.Inbox()
+            close.assert_called_once()
+
+    def test_capture_tail_before_send_and_reject_conflicting_paged_replies(self):
+        direct = {"type": "user_message", "creationSource": "mcp", "textTruncated": False}
+        def reply(text):
+            return {**direct, "text": "OMARCHYTV_REPLY new\n" + text + "\nOMARCHYTV_END new"}
+        with patch.object(dot, "Inbox") as cls, \
+                patch.object(dot.secrets, "token_hex", return_value="new"):
+            client = cls.return_value
+            client.tools = {"t3_thread_post"}
+            client.deadline = dot.time.monotonic() + 30
+            client.call.side_effect = [
+                {"thread": {"title": "OmarchyTV relay replies"}, "hasMore": True, "nextPosition": 4},
+                {"items": [], "hasMore": False, "nextPosition": 999}, {},
+                {"items": [reply("first")], "hasMore": True, "nextPosition": 1000},
+                {"items": [reply("corrected")], "hasMore": False, "nextPosition": 1001},
+            ]
+            with self.assertRaisesRegex(dot.RelayError, "Ambiguous"):
+                dot.inbox_relay({"replyThreadId": "replies"}, "hello")
+            calls = client.call.call_args_list
+            self.assertEqual(calls[1].kwargs["afterPosition"], 4)
+            self.assertEqual(calls[1].kwargs["maxCharsPerItem"], 1)
+            self.assertEqual(calls[2].args[0], "t3_thread_post")
+            self.assertEqual(calls[3].kwargs["afterPosition"], 999)
+            self.assertEqual(calls[4].kwargs["afterPosition"], 1000)
+            client.close.assert_called_once()
 
     def test_rpc_handles_json_sse_and_rejects_redirects_and_errors(self):
         from email.message import Message
@@ -268,7 +347,7 @@ class DotRelayTests(unittest.TestCase):
     def test_inbox_pages_past_stale_messages_waits_and_times_out_without_resend(self):
         with patch.object(dot, "Inbox") as cls, patch.object(dot.time, "sleep"):
             client = cls.return_value
-            client.tools = {"t3_thread_send"}
+            client.tools = {"t3_thread_post"}
             client.deadline = dot.time.monotonic() + 30
             client.call.side_effect = [
                 {"thread": {"title": "OmarchyTV relay replies"}}, {},
@@ -281,7 +360,7 @@ class DotRelayTests(unittest.TestCase):
             calls = client.call.call_args_list
             self.assertEqual(calls[3].kwargs["afterPosition"], 99)
             self.assertEqual(calls[4].args[0], "t3_thread_wait")
-            self.assertEqual(sum(c.args[0] == "t3_thread_send" for c in calls), 1)
+            self.assertEqual(sum(c.args[0] == "t3_thread_post" for c in calls), 1)
 
 
 if __name__ == "__main__":

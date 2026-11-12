@@ -27,7 +27,10 @@ inbox route proves reliable.
 python3 -I ~/.local/libexec/omarchytv/jarvis-companion/bin/grokbot-ask --check
 ```
 
-The local T3 server must be available at `http://127.0.0.1:3773/mcp`.
+The local T3 server must be available at `http://127.0.0.1:3773/mcp` and
+advertise `t3_thread_post`. Replies use that passive tool: queueing a reply with
+`t3_thread_send` would start an unwanted provider run on the answer text. Until
+passive posting is available, readiness and requests fail before sending.
 The helper reads the existing `t3_omarchy` Codex OAuth access token from the Linux
 Secret Service keyring using `secret-tool`. Credentials stay in memory and are
 never logged or written to disk. It does not refresh tokens or start sign-in.
@@ -70,7 +73,7 @@ The helper submits once to inbox thread
 `mcp:launch:be52150eaa983a46dcfa1e2bcdbfcfc1fc10f66d3d303f80b59c341fa1c87c23`.
 It uses `t3_thread_post` when advertised and otherwise `t3_thread_send` with
 `mode: queue`. Each request names the reply thread and a random request ID.
-Jarvis must deliver the entire message in this format:
+Jarvis must use `t3_thread_post` to deliver the entire message in this format:
 
 ```text
 OMARCHYTV_REPLY <request-id>
@@ -80,7 +83,11 @@ OMARCHYTV_END <request-id>
 
 Only matching, directly delivered MCP messages in that thread are accepted.
 Inbox acknowledgments, provider echoes, partial frames, and older replies are
-ignored. The helper reads paged messages and uses `t3_thread_wait` between reads.
+ignored. Distinct matching answers already available in the read pages cause an
+ambiguity error. Before submission, the helper captures the reply-thread tail
+with body previews limited to one character, then reads only new messages. It
+terminates its MCP session after readiness, success, or failure. The helper uses
+`t3_thread_wait` between reads.
 Until T3 exposes a message-event wait, an idle thread requires a read each second
 while the foreground request is active. No background polling or service is added.
 The T3 phase has a 145-second budget. Keep the native bridge timeout at least
