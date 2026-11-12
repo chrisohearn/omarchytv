@@ -15,14 +15,16 @@ rerouted. Failures never resend a command.
    Set the directory mode to `700` and its files unwritable by other users.
 2. Copy `relay.example.json` to `relay.json` and set its mode to `600`.
    Keep the existing `dotUrl` and `name`: they identify the bot to the TV.
-3. Reuse the idle reply thread whose title starts with **OmarchyTV relay replies**.
+3. Reuse the idle reply thread titled **OmarchyTV relay replies**, optionally
+   followed by a note in parentheses, such as `(approval-required)`.
    Set `replyThreadId` to
    `mcp:launch:c7e01d2bec96b8ce1d8b273155d2b4af706f0de2bbe34db9fafbcb898a5b4150`.
-   Before submitting, the helper verifies the title prefix, that the thread is not
-   archived, and that its runtime mode is `approval-required` or `full-access`.
-   Any other mode, such as `auto` or `auto-accept-edits`, is refused and no message
-   is sent. The helper never renames the thread or changes its mode, and never
-   creates threads, pairings, grants, or tokens.
+   Before submitting, the helper verifies the title, that the thread is not
+   archived, that it has never run and has no active run, and that its runtime
+   mode is `approval-required` or `full-access`. Any other mode, such as `auto`
+   or `auto-accept-edits`, is refused and no message is sent. The helper never
+   renames the thread or changes its mode, and never creates threads, pairings,
+   grants, or tokens.
 4. Copy `data/bots.example.json` to `data/bots.json`. Set the bot `id` to the
    part after `/dots/` in `dotUrl`. Set both names to Jarvis's name.
 5. Run the readiness check. `READY` means T3 authenticated and the configured
@@ -42,6 +44,17 @@ or later).
 The reply thread may run in `approval-required` or `full-access` mode. Since relay
 0.3.1 both are accepted, so the thread can move to full access without breaking the
 helper. Jarvis's passive `t3_thread_post` replies do not start runs in that thread.
+Since relay 0.3.2 the helper accepts a reply only when T3 marks it post-only
+(`postOnly: true`, no `runId`). A `t3_thread_send` into the reply thread starts a
+run, which full access would leave ungated, so its message is never an answer.
+If the reply thread has any run history or an active run, the helper refuses
+before submitting and withholds an answer it already read. A thread that ever ran
+must be replaced with a new, never-run reply thread.
+T3 refuses a post or send into a thread whose mode is broader than the caller's
+grant (`runtime_mode_escalation_denied`). Jarvis's ChatGPT grant is full access,
+so its posts to a full-access reply thread work. The helper's `t3_omarchy` grant
+must cover the inbox's mode: if the Jarvis inbox moves to `full-access`, that
+grant must be full access too.
 The helper reads the existing `t3_omarchy` Codex OAuth access token from the Linux
 Secret Service keyring using `secret-tool`. Credentials stay in memory and are
 never logged or written to disk. It does not refresh tokens or start sign-in.
@@ -93,7 +106,7 @@ OMARCHYTV_REPLY <request-id>
 OMARCHYTV_END <request-id>
 ```
 
-Only matching, directly delivered MCP messages in that thread are accepted.
+Only matching, post-only MCP messages in that thread are accepted.
 Inbox acknowledgments, provider echoes, partial frames, and older replies are
 ignored. Distinct matching answers already available in the read pages cause an
 ambiguity error. Long messages are read through T3 text continuations before

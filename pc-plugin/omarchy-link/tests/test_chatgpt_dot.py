@@ -16,6 +16,9 @@ loader.exec_module(dot)
 CFG = {"url": "https://chatgpt.com/dots/test-dot", "id": "test-dot", "name": "Jarvis", "replyThreadId": "replies"}
 
 
+IDLE = {"runCount": 0, "activeRunId": None}
+
+
 class DotRelayTests(unittest.TestCase):
     def test_private_exact_destination_and_wrong_bot(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -89,14 +92,15 @@ class DotRelayTests(unittest.TestCase):
                     client = cls.return_value
                     client.tools = {"t3_thread_send", "t3_thread_post"} if post else {"t3_thread_send"}
                     client.deadline = dot.time.monotonic() + 30
-                    direct = {"type": "user_message", "creationSource": "mcp", "textTruncated": False}
+                    direct = {"type": "user_message", "creationSource": "mcp", "postOnly": True, "runId": None,
+                              "textTruncated": False}
                     reply = "OMARCHYTV_REPLY new\n" + "x" * length + "\nOMARCHYTV_END new"
                     client.call.side_effect = [
-                        {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": mode, "itemCount": 0}}, {},
+                        {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": mode, "itemCount": 0, "runCount": 0}}, {},
                         {"items": [{**direct, "text": "Queued for Jarvis: new"},
                                    {**direct, "text": reply.replace("new", "old")},
                                    {**direct, "type": "assistant_message", "text": reply.replace("x", "y")},
-                                   {**direct, "text": reply}], "hasMore": False},
+                                   {**direct, "text": reply}], "hasMore": False, "thread": IDLE},
                     ]
                     answer = dot.inbox_relay({"replyThreadId": "replies"}, "hello")
                     if length < 4000:
@@ -122,7 +126,7 @@ class DotRelayTests(unittest.TestCase):
         with patch.object(dot, "Inbox") as cls:
             client = cls.return_value
             client.tools = {"t3_thread_send", "t3_thread_post"}
-            client.call.return_value = {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": "approval-required", "itemCount": 0}}
+            client.call.return_value = {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": "approval-required", "itemCount": 0, "runCount": 0}}
             self.assertIn("no message sent", dot.inbox_relay({"replyThreadId": "replies"}))
             self.assertEqual(client.call.call_count, 1)
             client.call.return_value["thread"]["runtimeMode"] = "auto"
@@ -141,7 +145,7 @@ class DotRelayTests(unittest.TestCase):
         def check(thread):
             with patch.object(dot, "Inbox") as cls:
                 client = cls.return_value
-                client.call.return_value = {"thread": {"itemCount": 0, **thread}}
+                client.call.return_value = {"thread": {"itemCount": 0, "runCount": 0, **thread}}
                 try:
                     return dot.inbox_relay({"replyThreadId": "replies"})
                 finally:
@@ -161,6 +165,7 @@ class DotRelayTests(unittest.TestCase):
         with self.assertRaisesRegex(dot.RelayError, "use approval-required or full-access"):
             check({"title": good})
         for thread in ({"title": "Jarvis inbox", "runtimeMode": "full-access"},
+                       {"title": "OmarchyTV relay replies-fake", "runtimeMode": "full-access"},
                        {"title": "omarchytv relay replies", "runtimeMode": "full-access"},
                        {"title": None, "runtimeMode": "full-access"},
                        {"runtimeMode": "full-access"},
@@ -168,6 +173,44 @@ class DotRelayTests(unittest.TestCase):
             with self.subTest(thread=thread), self.assertRaisesRegex(
                     dot.RelayError, "dedicated OmarchyTV relay replies thread; no message sent"):
                 check(thread)
+
+    def test_reply_must_be_post_only_and_reply_thread_must_have_no_runs(self):
+        posted = {"type": "user_message", "creationSource": "mcp", "postOnly": True, "runId": None,
+                  "textTruncated": False, "text": "OMARCHYTV_REPLY new\nhi\nOMARCHYTV_END new"}
+        thread = {"title": "OmarchyTV relay replies", "runtimeMode": "full-access", "itemCount": 0,
+                  "runCount": 0, "activeRunId": None}
+
+        def relay(info, *pages):
+            with patch.object(dot, "Inbox") as cls, patch.object(dot.secrets, "token_hex", return_value="new"), \
+                    patch.object(dot.time, "sleep"):
+                client = cls.return_value
+                client.deadline = dot.time.monotonic() + 30
+                client.call.side_effect = [{"thread": info}, {}, *pages, dot.RelayError("timeout")]
+                try:
+                    return dot.inbox_relay({"replyThreadId": "replies"}, "hello")
+                finally:
+                    self.assertEqual(sum(c.args[0] == "t3_thread_send" for c in client.call.call_args_list),
+                                     1 if pages else 0)
+
+        self.assertEqual(relay(thread, {"items": [posted], "hasMore": False, "thread": IDLE}), "hi")
+        # A correctly framed t3_thread_send (not post-only, or carrying a run) is never an answer.
+        for sent in ({k: v for k, v in posted.items() if k != "postOnly"}, {**posted, "postOnly": False},
+                     {**posted, "runId": "run:thread:replies:ordinal:1"}):
+            with self.subTest(sent=sent), self.assertRaisesRegex(dot.RelayError, "timeout"):
+                relay(thread, {"items": [sent], "hasMore": False, "thread": IDLE})
+        # Run history or an active run refuses before sending, including --check.
+        for bad in ({"runCount": 1}, {"activeRunId": "run:x"}, {"runCount": None}):
+            with self.subTest(bad=bad), self.assertRaisesRegex(dot.RelayError, "no message sent"):
+                relay({**thread, **bad})
+            with patch.object(dot, "Inbox") as cls:
+                cls.return_value.call.return_value = {"thread": {**thread, **bad}}
+                with self.assertRaisesRegex(dot.RelayError, "run history"):
+                    dot.inbox_relay({"replyThreadId": "replies"})
+        # A run that starts while waiting withholds an otherwise valid answer.
+        for during in ({"runCount": 1, "activeRunId": None}, {"runCount": 0, "activeRunId": "run:x"}, None):
+            with self.subTest(during=during), self.assertRaisesRegex(dot.RelayError, "no answer returned"):
+                page = {"items": [posted], "hasMore": False}
+                relay(thread, {**page, **({"thread": during} if during else {})})
 
     def test_keyring_reuse_validates_origin_and_expiry_without_leaking(self):
         from types import SimpleNamespace
@@ -213,7 +256,7 @@ class DotRelayTests(unittest.TestCase):
         self.assertIsNone(client.session)
         with patch.object(dot, "Inbox") as cls:
             cls.return_value.tools = {"t3_thread_post"}
-            cls.return_value.call.return_value = {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": "approval-required", "itemCount": 0}}
+            cls.return_value.call.return_value = {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": "approval-required", "itemCount": 0, "runCount": 0}}
             dot.inbox_relay({"replyThreadId": "replies"})
             cls.return_value.close.assert_called_once()
             cls.return_value.close.reset_mock()
@@ -229,7 +272,8 @@ class DotRelayTests(unittest.TestCase):
             close.assert_called_once()
 
     def test_capture_tail_before_send_and_reject_conflicting_paged_replies(self):
-        direct = {"type": "user_message", "creationSource": "mcp", "textTruncated": False}
+        direct = {"type": "user_message", "creationSource": "mcp", "postOnly": True, "runId": None,
+                              "textTruncated": False}
         def reply(text):
             return {**direct, "text": "OMARCHYTV_REPLY new\n" + text + "\nOMARCHYTV_END new"}
         with patch.object(dot, "Inbox") as cls, \
@@ -238,7 +282,7 @@ class DotRelayTests(unittest.TestCase):
             client.tools = {"t3_thread_send", "t3_thread_post"}
             client.deadline = dot.time.monotonic() + 30
             client.call.side_effect = [
-                {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": "approval-required", "itemCount": 1000}, "hasMore": True, "nextPosition": 4}, {},
+                {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": "approval-required", "itemCount": 1000, "runCount": 0}, "hasMore": True, "nextPosition": 4}, {},
                 {"items": [reply("first")], "hasMore": True, "nextPosition": 1000},
                 {"items": [reply("corrected")], "hasMore": False, "nextPosition": 1001},
             ]
@@ -279,17 +323,17 @@ class DotRelayTests(unittest.TestCase):
 
     def test_long_reply_follows_text_continuation_before_frame_and_tv_limit(self):
         full = "OMARCHYTV_REPLY new\n" + "x" * 60000 + "\nOMARCHYTV_END new"
-        direct = {"type": "user_message", "creationSource": "mcp", "itemId": "answer",
-                  "updatedAt": "unchanged"}
+        direct = {"type": "user_message", "creationSource": "mcp", "postOnly": True, "runId": None,
+                  "itemId": "answer", "updatedAt": "unchanged"}
         with patch.object(dot, "Inbox") as cls, \
                 patch.object(dot.secrets, "token_hex", return_value="new"):
             client = cls.return_value
             client.tools = {"t3_thread_send"}
             client.deadline = dot.time.monotonic() + 30
             client.call.side_effect = [
-                {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": "approval-required", "itemCount": 0}}, {},
+                {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": "approval-required", "itemCount": 0, "runCount": 0}}, {},
                 {"items": [{**direct, "text": full[:50000], "textTruncated": True,
-                            "nextTextOffset": 50000}], "hasMore": False},
+                            "nextTextOffset": 50000}], "hasMore": False, "thread": IDLE},
                 {"items": [{**direct, "text": full[50000:], "textTruncated": False}]},
             ]
             answer = dot.inbox_relay({"replyThreadId": "replies"}, "hello")
@@ -300,10 +344,12 @@ class DotRelayTests(unittest.TestCase):
             self.assertEqual(continuation.kwargs["textOffset"], 50000)
         with patch.object(dot, "Inbox") as cls:
             client = cls.return_value
-            client.call.return_value = {"items": [{**direct, "text": "changed", "updatedAt": "edited"}]}
-            with self.assertRaisesRegex(dot.RelayError, "changed"):
-                dot.complete_reply(client, "replies", {**direct, "text": full[:50000],
-                                   "textTruncated": True, "nextTextOffset": 50000})
+            for changed in ({"updatedAt": "edited"}, {"postOnly": False}, {"runId": "run:x"}):
+                with self.subTest(changed=changed):
+                    client.call.return_value = {"items": [{**direct, "text": full[50000:], **changed}]}
+                    with self.assertRaisesRegex(dot.RelayError, "changed"):
+                        dot.complete_reply(client, "replies", {**direct, "text": full[:50000],
+                                           "textTruncated": True, "nextTextOffset": 50000})
 
     def test_inbox_pages_past_stale_messages_waits_and_times_out_without_resend(self):
         with patch.object(dot, "Inbox") as cls, patch.object(dot.time, "sleep"):
@@ -311,7 +357,7 @@ class DotRelayTests(unittest.TestCase):
             client.tools = {"t3_thread_send", "t3_thread_post"}
             client.deadline = dot.time.monotonic() + 30
             client.call.side_effect = [
-                {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": "approval-required", "itemCount": 0}}, {},
+                {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": "approval-required", "itemCount": 0, "runCount": 0}}, {},
                 {"items": [], "hasMore": True, "nextPosition": 99},
                 {"items": [], "hasMore": False, "nextPosition": 100},
                 dot.RelayError("timeout"),
