@@ -179,13 +179,13 @@ class DotRelayTests(unittest.TestCase):
             with self.assertRaises(dot.RelayError):
                 dot.request({"botId": cfg["id"], "prompt": "x" * 1001}, cfg)
 
-    def test_inbox_correlation_post_preference_and_display_cap(self):
+    def test_inbox_queue_submission_post_only_reply_and_display_cap(self):
         for post in (True, False):
             for length in (900, 5000):
                 with self.subTest(post=post, length=length), patch.object(dot, "Inbox") as cls, \
                         patch.object(dot.secrets, "token_hex", return_value="new"), patch.object(dot, "Browser") as browser:
                     client = cls.return_value
-                    client.tools = {"t3_thread_post"} if post else {"t3_thread_send"}
+                    client.tools = {"t3_thread_send", "t3_thread_post"} if post else {"t3_thread_send"}
                     client.deadline = dot.time.monotonic() + 30
                     direct = {"type": "user_message", "creationSource": "mcp", "textTruncated": False}
                     reply = "OMARCHYTV_REPLY new\n" + "x" * length + "\nOMARCHYTV_END new"
@@ -203,7 +203,7 @@ class DotRelayTests(unittest.TestCase):
                     if length > 4000:
                         self.assertIn("full reply is in T3", answer)
                     sent = client.call.call_args_list[1]
-                    self.assertEqual(sent.args[0], "t3_thread_post" if post else "t3_thread_send")
+                    self.assertEqual(sent.args[0], "t3_thread_send")
                     self.assertEqual(sent.kwargs["threadId"], dot.INBOX)
                     self.assertTrue(sent.kwargs["message"].startswith("Question from Chris via his OmarchyTV relay (request new)."))
                     self.assertIn("Answer in T3 thread replies with t3_thread_post.", sent.kwargs["message"])
@@ -214,14 +214,13 @@ class DotRelayTests(unittest.TestCase):
                     self.assertIn("Commands follow your TV relay rule", sent.kwargs["message"])
                     self.assertIn("Other speakers", sent.kwargs["message"])
                     self.assertIn("explicit confirmation", sent.kwargs["message"])
-                    if not post:
-                        self.assertEqual(sent.kwargs["mode"], "queue")
+                    self.assertEqual(sent.kwargs["mode"], "queue")
                     browser.assert_not_called()
 
     def test_inbox_check_and_uncertain_submission_never_send_twice(self):
         with patch.object(dot, "Inbox") as cls:
             client = cls.return_value
-            client.tools = {"t3_thread_post"}
+            client.tools = {"t3_thread_send", "t3_thread_post"}
             client.call.return_value = {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": "approval-required", "itemCount": 0}}
             self.assertIn("no message sent", dot.inbox_relay({"replyThreadId": "replies"}))
             self.assertEqual(client.call.call_count, 1)
@@ -231,7 +230,7 @@ class DotRelayTests(unittest.TestCase):
             self.assertEqual(client.call.call_count, 2)
             client.call.return_value["thread"]["runtimeMode"] = "approval-required"
             client.call.reset_mock()
-            client.tools = {"t3_thread_post"}
+            client.tools = {"t3_thread_send", "t3_thread_post"}
             client.call.side_effect = [client.call.return_value, dot.RelayError("uncertain")]
             with self.assertRaises(dot.RelayError):
                 dot.inbox_relay({"replyThreadId": "replies"}, "hello")
@@ -303,7 +302,7 @@ class DotRelayTests(unittest.TestCase):
         with patch.object(dot, "Inbox") as cls, \
                 patch.object(dot.secrets, "token_hex", return_value="new"):
             client = cls.return_value
-            client.tools = {"t3_thread_post"}
+            client.tools = {"t3_thread_send", "t3_thread_post"}
             client.deadline = dot.time.monotonic() + 30
             client.call.side_effect = [
                 {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": "approval-required", "itemCount": 1000}, "hasMore": True, "nextPosition": 4}, {},
@@ -313,7 +312,8 @@ class DotRelayTests(unittest.TestCase):
             with self.assertRaisesRegex(dot.RelayError, "Ambiguous"):
                 dot.inbox_relay({"replyThreadId": "replies"}, "hello")
             calls = client.call.call_args_list
-            self.assertEqual(calls[1].args[0], "t3_thread_post")
+            self.assertEqual(calls[1].args[0], "t3_thread_send")
+            self.assertEqual(calls[1].kwargs["mode"], "queue")
             self.assertEqual(calls[2].kwargs["afterPosition"], 999)
             self.assertEqual(calls[3].kwargs["afterPosition"], 1000)
             client.close.assert_called_once()
@@ -375,7 +375,7 @@ class DotRelayTests(unittest.TestCase):
     def test_inbox_pages_past_stale_messages_waits_and_times_out_without_resend(self):
         with patch.object(dot, "Inbox") as cls, patch.object(dot.time, "sleep"):
             client = cls.return_value
-            client.tools = {"t3_thread_post"}
+            client.tools = {"t3_thread_send", "t3_thread_post"}
             client.deadline = dot.time.monotonic() + 30
             client.call.side_effect = [
                 {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": "approval-required", "itemCount": 0}}, {},
@@ -388,7 +388,8 @@ class DotRelayTests(unittest.TestCase):
             calls = client.call.call_args_list
             self.assertEqual(calls[3].kwargs["afterPosition"], 99)
             self.assertEqual(calls[4].args[0], "t3_thread_wait")
-            self.assertEqual(sum(c.args[0] == "t3_thread_post" for c in calls), 1)
+            self.assertEqual(sum(c.args[0] == "t3_thread_send" for c in calls), 1)
+            self.assertFalse(any(c.args[0] == "t3_thread_post" for c in calls))
 
 
 if __name__ == "__main__":

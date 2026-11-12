@@ -30,11 +30,12 @@ python3 -I ~/.local/libexec/omarchytv/jarvis-companion/bin/grokbot-ask --check
 ```
 
 The local T3 server must be available at `http://127.0.0.1:3773/mcp`.
-The helper prefers passive `t3_thread_post` for inbox submission when advertised;
-otherwise it submits to the inbox with `t3_thread_send` in queue mode. Jarvis must
+The helper always submits to the inbox with `t3_thread_send` in queue mode.
+The inbox run-end event wakes Jarvis; a passive inbox post would not wake it. Jarvis must
 always answer with `t3_thread_post`, never `t3_thread_send`. If passive posting is
 not offered to Jarvis, it waits. Hold live tests until the coordinated T3 update
-advertises that tool. Set the dedicated reply thread to `approval-required` as
+advertises that tool and returns posted messages through `t3_thread_read`.
+Set the dedicated reply thread to `approval-required` as
 defense in depth against accidental run-starting delivery.
 The helper reads the existing `t3_omarchy` Codex OAuth access token from the Linux
 Secret Service keyring using `secret-tool`. Credentials stay in memory and are
@@ -76,10 +77,10 @@ python3 -I ~/.local/libexec/omarchytv/jarvis-companion/bin/grokbot-ask \
 
 The helper submits once to inbox thread
 `mcp:launch:be52150eaa983a46dcfa1e2bcdbfcfc1fc10f66d3d303f80b59c341fa1c87c23`.
-It uses `t3_thread_post` when advertised and otherwise `t3_thread_send` with
-`mode: queue`. Each request names the reply thread and a random request ID.
-Every request instructs Jarvis to use only `t3_thread_post` for its answer, even
-when inbox submission used queue mode. Jarvis delivers this entire message:
+It always uses `t3_thread_send` with `mode: queue` to trigger the inbox wake.
+Each request names the reply thread and a random request ID.
+Every request instructs Jarvis to use only `t3_thread_post` for its answer, while
+inbox submission starts the wake run. Jarvis delivers this entire message:
 
 ```text
 OMARCHYTV_REPLY <request-id>

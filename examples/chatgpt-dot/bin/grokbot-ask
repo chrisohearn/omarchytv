@@ -229,8 +229,8 @@ def inbox_request(client, cfg, prompt, started):
     position = count - 1 if count else None
     request_id = secrets.token_hex(16)
     prefix, suffix = f"OMARCHYTV_REPLY {request_id}\n", f"\nOMARCHYTV_END {request_id}"
-    # Queue compatibility applies only to inbox submission, never Jarvis replies.
-    send_tool = "t3_thread_post" if "t3_thread_post" in client.tools else "t3_thread_send"
+    # The inbox run-end event wakes Jarvis; passive inbox posts cannot do that.
+    send_tool = "t3_thread_send"
     message = (
         f"Question from Chris via his OmarchyTV relay (request {request_id}). "
         f"Answer in T3 thread {thread} with t3_thread_post.\n"
@@ -244,9 +244,8 @@ def inbox_request(client, cfg, prompt, started):
         f"Use t3_thread_post only for the reply; never t3_thread_send. If t3_thread_post is not offered, wait. "
         f"The inbox acknowledgment is not the answer. Do not ask the reply-thread agent to answer."
     )
-    arguments = {"threadId": INBOX, "message": message, "clientRequestId": "omarchytv-" + request_id}
-    if send_tool == "t3_thread_send":
-        arguments["mode"] = "queue"
+    arguments = {"threadId": INBOX, "message": message, "clientRequestId": "omarchytv-" + request_id,
+                 "mode": "queue"}
     # One submission only. A lost response must not submit a second TV command.
     client.call(send_tool, **arguments)
     sent = time.monotonic()
