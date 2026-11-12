@@ -203,12 +203,12 @@ def inbox_request(client, cfg, prompt, started):
         raise RelayError("Configured reply thread is not the dedicated OmarchyTV relay replies thread")
     if prompt is None:
         return "READY: T3 inbox transport and dedicated reply thread verified; no message sent"
-    # Discard historical bodies before submitting; new replies start after this tail.
-    position = info.get("nextPosition")
-    while info.get("hasMore"):
-        info = client.call("t3_thread_read", threadId=thread, limit=100, maxCharsPerItem=1,
-                           **({"afterPosition": position} if position is not None else {}))
-        position = info.get("nextPosition", position)
+    # T3's own readLatestMessages uses itemCount as the exclusive timeline tail.
+    # Capture that snapshot before submission without walking old reply pages.
+    count = info["thread"]["itemCount"]
+    if type(count) is not int or count < 0:
+        raise RelayError("T3 returned an invalid reply-thread tail; no message sent")
+    position = count - 1 if count else None
     request_id = secrets.token_hex(16)
     prefix, suffix = f"OMARCHYTV_REPLY {request_id}\n", f"\nOMARCHYTV_END {request_id}"
     message = (

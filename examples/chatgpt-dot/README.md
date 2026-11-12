@@ -85,7 +85,7 @@ Only matching, directly delivered MCP messages in that thread are accepted.
 Inbox acknowledgments, provider echoes, partial frames, and older replies are
 ignored. Distinct matching answers already available in the read pages cause an
 ambiguity error. Before submission, the helper captures the reply-thread tail
-with body previews limited to one character, then reads only new messages. It
+from T3 timeline metadata, then reads only new messages. It
 terminates its MCP session after readiness, success, or failure. The helper uses
 `t3_thread_wait` between reads.
 Until T3 exposes a message-event wait, an idle thread requires a read each second

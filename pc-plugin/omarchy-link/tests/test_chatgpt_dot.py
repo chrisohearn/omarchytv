@@ -190,7 +190,7 @@ class DotRelayTests(unittest.TestCase):
                     direct = {"type": "user_message", "creationSource": "mcp", "textTruncated": False}
                     reply = "OMARCHYTV_REPLY new\n" + "x" * length + "\nOMARCHYTV_END new"
                     client.call.side_effect = [
-                        {"thread": {"title": "OmarchyTV relay replies"}}, {},
+                        {"thread": {"title": "OmarchyTV relay replies", "itemCount": 0}}, {},
                         {"items": [{**direct, "text": "Queued for Jarvis: new"},
                                    {**direct, "text": reply.replace("new", "old")},
                                    {**direct, "type": "assistant_message", "text": reply.replace("x", "y")},
@@ -215,7 +215,7 @@ class DotRelayTests(unittest.TestCase):
         with patch.object(dot, "Inbox") as cls:
             client = cls.return_value
             client.tools = {"t3_thread_post"}
-            client.call.return_value = {"thread": {"title": "OmarchyTV relay replies"}}
+            client.call.return_value = {"thread": {"title": "OmarchyTV relay replies", "itemCount": 0}}
             self.assertIn("no message sent", dot.inbox_relay({"replyThreadId": "replies"}))
             self.assertEqual(client.call.call_count, 1)
             client.call.reset_mock()
@@ -278,7 +278,7 @@ class DotRelayTests(unittest.TestCase):
         self.assertIsNone(client.session)
         with patch.object(dot, "Inbox") as cls:
             cls.return_value.tools = {"t3_thread_post"}
-            cls.return_value.call.return_value = {"thread": {"title": "OmarchyTV relay replies"}}
+            cls.return_value.call.return_value = {"thread": {"title": "OmarchyTV relay replies", "itemCount": 0}}
             dot.inbox_relay({"replyThreadId": "replies"})
             cls.return_value.close.assert_called_once()
             cls.return_value.close.reset_mock()
@@ -303,19 +303,16 @@ class DotRelayTests(unittest.TestCase):
             client.tools = {"t3_thread_post"}
             client.deadline = dot.time.monotonic() + 30
             client.call.side_effect = [
-                {"thread": {"title": "OmarchyTV relay replies"}, "hasMore": True, "nextPosition": 4},
-                {"items": [], "hasMore": False, "nextPosition": 999}, {},
+                {"thread": {"title": "OmarchyTV relay replies", "itemCount": 1000}, "hasMore": True, "nextPosition": 4}, {},
                 {"items": [reply("first")], "hasMore": True, "nextPosition": 1000},
                 {"items": [reply("corrected")], "hasMore": False, "nextPosition": 1001},
             ]
             with self.assertRaisesRegex(dot.RelayError, "Ambiguous"):
                 dot.inbox_relay({"replyThreadId": "replies"}, "hello")
             calls = client.call.call_args_list
-            self.assertEqual(calls[1].kwargs["afterPosition"], 4)
-            self.assertEqual(calls[1].kwargs["maxCharsPerItem"], 1)
-            self.assertEqual(calls[2].args[0], "t3_thread_post")
-            self.assertEqual(calls[3].kwargs["afterPosition"], 999)
-            self.assertEqual(calls[4].kwargs["afterPosition"], 1000)
+            self.assertEqual(calls[1].args[0], "t3_thread_post")
+            self.assertEqual(calls[2].kwargs["afterPosition"], 999)
+            self.assertEqual(calls[3].kwargs["afterPosition"], 1000)
             client.close.assert_called_once()
 
     def test_rpc_handles_json_sse_and_rejects_redirects_and_errors(self):
@@ -350,7 +347,7 @@ class DotRelayTests(unittest.TestCase):
             client.tools = {"t3_thread_post"}
             client.deadline = dot.time.monotonic() + 30
             client.call.side_effect = [
-                {"thread": {"title": "OmarchyTV relay replies"}}, {},
+                {"thread": {"title": "OmarchyTV relay replies", "itemCount": 0}}, {},
                 {"items": [], "hasMore": True, "nextPosition": 99},
                 {"items": [], "hasMore": False, "nextPosition": 100},
                 dot.RelayError("timeout"),
