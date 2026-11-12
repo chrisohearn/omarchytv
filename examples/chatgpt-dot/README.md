@@ -1,20 +1,20 @@
 # Connect the native companion to Jarvis through T3
 
-Upgrade 41 sends OmarchyTV companion requests to Jarvis's T3 inbox. Jarvis answers
+The helper sends OmarchyTV companion requests to Jarvis's T3 inbox. Jarvis answers
 in one dedicated T3 reply thread. The helper uses the existing `grokbot-ask`
 JSON stdin and text stdout contract, with Python's standard library.
 
-The default transport is `inbox`. The browser adapter remains available only
-when `transport` is explicitly `browser`. Inbox failures never fall back to a
-browser or resend a command. Upgrade 42 can remove the browser adapter after the
-inbox route proves reliable.
+The T3 inbox is the only transport. Upgrade 41 added it; upgrade 42 removed the
+earlier route that typed into the ChatGPT page in the agent Chrome. A `relay.json`
+that still sets `"transport": "browser"` is refused with an error and is never
+rerouted. Failures never resend a command.
 
 ## Prepare the helper
 
 1. Copy this directory to `~/.local/libexec/omarchytv/jarvis-companion`.
    Set the directory mode to `700` and its files unwritable by other users.
 2. Copy `relay.example.json` to `relay.json` and set its mode to `600`.
-   Keep the existing `dotUrl` and `name` for bot identity and browser rollback.
+   Keep the existing `dotUrl` and `name`: they identify the bot to the TV.
 3. Reuse the idle thread **OmarchyTV relay replies (approval-required)**,
    created with runtime mode `approval-required`. Set `replyThreadId` to
    `mcp:launch:c7e01d2bec96b8ce1d8b273155d2b4af706f0de2bbe34db9fafbcb898a5b4150`.
@@ -33,8 +33,9 @@ The local T3 server must be available at `http://127.0.0.1:3773/mcp`.
 The helper always submits to the inbox with `t3_thread_send` in queue mode.
 The inbox run-end event wakes Jarvis; a passive inbox post would not wake it. Jarvis must
 always answer with `t3_thread_post`, never `t3_thread_send`. If passive posting is
-not offered to Jarvis, it waits. Hold live tests until the coordinated T3 update
-advertises that tool and returns posted messages through `t3_thread_read`.
+not offered to Jarvis, it waits. The T3 server must advertise `t3_thread_post` and
+return posted messages through `t3_thread_read` (T3 `0.1.10-preview.20261112.4`
+or later).
 Set the dedicated reply thread to `approval-required` as
 defense in depth against accidental run-starting delivery.
 The helper reads the existing `t3_omarchy` Codex OAuth access token from the Linux
@@ -103,24 +104,18 @@ The PC bridge defaults to 210 seconds for startup and cleanup; an explicit
 `grokbotTimeoutS` override must allow at least 210 seconds. The helper keeps no
 local conversation transcript.
 
-## Recover or roll back
+## Recover
 
 After an error, inspect the inbox and reply thread before retrying. A failed
 submission response or a timeout does not prove the question was undelivered.
-There is no automatic resend or browser fallback.
-
-To restore the retained browser route, set `transport` to `browser` in the private
-`relay.json`. It requires the existing signed-in shared agent Chrome,
-`agent-desktop`, `cua-driver`, and browser lease tools. That route preserves its
-400-character request and requested 600-character reply limits. Its `--check`
-observes the exact Dot and empty composer without sending. This upgrade's live
-verification does not exercise that route.
+There is no automatic resend or fallback route.
 
 To update an existing installation, copy `bin/grokbot-ask`, `manifest.json`, and
 this README from the merged checkout into the private directory, preserving
-private modes. Add `replyThreadId` and set `transport` to `inbox` in the existing
-`relay.json`. Preserve the existing bot roster and Dot identity. Back up those
-files first so the previous helper and configuration can be restored together.
+private modes. The existing `relay.json` needs `replyThreadId`; `transport` may
+be omitted or `inbox`. Preserve the existing bot roster and Dot identity. Back up
+those files first so the previous helper and configuration can be restored
+together. Then run `--version` and `--check` with the installed helper.
 
 ## Check changes offline
 
@@ -130,6 +125,6 @@ From the repository root:
 python3 -m unittest discover -s pc-plugin/omarchy-link/tests -p test_chatgpt_dot.py -v
 ```
 
-These tests cover transport defaults, request and display limits, correlation,
-credential validation, one-submit failure handling, and retained browser guards.
+These tests cover configuration, the retired-browser guard, request and display
+limits, correlation, credential validation, and one-submit failure handling.
 They do not prove Jarvis availability, TV rendering, or speaker identity.
