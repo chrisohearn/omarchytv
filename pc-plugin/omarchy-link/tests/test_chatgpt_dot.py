@@ -180,12 +180,12 @@ class DotRelayTests(unittest.TestCase):
                 dot.request({"botId": cfg["id"], "prompt": "x" * 1001}, cfg)
 
     def test_inbox_correlation_post_preference_and_display_cap(self):
-        for post in (True,):
+        for post in (True, False):
             for length in (900, 5000):
                 with self.subTest(post=post, length=length), patch.object(dot, "Inbox") as cls, \
                         patch.object(dot.secrets, "token_hex", return_value="new"), patch.object(dot, "Browser") as browser:
                     client = cls.return_value
-                    client.tools = {"t3_thread_post"}
+                    client.tools = {"t3_thread_post"} if post else {"t3_thread_send"}
                     client.deadline = dot.time.monotonic() + 30
                     direct = {"type": "user_message", "creationSource": "mcp", "textTruncated": False}
                     reply = "OMARCHYTV_REPLY new\n" + "x" * length + "\nOMARCHYTV_END new"
@@ -205,6 +205,10 @@ class DotRelayTests(unittest.TestCase):
                     sent = client.call.call_args_list[1]
                     self.assertEqual(sent.args[0], "t3_thread_post" if post else "t3_thread_send")
                     self.assertEqual(sent.kwargs["threadId"], dot.INBOX)
+                    self.assertTrue(sent.kwargs["message"].startswith("Question from Chris via his OmarchyTV relay (request new)."))
+                    self.assertIn("Answer in T3 thread replies with", sent.kwargs["message"])
+                    self.assertNotIn("not proof of speaker identity", sent.kwargs["message"])
+                    self.assertIn("Commands follow your TV relay rule", sent.kwargs["message"])
                     self.assertIn("Other speakers", sent.kwargs["message"])
                     self.assertIn("explicit confirmation", sent.kwargs["message"])
                     if not post:
@@ -239,15 +243,6 @@ class DotRelayTests(unittest.TestCase):
                 with self.assertRaises(dot.RelayError) as error:
                     dot.t3_token()
                 self.assertNotIn("secret-never-log", str(error.exception))
-
-    def test_inbox_refuses_active_reply_fallback_before_submission(self):
-        with patch.object(dot, "Inbox") as cls:
-            cls.return_value.tools = {"t3_thread_send"}
-            for prompt in (None, "hello"):
-                with self.assertRaisesRegex(dot.RelayError, "passive replies"):
-                    dot.inbox_relay({"replyThreadId": "replies"}, prompt)
-            cls.return_value.call.assert_not_called()
-            self.assertEqual(cls.return_value.close.call_count, 2)
 
     def test_keyring_checks_alternate_entry_after_invalid_candidate(self):
         from types import SimpleNamespace
@@ -340,6 +335,34 @@ class DotRelayTests(unittest.TestCase):
             self.assertNotIn("private-token", str(error.exception))
         with self.assertRaises(dot.RelayError):
             dot.NoRedirect().redirect_request(None, None, None, None, None, None)
+
+    def test_long_reply_follows_text_continuation_before_frame_and_tv_limit(self):
+        full = "OMARCHYTV_REPLY new\n" + "x" * 60000 + "\nOMARCHYTV_END new"
+        direct = {"type": "user_message", "creationSource": "mcp", "itemId": "answer",
+                  "updatedAt": "unchanged"}
+        with patch.object(dot, "Inbox") as cls, \
+                patch.object(dot.secrets, "token_hex", return_value="new"):
+            client = cls.return_value
+            client.tools = {"t3_thread_send"}
+            client.deadline = dot.time.monotonic() + 30
+            client.call.side_effect = [
+                {"thread": {"title": "OmarchyTV relay replies", "itemCount": 0}}, {},
+                {"items": [{**direct, "text": full[:50000], "textTruncated": True,
+                            "nextTextOffset": 50000}], "hasMore": False},
+                {"items": [{**direct, "text": full[50000:], "textTruncated": False}]},
+            ]
+            answer = dot.inbox_relay({"replyThreadId": "replies"}, "hello")
+            self.assertEqual(len(answer), 4000)
+            self.assertTrue(answer.endswith("[TV limit; full reply is in T3.]"))
+            continuation = client.call.call_args_list[-1]
+            self.assertEqual(continuation.kwargs["itemId"], "answer")
+            self.assertEqual(continuation.kwargs["textOffset"], 50000)
+        with patch.object(dot, "Inbox") as cls:
+            client = cls.return_value
+            client.call.return_value = {"items": [{**direct, "text": "changed", "updatedAt": "edited"}]}
+            with self.assertRaisesRegex(dot.RelayError, "changed"):
+                dot.complete_reply(client, "replies", {**direct, "text": full[:50000],
+                                   "textTruncated": True, "nextTextOffset": 50000})
 
     def test_inbox_pages_past_stale_messages_waits_and_times_out_without_resend(self):
         with patch.object(dot, "Inbox") as cls, patch.object(dot.time, "sleep"):
