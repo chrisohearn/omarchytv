@@ -44,6 +44,10 @@ class DotRelayTests(unittest.TestCase):
                 path.chmod(0o600)
                 with self.assertRaisesRegex(dot.RelayError, message):
                     dot.settings(path)
+            # The retired-route message must win even when the old browser config lacks a reply thread.
+            path.write_text(json.dumps({"dotUrl": CFG["url"], "name": "Jarvis", "transport": "browser"}))
+            with self.assertRaisesRegex(dot.RelayError, "retired in upgrade 42"):
+                dot.settings(path)
             path.write_text(json.dumps({"dotUrl": CFG["url"], "name": "Jarvis", "transport": "inbox",
                                         "replyThreadId": "replies"}))
             self.assertEqual(dot.settings(path), CFG)
