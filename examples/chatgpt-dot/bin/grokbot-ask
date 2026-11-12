@@ -215,8 +215,10 @@ def inbox_relay(cfg, prompt=None):
 def inbox_request(client, cfg, prompt, started):
     thread = cfg["replyThreadId"]
     info = client.call("t3_thread_read", threadId=thread, limit=1, maxCharsPerItem=1)
-    if info["thread"]["title"] != "OmarchyTV relay replies" or info["thread"].get("archived"):
-        raise RelayError("Configured reply thread is not the dedicated OmarchyTV relay replies thread")
+    if (info["thread"]["title"] != "OmarchyTV relay replies (approval-required)"
+            or info["thread"].get("runtimeMode") != "approval-required"
+            or info["thread"].get("archived")):
+        raise RelayError("Configure the dedicated approval-required OmarchyTV reply thread")
     if prompt is None:
         return "READY: T3 inbox transport and dedicated reply thread verified; no message sent"
     # T3's own readLatestMessages uses itemCount as the exclusive timeline tail.

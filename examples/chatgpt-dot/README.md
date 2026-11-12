@@ -15,8 +15,10 @@ inbox route proves reliable.
    Set the directory mode to `700` and its files unwritable by other users.
 2. Copy `relay.example.json` to `relay.json` and set its mode to `600`.
    Keep the existing `dotUrl` and `name` for bot identity and browser rollback.
-3. Create one idle T3 thread titled **OmarchyTV relay replies**. Reuse that
-   thread for every request. Set `replyThreadId` to its ID. The helper never
+3. Reuse the idle thread **OmarchyTV relay replies (approval-required)**,
+   created with runtime mode `approval-required`. Set `replyThreadId` to
+   `mcp:launch:c7e01d2bec96b8ce1d8b273155d2b4af706f0de2bbe34db9fafbcb898a5b4150`.
+   The helper verifies the title and permission mode before submitting. The helper never
    creates threads, pairings, grants, or tokens.
 4. Copy `data/bots.example.json` to `data/bots.json`. Set the bot `id` to the
    part after `/dots/` in `dotUrl`. Set both names to Jarvis's name.

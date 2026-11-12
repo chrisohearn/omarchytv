@@ -190,7 +190,7 @@ class DotRelayTests(unittest.TestCase):
                     direct = {"type": "user_message", "creationSource": "mcp", "textTruncated": False}
                     reply = "OMARCHYTV_REPLY new\n" + "x" * length + "\nOMARCHYTV_END new"
                     client.call.side_effect = [
-                        {"thread": {"title": "OmarchyTV relay replies", "itemCount": 0}}, {},
+                        {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": "approval-required", "itemCount": 0}}, {},
                         {"items": [{**direct, "text": "Queued for Jarvis: new"},
                                    {**direct, "text": reply.replace("new", "old")},
                                    {**direct, "type": "assistant_message", "text": reply.replace("x", "y")},
@@ -222,9 +222,14 @@ class DotRelayTests(unittest.TestCase):
         with patch.object(dot, "Inbox") as cls:
             client = cls.return_value
             client.tools = {"t3_thread_post"}
-            client.call.return_value = {"thread": {"title": "OmarchyTV relay replies", "itemCount": 0}}
+            client.call.return_value = {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": "approval-required", "itemCount": 0}}
             self.assertIn("no message sent", dot.inbox_relay({"replyThreadId": "replies"}))
             self.assertEqual(client.call.call_count, 1)
+            client.call.return_value["thread"]["runtimeMode"] = "full-access"
+            with self.assertRaises(dot.RelayError):
+                dot.inbox_relay({"replyThreadId": "replies"}, "hello")
+            self.assertEqual(client.call.call_count, 2)
+            client.call.return_value["thread"]["runtimeMode"] = "approval-required"
             client.call.reset_mock()
             client.tools = {"t3_thread_post"}
             client.call.side_effect = [client.call.return_value, dot.RelayError("uncertain")]
@@ -276,7 +281,7 @@ class DotRelayTests(unittest.TestCase):
         self.assertIsNone(client.session)
         with patch.object(dot, "Inbox") as cls:
             cls.return_value.tools = {"t3_thread_post"}
-            cls.return_value.call.return_value = {"thread": {"title": "OmarchyTV relay replies", "itemCount": 0}}
+            cls.return_value.call.return_value = {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": "approval-required", "itemCount": 0}}
             dot.inbox_relay({"replyThreadId": "replies"})
             cls.return_value.close.assert_called_once()
             cls.return_value.close.reset_mock()
@@ -301,7 +306,7 @@ class DotRelayTests(unittest.TestCase):
             client.tools = {"t3_thread_post"}
             client.deadline = dot.time.monotonic() + 30
             client.call.side_effect = [
-                {"thread": {"title": "OmarchyTV relay replies", "itemCount": 1000}, "hasMore": True, "nextPosition": 4}, {},
+                {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": "approval-required", "itemCount": 1000}, "hasMore": True, "nextPosition": 4}, {},
                 {"items": [reply("first")], "hasMore": True, "nextPosition": 1000},
                 {"items": [reply("corrected")], "hasMore": False, "nextPosition": 1001},
             ]
@@ -349,7 +354,7 @@ class DotRelayTests(unittest.TestCase):
             client.tools = {"t3_thread_send"}
             client.deadline = dot.time.monotonic() + 30
             client.call.side_effect = [
-                {"thread": {"title": "OmarchyTV relay replies", "itemCount": 0}}, {},
+                {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": "approval-required", "itemCount": 0}}, {},
                 {"items": [{**direct, "text": full[:50000], "textTruncated": True,
                             "nextTextOffset": 50000}], "hasMore": False},
                 {"items": [{**direct, "text": full[50000:], "textTruncated": False}]},
@@ -373,7 +378,7 @@ class DotRelayTests(unittest.TestCase):
             client.tools = {"t3_thread_post"}
             client.deadline = dot.time.monotonic() + 30
             client.call.side_effect = [
-                {"thread": {"title": "OmarchyTV relay replies", "itemCount": 0}}, {},
+                {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": "approval-required", "itemCount": 0}}, {},
                 {"items": [], "hasMore": True, "nextPosition": 99},
                 {"items": [], "hasMore": False, "nextPosition": 100},
                 dot.RelayError("timeout"),
