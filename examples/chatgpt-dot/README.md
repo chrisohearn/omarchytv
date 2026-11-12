@@ -15,10 +15,13 @@ rerouted. Failures never resend a command.
    Set the directory mode to `700` and its files unwritable by other users.
 2. Copy `relay.example.json` to `relay.json` and set its mode to `600`.
    Keep the existing `dotUrl` and `name`: they identify the bot to the TV.
-3. Reuse the idle thread **OmarchyTV relay replies (approval-required)**,
-   created with runtime mode `approval-required`. Set `replyThreadId` to
+3. Reuse the idle reply thread whose title starts with **OmarchyTV relay replies**.
+   Set `replyThreadId` to
    `mcp:launch:c7e01d2bec96b8ce1d8b273155d2b4af706f0de2bbe34db9fafbcb898a5b4150`.
-   The helper verifies the title and permission mode before submitting. The helper never
+   Before submitting, the helper verifies the title prefix, that the thread is not
+   archived, and that its runtime mode is `approval-required` or `full-access`.
+   Any other mode, such as `auto` or `auto-accept-edits`, is refused and no message
+   is sent. The helper never renames the thread or changes its mode, and never
    creates threads, pairings, grants, or tokens.
 4. Copy `data/bots.example.json` to `data/bots.json`. Set the bot `id` to the
    part after `/dots/` in `dotUrl`. Set both names to Jarvis's name.
@@ -36,8 +39,9 @@ always answer with `t3_thread_post`, never `t3_thread_send`. If passive posting 
 not offered to Jarvis, it waits. The T3 server must advertise `t3_thread_post` and
 return posted messages through `t3_thread_read` (T3 `0.1.10-preview.20261112.4`
 or later).
-Set the dedicated reply thread to `approval-required` as
-defense in depth against accidental run-starting delivery.
+The reply thread may run in `approval-required` or `full-access` mode. Since relay
+0.3.1 both are accepted, so the thread can move to full access without breaking the
+helper. Jarvis's passive `t3_thread_post` replies do not start runs in that thread.
 The helper reads the existing `t3_omarchy` Codex OAuth access token from the Linux
 Secret Service keyring using `secret-tool`. Credentials stay in memory and are
 never logged or written to disk. It does not refresh tokens or start sign-in.
@@ -125,6 +129,7 @@ From the repository root:
 python3 -m unittest discover -s pc-plugin/omarchy-link/tests -p test_chatgpt_dot.py -v
 ```
 
-These tests cover configuration, the retired-browser guard, request and display
-limits, correlation, credential validation, and one-submit failure handling.
+These tests cover configuration, the retired-browser guard, reply-thread title and
+mode checks, request and display limits, correlation, credential validation, and
+one-submit failure handling.
 They do not prove Jarvis availability, TV rendering, or speaker identity.

@@ -83,8 +83,8 @@ class DotRelayTests(unittest.TestCase):
 
     def test_inbox_queue_submission_post_only_reply_and_display_cap(self):
         for post in (True, False):
-            for length in (900, 5000):
-                with self.subTest(post=post, length=length), patch.object(dot, "Inbox") as cls, \
+            for length, mode in ((900, "approval-required"), (5000, "full-access")):
+                with self.subTest(post=post, length=length, mode=mode), patch.object(dot, "Inbox") as cls, \
                         patch.object(dot.secrets, "token_hex", return_value="new"):
                     client = cls.return_value
                     client.tools = {"t3_thread_send", "t3_thread_post"} if post else {"t3_thread_send"}
@@ -92,7 +92,7 @@ class DotRelayTests(unittest.TestCase):
                     direct = {"type": "user_message", "creationSource": "mcp", "textTruncated": False}
                     reply = "OMARCHYTV_REPLY new\n" + "x" * length + "\nOMARCHYTV_END new"
                     client.call.side_effect = [
-                        {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": "approval-required", "itemCount": 0}}, {},
+                        {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": mode, "itemCount": 0}}, {},
                         {"items": [{**direct, "text": "Queued for Jarvis: new"},
                                    {**direct, "text": reply.replace("new", "old")},
                                    {**direct, "type": "assistant_message", "text": reply.replace("x", "y")},
@@ -125,8 +125,8 @@ class DotRelayTests(unittest.TestCase):
             client.call.return_value = {"thread": {"title": "OmarchyTV relay replies (approval-required)", "runtimeMode": "approval-required", "itemCount": 0}}
             self.assertIn("no message sent", dot.inbox_relay({"replyThreadId": "replies"}))
             self.assertEqual(client.call.call_count, 1)
-            client.call.return_value["thread"]["runtimeMode"] = "full-access"
-            with self.assertRaises(dot.RelayError):
+            client.call.return_value["thread"]["runtimeMode"] = "auto"
+            with self.assertRaisesRegex(dot.RelayError, "'auto' is not allowed"):
                 dot.inbox_relay({"replyThreadId": "replies"}, "hello")
             self.assertEqual(client.call.call_count, 2)
             client.call.return_value["thread"]["runtimeMode"] = "approval-required"
@@ -136,6 +136,38 @@ class DotRelayTests(unittest.TestCase):
             with self.assertRaises(dot.RelayError):
                 dot.inbox_relay({"replyThreadId": "replies"}, "hello")
             self.assertEqual(client.call.call_count, 2)
+
+    def test_reply_thread_accepts_full_access_and_prefix_title_only(self):
+        def check(thread):
+            with patch.object(dot, "Inbox") as cls:
+                client = cls.return_value
+                client.call.return_value = {"thread": {"itemCount": 0, **thread}}
+                try:
+                    return dot.inbox_relay({"replyThreadId": "replies"})
+                finally:
+                    self.assertEqual(client.call.call_count, 1)
+                    self.assertEqual(client.call.call_args.args[0], "t3_thread_read")
+
+        for title in ("OmarchyTV relay replies (approval-required)", "OmarchyTV relay replies",
+                      "OmarchyTV relay replies (full-access)"):
+            for mode in ("approval-required", "full-access"):
+                with self.subTest(title=title, mode=mode):
+                    self.assertIn("no message sent", check({"title": title, "runtimeMode": mode}))
+        good = "OmarchyTV relay replies"
+        for mode in ("auto", "auto-accept-edits", None, ""):
+            with self.subTest(mode=mode), self.assertRaisesRegex(
+                    dot.RelayError, r"\(use approval-required or full-access\); no message sent"):
+                check({"title": good, "runtimeMode": mode})
+        with self.assertRaisesRegex(dot.RelayError, "use approval-required or full-access"):
+            check({"title": good})
+        for thread in ({"title": "Jarvis inbox", "runtimeMode": "full-access"},
+                       {"title": "omarchytv relay replies", "runtimeMode": "full-access"},
+                       {"title": None, "runtimeMode": "full-access"},
+                       {"runtimeMode": "full-access"},
+                       {"title": good, "runtimeMode": "full-access", "archived": True}):
+            with self.subTest(thread=thread), self.assertRaisesRegex(
+                    dot.RelayError, "dedicated OmarchyTV relay replies thread; no message sent"):
+                check(thread)
 
     def test_keyring_reuse_validates_origin_and_expiry_without_leaking(self):
         from types import SimpleNamespace
