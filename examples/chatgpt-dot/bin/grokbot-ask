@@ -22,6 +22,9 @@ T3_URL = "http://127.0.0.1:3773/mcp"
 INBOX = "mcp:launch:be52150eaa983a46dcfa1e2bcdbfcfc1fc10f66d3d303f80b59c341fa1c87c23"
 REPLY_LIMIT = 4000
 PROMPT_LIMIT = 1000
+REPLY_TITLE = "OmarchyTV relay replies"
+# The relay never starts runs in the reply thread; Jarvis answers there with passive posts.
+REPLY_MODES = ("approval-required", "full-access")
 
 
 class RelayError(Exception):
@@ -109,7 +112,7 @@ class Inbox:
 
     def initialize(self):
         initialized = self.rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
-                               "clientInfo": {"name": "omarchytv-relay", "version": "0.3.0"}})
+                               "clientInfo": {"name": "omarchytv-relay", "version": "0.3.1"}})
         self.protocol = initialized["protocolVersion"]
         self.rpc("notifications/initialized", {}, notify=True)
         self.tools = set()
@@ -216,10 +219,14 @@ def inbox_relay(cfg, prompt=None):
 def inbox_request(client, cfg, prompt, started):
     thread = cfg["replyThreadId"]
     info = client.call("t3_thread_read", threadId=thread, limit=1, maxCharsPerItem=1)
-    if (info["thread"]["title"] != "OmarchyTV relay replies (approval-required)"
-            or info["thread"].get("runtimeMode") != "approval-required"
+    title = info["thread"].get("title")
+    if (not isinstance(title, str) or not title.startswith(REPLY_TITLE)
             or info["thread"].get("archived")):
-        raise RelayError("Configure the dedicated approval-required OmarchyTV reply thread")
+        raise RelayError("Configure the dedicated OmarchyTV relay replies thread; no message sent")
+    mode = info["thread"].get("runtimeMode")
+    if mode not in REPLY_MODES:
+        raise RelayError(f"Reply thread runtime mode {mode!r} is not allowed (use approval-required "
+                         f"or full-access); no message sent")
     if prompt is None:
         return "READY: T3 inbox transport and dedicated reply thread verified; no message sent"
     # T3's own readLatestMessages uses itemCount as the exclusive timeline tail.
@@ -291,7 +298,7 @@ def inbox_request(client, cfg, prompt, started):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--version", action="version", version="OmarchyTV Jarvis relay 0.3.0 (upgrade 42)")
+    parser.add_argument("--version", action="version", version="OmarchyTV Jarvis relay 0.3.1 (upgrade 42)")
     parser.add_argument("--config", type=Path, default=Path(__file__).resolve().parents[1] / "relay.json")
     parser.add_argument("--check", action="store_true", help="Verify T3 sign-in and the reply thread without sending")
     parser.add_argument("--question", help="Send one explicit CLI test question instead of JSON stdin")
