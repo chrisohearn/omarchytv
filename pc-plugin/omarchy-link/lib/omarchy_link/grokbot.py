@@ -81,7 +81,7 @@ CONTROLS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 ASK_LIMIT = 1000          # his IPC accepts 4000; the TV keyboard never needs more than this
 REPLY_LIMIT = 4000        # his bubble shows at most 4000 chars
 SAY_LIMIT = 300           # his `say` text cap
-ASK_TIMEOUT = 180         # same ceiling his shell uses for the helper
+ASK_TIMEOUT = 210         # allow the inbox relay three minutes plus startup/cleanup
 TRUSTED = ("/usr/bin", "/bin", "/usr/local/bin")
 # Environment names the helper may need (agent mode credentials, proxies). Values are passed
 # through to his helper as his shell does; they are never read, logged or sent to the TV.
