@@ -29,13 +29,14 @@ Before building or installing an update, follow the dated-build and live-verific
 | PC plugin tests | From `pc-plugin/`: `python3 -m unittest discover -s omarchy-tv/tests -v` |
 | PC agent feed tests | From `pc-plugin/omarchy-link/tests`: `python3 -m unittest test_agents` |
 | Homewatch tests | From `homewatch/`: `python3 -m unittest discover -s tests -v` |
+| Mobile companion ADB protocol test | From `mobile-companion/`: `python3 test_adb_protocol.py` |
 | TV web-app tests | `node --test tizen/*.test.cjs webos/tests/*.test.js` |
 
 Launcher UI tests write PNG evidence to `launcher/app/build/ui-evidence/`.
 
 ## Rules
 
-- The launcher targets TVs with 1 GB of RAM: no blur, no video backgrounds, no polling, no background services, no network. Anything specific to one TV goes in `launcher/app/src/main/res/values/config.xml`, not in code.
+- The launcher targets TVs with 1 GB of RAM: no blur and no video backgrounds, and add no new polling, background services or network use. The existing networked features (Omarchy Link, weather, casting, Grok Bot) are approved; keep them working. Anything specific to one TV goes in `launcher/app/src/main/res/values/config.xml`, not in code.
 - No new launcher dependencies without Chris's agreement.
 - Debloat lists only disable packages with `pm disable-user`, which is reversible. Never list packages to uninstall.
 - Read [CONTRIBUTING.md](CONTRIBUTING.md) before changing the launcher, remote mappings or debloat lists.
