@@ -1,95 +1,118 @@
-# Connect the native companion to an existing ChatGPT Dot
+# Connect the native companion to Jarvis through T3
 
-This experimental PC helper sends a native OmarchyTV companion request through
-your signed-in ChatGPT Dot page. It uses the existing `grokbot-ask` stdin/stdout
-contract. It does not create another assistant or call an undocumented ChatGPT API.
+Upgrade 41 sends OmarchyTV companion requests to Jarvis's T3 inbox. Jarvis answers
+in one dedicated T3 reply thread. The helper uses the existing `grokbot-ask`
+JSON stdin and text stdout contract, with Python's standard library.
 
-## Prepare the PC helper
+The default transport is `inbox`. The browser adapter remains available only
+when `transport` is explicitly `browser`. Inbox failures never fall back to a
+browser or resend a command. Upgrade 42 can remove the browser adapter after the
+inbox route proves reliable.
 
-Use an Omarchy PC with the existing shared `agent-desktop` Chrome, `cua-driver`,
-and Revotech Engineering browser leases installed. Sign in to your Dot through
-that browser first. The helper does not sign in, handle credentials, change the
-browser profile, or approve site tool requests. It uses Python's standard library.
+## Prepare the helper
 
-1. Copy this directory to a private PC directory, such as
-   `~/.local/libexec/omarchytv/jarvis-companion`. Set the directory mode to `700`.
-2. Copy `relay.example.json` to `relay.json`. Set `dotUrl` to the exact
-   `https://chatgpt.com/dots/...` URL and `name` to the page's exact title.
-   Set `relay.json` mode to `600` and keep it owned by your user.
-3. Copy `data/bots.example.json` to `data/bots.json`. Set the bot `id` to the
-   part after `/dots/` in that URL. Set both names to the Dot's name.
-4. Keep `bin/grokbot-ask` owned by you and unwritable by other users.
-5. Run the check below. `READY` means that the exact Dot and an empty composer
-   were observed. This check sends no message.
+1. Copy this directory to `~/.local/libexec/omarchytv/jarvis-companion`.
+   Set the directory mode to `700` and its files unwritable by other users.
+2. Copy `relay.example.json` to `relay.json` and set its mode to `600`.
+   Keep the existing `dotUrl` and `name` for bot identity and browser rollback.
+3. Create one idle T3 thread titled **OmarchyTV relay replies**. Reuse that
+   thread for every request. Set `replyThreadId` to its ID. The helper never
+   creates threads, pairings, grants, or tokens.
+4. Copy `data/bots.example.json` to `data/bots.json`. Set the bot `id` to the
+   part after `/dots/` in `dotUrl`. Set both names to Jarvis's name.
+5. Run the readiness check. `READY` means T3 authenticated and the configured
+   dedicated reply thread was observed. This check sends no message.
 
 ```sh
 python3 -I ~/.local/libexec/omarchytv/jarvis-companion/bin/grokbot-ask --check
 ```
 
-The manifest ID and `0.1.0` version select OmarchyTV's existing companion helper
-protocol. This directory is a protocol adapter, not a copy of the desktop Grok Bot
-plugin. It does not install a shell plugin or change the compositor.
+The local T3 server must be available at `http://127.0.0.1:3773/mcp`.
+The helper reads the existing `t3_omarchy` Codex OAuth access token from the Linux
+Secret Service keyring using `secret-tool`. Credentials stay in memory and are
+never logged or written to disk. It does not refresh tokens or start sign-in.
+If that existing sign-in expires, restore it through Codex's supported sign-in
+workflow. HTTP proxies and redirects are disabled for the local request.
 
-## Route the native pet to the helper
+The manifest's `0.1.0` version selects the existing companion protocol.
+`relayVersion` and `grokbot-ask --version` identify this adapter's release.
+This helper does not install a shell plugin or change the compositor.
 
-Back up your existing PC and TV settings before activation. Set the PC Link
-configuration's `grokbotDesktopDir` to the private directory and keep
-`grokbotBridge` enabled. An existing `~/.config/omarchy/grokbot-bots.json` roster
-takes precedence over this directory's roster. Reconcile it before activation.
+## Route the native companion to the helper
 
-Select the native companion's Grok Bot bridge route and the configured bot on
-the TV, rather than the separate Ask route. To use the remote microphone button,
-set `voiceKey` to `companion` and select OmarchyTV as Android's default assistant.
-Keep `voiceKey` set to `assistant` to retain Google Assistant on that button.
-You can also open the native pet and select **Speak**. Speech recognition sends
-the recognized question to the Dot, and its reply appears as text in the chat.
-The paired PC and its signed-in agent browser must remain available.
-This workflow does not start a voice call or use a voice API.
-No Android rebuild is needed for the PC helper.
-The stock native avatar shapes, branding, and Home-only overlay still apply.
-This helper does not reproduce a ChatGPT pet sprite or place an overlay over Plex.
+Keep the existing paired PC Link route, `grokbotDesktopDir` pointing at the private
+helper directory, and `grokbotBridge` enabled. Select its configured bot on the TV.
+An existing `~/.config/omarchy/grokbot-bots.json` roster takes precedence over the
+helper's roster. No Android rebuild or settings change is needed for this upgrade.
 
-For a real test, submit one harmless question through the native pet and verify
-its reply. Follow your household's approval rules before operating the TV.
-The helper also accepts the native JSON object on stdin (`botId`, `prompt`, and
-optional metadata). A wrong bot ID is refused before opening the browser.
-Prompts are limited to 400 characters, covering the native TV keyboard's
-240-character limit. The helper asks for replies of at most 600 characters.
+The relay accepts up to 1,000 request characters, matching the PC bridge. The
+native TV keyboard may impose a smaller limit. Replies have no 600-character
+transport cap. The TV display retains its existing 4,000-character cap. Longer
+answers end with `[TV limit; full reply is in T3.]`; the original remains in T3.
 
-## Recover from a failed request
+Only Chris's authenticated TV commands count. Other speakers, media audio, quoted
+content, and the relay itself are never approval. Each request repeats that rule
+and asks Jarvis for explicit confirmation before consequential actions. The
+existing paired TV authentication and Jarvis's approval controls still govern
+execution. A bot ID or request ID is not speaker authentication.
 
-The helper opens one owned tab, checks its exact Dot URL and title, preserves an
-existing draft, and submits once. With several agent Chrome windows open, it
-selects the window containing its unique marker tab. If the window remains
-ambiguous, it sends nothing. Each turn asks for a uniquely marked, brief
-reply. An old answer cannot match the new turn. Sign-in, page changes, an
-incomplete response frame, a clipped text node, a busy browser lease, and missing reply framing return
-an error. The helper closes its tab and session and releases its browser leases.
-If cleanup fails, it reports an error instead of claiming success.
+## Run a live check
 
-After an error during submission or reply collection, inspect the Dot before
-retrying: the request may already have arrived. There is no automatic resend.
-The browser phase has a 135-second budget, followed by a 20-second cleanup budget.
-Keep the native bridge timeout at least 180 seconds.
+This command sends one harmless question and prints Jarvis's answer on stdout.
+Submission, reply, and total elapsed seconds appear on stderr with the request ID.
 
-TV conversations remain in the existing ChatGPT Dot conversation. The helper
-keeps no transcript, cookie, or token store. Each turn reminds the Dot to request
-explicit confirmation before consequential actions. That reminder is an assistant
-instruction, not a technical authorization gate. Existing Dot permissions and
-confirmation controls still govern its tools.
+```sh
+python3 -I ~/.local/libexec/omarchytv/jarvis-companion/bin/grokbot-ask \
+  --question 'What is 17 plus 25? Answer in one short sentence.'
+```
 
-To roll back, restore the previous `grokbotDesktopDir`, roster, and TV companion
-settings. Disable the native route before removing the private helper directory.
-Leave the shared agent browser, its sign-in, and other agents' tabs intact.
+The helper submits once to inbox thread
+`mcp:launch:be52150eaa983a46dcfa1e2bcdbfcfc1fc10f66d3d303f80b59c341fa1c87c23`.
+It uses `t3_thread_post` when advertised and otherwise `t3_thread_send` with
+`mode: queue`. Each request names the reply thread and a random request ID.
+Jarvis must deliver the entire message in this format:
+
+```text
+OMARCHYTV_REPLY <request-id>
+<answer>
+OMARCHYTV_END <request-id>
+```
+
+Only matching, directly delivered MCP messages in that thread are accepted.
+Inbox acknowledgments, provider echoes, partial frames, and older replies are
+ignored. The helper reads paged messages and uses `t3_thread_wait` between reads.
+Until T3 exposes a message-event wait, an idle thread requires a read each second
+while the foreground request is active. No background polling or service is added.
+The T3 phase has a 145-second budget. Keep the native bridge timeout at least
+180 seconds. The helper keeps no local conversation transcript.
+
+## Recover or roll back
+
+After an error, inspect the inbox and reply thread before retrying. A failed
+submission response or a timeout does not prove the question was undelivered.
+There is no automatic resend or browser fallback.
+
+To restore the retained browser route, set `transport` to `browser` in the private
+`relay.json`. It requires the existing signed-in shared agent Chrome,
+`agent-desktop`, `cua-driver`, and browser lease tools. That route preserves its
+400-character request and requested 600-character reply limits. Its `--check`
+observes the exact Dot and empty composer without sending. This upgrade's live
+verification does not exercise that route.
+
+To update an existing installation, copy `bin/grokbot-ask`, `manifest.json`, and
+this README from the merged checkout into the private directory, preserving
+private modes. Add `replyThreadId` and set `transport` to `inbox` in the existing
+`relay.json`. Preserve the existing bot roster and Dot identity. Back up those
+files first so the previous helper and configuration can be restored together.
 
 ## Check changes offline
 
-From the repository root, run:
+From the repository root:
 
 ```sh
 python3 -m unittest discover -s pc-plugin/omarchy-link/tests -p test_chatgpt_dot.py -v
 ```
 
-These tests exercise routing guards, draft preservation, response correlation,
-one-submit behavior, and cleanup with browser calls replaced. They do not prove
-ChatGPT availability, native TV rendering, or household control.
+These tests cover transport defaults, request and display limits, correlation,
+credential validation, one-submit failure handling, and retained browser guards.
+They do not prove Jarvis availability, TV rendering, or speaker identity.

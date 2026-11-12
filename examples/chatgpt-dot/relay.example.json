@@ -1,4 +1,6 @@
 {
   "dotUrl": "https://chatgpt.com/dots/YOUR-DOT-ID",
-  "name": "Jarvis"
+  "name": "Jarvis",
+  "transport": "inbox",
+  "replyThreadId": "YOUR-DEDICATED-REPLY-THREAD-ID"
 }
