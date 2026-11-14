@@ -76,6 +76,16 @@ public class LinkBootTest {
     }
 
     @Test
+    public void packageReplacedStartsKeepAliveAgain() throws Exception {
+        Context app = RuntimeEnvironment.getApplication();
+        writeConfig(app, "{}");
+        Recorder c = new Recorder(app);
+        new HomeCheck().onReceive(c, new Intent(Intent.ACTION_MY_PACKAGE_REPLACED));
+        assertEquals(1, c.foreground.size());
+        assertEquals(OmarchyLink.KeepAlive.class.getName(), c.foreground.get(0).getComponent().getClassName());
+    }
+
+    @Test
     public void bootStartsNothingWhenLinkDisabled() throws Exception {
         Context app = RuntimeEnvironment.getApplication();
         writeConfig(app, "{\"link\":{\"enabled\":false}}");
