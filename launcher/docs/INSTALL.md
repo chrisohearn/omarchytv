@@ -171,6 +171,7 @@ not uninstall to "fix" it unless you know where the APK came from. From an Omarc
 | Screensaver doesn't start | Check `screensaver_components` / `screensaver_enabled`; some TVs override it in their own picture/eco settings. |
 | Animated screensaver effects look plain | Old system WebView (< 72): the bundled fallback is used. Update "Android System WebView" from the Play Store. |
 | PC can't pair | TV and PC must be on the same LAN; the Omarchy Link listens on TCP 47800 on the LAN only. |
+| Link refuses connections after boot or sleep | Omarchy Link starts at boot and stays running (a small low-priority notification). On boxes with aggressive power management (NVIDIA Shield, some Sony), you can exempt it: `adb shell dumpsys deviceidle whitelist +com.omarchytv.home`. |
 
 ### Safety notes
 Network debugging gives anyone on your LAN full access to the TV: turn it off when done. Cast and live screen sharing
