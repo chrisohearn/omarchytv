@@ -82,6 +82,11 @@
     </queries>
 
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Omarchy Link runs as a foreground service (type connectedDevice; Android 14 needs the type permission
+         plus one of CHANGE_WIFI_MULTICAST_STATE / CHANGE_WIFI_STATE / CHANGE_NETWORK_STATE). All normal permissions. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <application
         android:name=".OmarchyApp"
@@ -138,12 +143,14 @@
             android:screenOrientation="landscape"
             android:theme="@style/Theme.TvHome" />
 
-        <!-- After a reboot: if the stock launcher took the home screen back, ask once (never changes it). -->
+        <!-- After a reboot: start Omarchy Link, and if the stock launcher took the home screen back, ask once
+             (never changes it). After an update of this app: start Omarchy Link again. -->
         <receiver
             android:name=".HomeCheck"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 
@@ -260,10 +267,11 @@
             </intent-filter>
         </service>
 
-        <!-- Omarchy Link (TV side, TCP 47800 on the LAN only). Plain started service: no notification,
-             no wakelock; the server itself lives with the launcher process. -->
+        <!-- Omarchy Link (TV side, TCP 47800 on the LAN only). Foreground service (low-importance
+             notification, no wakelock) started at boot and from the launcher; the server lives in this process. -->
         <service
             android:name=".OmarchyLink$KeepAlive"
+            android:foregroundServiceType="connectedDevice"
             android:exported="false" />
 
         <!-- Optional: lets a paired PC press Back. Off until the user enables it (Settings > Accessibility). -->
