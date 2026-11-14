@@ -10,10 +10,18 @@ import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.util.Log;
 
+import org.json.JSONObject;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.nio.charset.StandardCharsets;
+
 /**
- * Starting {@link OmarchyLink.KeepAlive} as a foreground service, at boot and from the launcher. Every call
- * here is wrapped so a refused start can never throw out of the boot receiver or the activity (a crash at
- * boot would count towards {@link Watchdog}). No wakelock, no timer, no network.
+ * Starting {@link OmarchyLink.KeepAlive} as a foreground service, at boot, after an update and from the launcher.
+ * It runs only while Link is enabled AND at least one PC is paired: pairing is the user's opt-in to a TV that
+ * stays reachable, so TVs that never pair keep no resident service (1 GB TVs). Every call here is wrapped so a
+ * refused start can never throw out of the boot receiver or the activity (a crash at boot would count towards
+ * {@link Watchdog}). No wakelock, no timer, no network.
  */
 final class LinkBoot {
     private static final String TAG = "OmarchyLink";
@@ -23,15 +31,47 @@ final class LinkBoot {
     private LinkBoot() {
     }
 
-    /** BOOT_COMPLETED: start Link when it is enabled, whatever the default home is. */
+    /** BOOT_COMPLETED / MY_PACKAGE_REPLACED: start Link when it is wanted, whatever the default home is. */
     static void startAtBoot(Context c) {
+        if (wanted(c)) startService(c);
+    }
+
+    /** Link enabled (omarchytv.json, default on) and at least one PC paired. False if either is unreadable. */
+    static boolean wanted(Context c) {
         try {
-            if (!LauncherConfig.get(c).linkEnabled) return;
+            return LauncherConfig.get(c).linkEnabled && hasPairedPc(c);
         } catch (RuntimeException e) {
-            Log.w(TAG, "boot: config unreadable, Link not started", e);
+            Log.w(TAG, "Link state unreadable, keep-alive not started", e);
+            return false;
+        }
+    }
+
+    /** Reads link.json read-only (never creates it, unlike LinkStore): any entry under "pcs". */
+    static boolean hasPairedPc(Context c) {
+        File f = new File(c.getFilesDir(), "link.json");
+        if (!f.isFile() || f.length() > (1 << 20)) return false;
+        try (FileInputStream in = new FileInputStream(f)) {
+            byte[] b = new byte[(int) f.length()];
+            int n = 0, r;
+            while (n < b.length && (r = in.read(b, n, b.length - n)) > 0) n += r;
+            JSONObject pcs = new JSONObject(new String(b, 0, n, StandardCharsets.UTF_8)).optJSONObject("pcs");
+            return pcs != null && pcs.length() > 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Pairings changed: promote when a PC is paired, stop the service when none is left. Never throws. */
+    static void pcsChanged(Context c, boolean anyPaired) {
+        if (anyPaired) {
+            startService(c);
             return;
         }
-        startService(c);
+        try {
+            c.stopService(new Intent(c, OmarchyLink.KeepAlive.class));
+        } catch (RuntimeException e) {
+            Log.w(TAG, "stop keep-alive", e);
+        }
     }
 
     /** startForegroundService on API 26+, startService below. Never throws. */
@@ -45,7 +85,7 @@ final class LinkBoot {
         }
     }
 
-    /** Calls startForeground with the low-key notification. Returns false when the system refused. */
+    /** Calls startForeground with the quiet notification. Returns false when the system refused. */
     static boolean promote(Service s) {
         try {
             Notification n = notification(s);
@@ -63,15 +103,16 @@ final class LinkBoot {
 
     private static Notification notification(Context c) {
         Notification.Builder b;
+        // IMPORTANCE_LOW, not MIN: Android replaces a MIN foreground-service notification with a louder system one.
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationManager nm = c.getSystemService(NotificationManager.class);
             if (nm != null && nm.getNotificationChannel(CHANNEL) == null) {
                 nm.createNotificationChannel(new NotificationChannel(CHANNEL,
-                        c.getString(R.string.link_notification_channel), NotificationManager.IMPORTANCE_MIN));
+                        c.getString(R.string.link_notification_channel), NotificationManager.IMPORTANCE_LOW));
             }
             b = new Notification.Builder(c, CHANNEL);
         } else {
-            b = new Notification.Builder(c).setPriority(Notification.PRIORITY_MIN);
+            b = new Notification.Builder(c).setPriority(Notification.PRIORITY_LOW);
         }
         return b.setSmallIcon(R.mipmap.ic_launcher)
                 .setContentTitle(c.getString(R.string.link_notification))

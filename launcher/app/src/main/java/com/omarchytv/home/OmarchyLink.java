@@ -50,11 +50,13 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * Omarchy Link, TV side (omarchy-link/docs/PROTOCOL.md): the Android {@link LinkServer.Host} plus the
  * plumbing around it (bind to the LAN address, NsdManager advert, status changes, keys).
  *
- * Lifetime: the server lives in the launcher process. {@link KeepAlive} is a foreground service (a minimal,
- * low-importance notification, type connectedDevice, no wakelock) started at boot by {@link HomeCheck} and
- * again from {@link MainActivity#onCreate}, so the server stays up and listens whether or not OmarchyTV is
- * the active home app. START_STICKY brings it back if Android stops it. After sleep the existing SCREEN_ON
- * and network-callback paths rebind the socket. With Link disabled nothing starts.
+ * Lifetime: the server lives in the launcher process. Once a PC is paired, {@link KeepAlive} is a foreground
+ * service (a quiet low-importance notification, type connectedDevice, no wakelock) started at boot and after an
+ * update by {@link HomeCheck}, from {@link MainActivity#onCreate} and on pairing, so the server stays reachable
+ * whether or not OmarchyTV is in front, and keeps network access while the TV dozes. START_STICKY brings it
+ * back if Android stops it. After sleep the existing SCREEN_ON and network-callback paths rebind the socket.
+ * With Link disabled or no PC paired there is no resident service (the in-process server still runs while
+ * the launcher is up, as before).
  */
 public final class OmarchyLink implements LinkServer.Host {
 
@@ -104,10 +106,10 @@ public final class OmarchyLink implements LinkServer.Host {
 
     // --------------------------------------------------------------- entry points used by the launcher
 
-    /** Called from MainActivity.onCreate: runs the server in-process and promotes it to the foreground service. */
+    /** Called from MainActivity.onCreate: runs the server in-process; promotes it to the foreground service when a PC is paired. */
     static void start(Context c) {
         ensure(c.getApplicationContext());
-        LinkBoot.startService(c);   // never throws: a refused start leaves the in-process server running
+        if (LinkBoot.wanted(c)) LinkBoot.startService(c);   // never throws: a refused start leaves the in-process server running
     }
 
     /** Returns at once: the store load, socket bind and mDNS run on the Link worker, never on the UI thread. */
@@ -350,13 +352,7 @@ public final class OmarchyLink implements LinkServer.Host {
                 stopSelf();
                 return START_NOT_STICKY;
             }
-            boolean enabled;
-            try {
-                enabled = LauncherConfig.get(getApplicationContext()).linkEnabled;
-            } catch (RuntimeException e) {
-                enabled = true;
-            }
-            if (!enabled) {
+            if (!LinkBoot.wanted(getApplicationContext())) {   // Link off, or no PC paired: no resident service
                 stopForeground(Service.STOP_FOREGROUND_REMOVE);
                 stopSelf();
                 return START_NOT_STICKY;
@@ -846,6 +842,7 @@ public final class OmarchyLink implements LinkServer.Host {
         } catch (Exception ignored) {
         }
         emit("pcs", d);
+        LinkBoot.pcsChanged(app, !server.store().list().isEmpty());
     }
 
     // --------------------------------------------------------------- cast (PROTOCOL.md §6 Cast)
