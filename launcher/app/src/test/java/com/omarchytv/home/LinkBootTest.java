@@ -60,6 +60,14 @@ public class LinkBootTest {
             return i.getComponent();
         }
 
+        final List<Intent> stopped = new ArrayList<>();
+
+        @Override
+        public boolean stopService(Intent i) {
+            stopped.add(i);
+            return true;
+        }
+
         @Override
         public Context getApplicationContext() {
             return getBaseContext().getApplicationContext();
@@ -113,6 +121,18 @@ public class LinkBootTest {
         new HomeCheck().onReceive(c, bootIntent());
         assertTrue(c.foreground.isEmpty());
         assertTrue(c.plain.isEmpty());
+    }
+
+    @Test
+    public void launcherStopsKeepAliveWhenLinkWasSwitchedOff() throws Exception {
+        Context app = RuntimeEnvironment.getApplication();
+        writeConfig(app, "{\"link\":{\"enabled\":false}}");
+        writeLink(app, true);
+        Recorder c = new Recorder(app);
+        OmarchyLink.start(c);
+        assertTrue(c.foreground.isEmpty());
+        assertEquals(1, c.stopped.size());
+        assertEquals(OmarchyLink.KeepAlive.class.getName(), c.stopped.get(0).getComponent().getClassName());
     }
 
     @Test

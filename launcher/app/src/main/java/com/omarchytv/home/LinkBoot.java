@@ -25,7 +25,7 @@ import java.nio.charset.StandardCharsets;
  */
 final class LinkBoot {
     private static final String TAG = "OmarchyLink";
-    static final String CHANNEL = "omarchy_link";
+    static final String CHANNEL = "omarchy_link_quiet";   // new id: an existing channel's importance cannot be raised
     static final int NOTIFICATION_ID = 47800;
 
     private LinkBoot() {
@@ -63,10 +63,12 @@ final class LinkBoot {
 
     /** Pairings changed: promote when a PC is paired, stop the service when none is left. Never throws. */
     static void pcsChanged(Context c, boolean anyPaired) {
-        if (anyPaired) {
-            startService(c);
-            return;
-        }
+        if (anyPaired) startService(c);
+        else stopService(c);
+    }
+
+    /** Stops the keep-alive (always allowed, also from the background). Never throws. */
+    static void stopService(Context c) {
         try {
             c.stopService(new Intent(c, OmarchyLink.KeepAlive.class));
         } catch (RuntimeException e) {

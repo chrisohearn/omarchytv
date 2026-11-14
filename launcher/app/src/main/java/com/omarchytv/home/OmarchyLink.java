@@ -109,7 +109,10 @@ public final class OmarchyLink implements LinkServer.Host {
     /** Called from MainActivity.onCreate: runs the server in-process; promotes it to the foreground service when a PC is paired. */
     static void start(Context c) {
         ensure(c.getApplicationContext());
-        if (LinkBoot.wanted(c)) LinkBoot.startService(c);   // never throws: a refused start leaves the in-process server running
+        // Never throws: a refused start leaves the in-process server running. Link switched off (or the last PC
+        // gone) since the service started: stop it, so the off switch takes effect without a reboot.
+        if (LinkBoot.wanted(c)) LinkBoot.startService(c);
+        else LinkBoot.stopService(c);
     }
 
     /** Returns at once: the store load, socket bind and mDNS run on the Link worker, never on the UI thread. */
