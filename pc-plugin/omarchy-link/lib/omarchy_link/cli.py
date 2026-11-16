@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -349,6 +350,51 @@ def cmd_ai(a, cfg):
     return 0
 
 
+def cmd_office(a, cfg):
+    """GrokBot Office (OmarchyTV 2.20): Claude / ChatGPT bots on this PC, and their real spend."""
+    from . import office
+    if a.office_cmd == "hire":
+        try:
+            bot = office.hire(a.name, a.provider, a.role or "", a.description or "", model=a.model)
+        except office.HireError as e:
+            print(f"omarchy-link: {e}", file=sys.stderr)
+            return 1
+        print(f"Hired {bot['name']} ({bot['provider']}) in {assistant.ASSISTANT_FILE}.")
+    elif a.office_cmd == "fire":
+        if not office.fire(a.name):
+            print(f"omarchy-link: no hired bot called {a.name}", file=sys.stderr)
+            return 1
+        print(f"{a.name} left the office.")
+    elif a.office_cmd == "usage":
+        u = office.usage()
+        if a.json:
+            print(json.dumps(u, indent=2, ensure_ascii=False))
+        elif not u:
+            print("No usage numbers: set an admin key (ANTHROPIC_ADMIN_KEY / OPENAI_ADMIN_KEY, or an anthropic / openai\n"
+                  f"entry in {config.AI_FILE}). Without one the TV shows no usage for that provider.")
+        for x in ([] if a.json else u):
+            extra = f" of {x['budget']} ({x['pct']}%)" if x.get("budget") else ""
+            print(f"{x['provider']:<8} {x['unit']}{x['spent']}{extra} this month")
+        return 0
+    else:
+        d = office.tv_payload()
+        if a.json or a.office_cmd == "show":
+            print(json.dumps(d, indent=2, ensure_ascii=False))
+        if a.office_cmd == "push":
+            _client(cfg).request("PUT", "/v1/office", d)
+            print(f"Sent {len(d['bots'])} bots to the TV.")
+        return 0
+    if a.office_cmd in ("hire", "fire"):
+        try:
+            c = _client(cfg)
+            c.put_ai_providers(assistant.Assistant().listing())
+            c.request("PUT", "/v1/office", office.tv_payload())
+            print("The TV has the new office.")
+        except (SystemExit, Exception) as e:   # not paired / TV off: the next connection sends it
+            print(f"(the TV gets it when it connects: {str(e)[:80]})")
+    return 0
+
+
 HOOK_NAME = "omarchy-link"
 
 
@@ -377,6 +423,21 @@ def cmd_action(a, cfg):
 
 
 # ------------------------------------------------------------------ cast ("Share to TV")
+def _ufw_hint(state, served: bool, tv_ip: str | None = None, run=subprocess.run, which=shutil.which) -> str:
+    """#82: stock Omarchy turns ufw on (deny incoming), so the TV can't fetch a stream the PC serves on a random
+    port and the cast just ends as "disconnected"/"error". When that happens with ufw active, say so and how to fix it."""
+    if not served or state not in ("error", "disconnected", "timeout") or not which("ufw"):
+        return ""
+    try:
+        if run(["systemctl", "is-active", "--quiet", "ufw"], timeout=3).returncode != 0:
+            return ""
+    except Exception:
+        return ""
+    who = tv_ip or "<tv-ip>"
+    return (f"ufw is on and probably blocked the TV from fetching the stream. Allow the TV once with:\n"
+            f"  sudo ufw allow from {who} proto tcp comment 'OmarchyTV'")
+
+
 def _notify(text: str, title: str = "OmarchyTV") -> None:
     cmds = [["omarchy-notification-send", "-g", "󰔂", title, text], ["notify-send", "-a", "omarchy-link", title, text]]
     if sys.platform == "darwin":  # title and text go in as arguments, so quotes in them can't break the AppleScript
@@ -497,6 +558,9 @@ def cmd_cast(a, cfg):
         else:
             print(f"Sent {item['kind']} \u201c{item.get('title', '')}\u201d to the TV via {where}."
                   + (f" Last state: {result['state']}." if result.get("state") not in (None, "opening") else ""))
+            hint = _ufw_hint(result.get("state"), result["via"] == "link" and bool(result.get("served")), result.get("tvIp"))
+            if hint:
+                print(hint, file=sys.stderr)
         if a.notify:
             _notify(f"{item.get('title', item['kind'])} → TV via {where}", "Sent to TV")
         return 0 if result.get("state") != "error" else 1
@@ -647,8 +711,49 @@ def cmd_prompt(a, cfg):
     return 0
 
 
+def cmd_liftoff(a, cfg):
+    from . import liftoff   # noqa: PLC0415
+    argv = list(a.command)
+    if argv[:1] == ["--"]:
+        argv = argv[1:]
+    if not argv:
+        print("usage: omarchy-link liftoff [--name NAME] -- <command> [args…]", file=sys.stderr)
+        return 2
+    return liftoff.run(argv, a.name)
+
+
+def cmd_x(a, cfg):
+    """X API for the Living screensaver: setup (bearer token + username, stored 0600), status, forget."""
+    from . import living   # noqa: PLC0415
+    if a.action == "setup":
+        import getpass   # noqa: PLC0415
+        user = (a.username or input("X username (without @): ")).strip().lstrip("@")
+        if not re.match(r"^[A-Za-z0-9_]{1,15}$", user):
+            print("not an X username", file=sys.stderr)
+            return 2
+        token = getpass.getpass("X API bearer token (developer.x.com, not shown): ").strip()
+        if not token:
+            return 2
+        living.x_save({"bearer": token, "username": user})
+        print(f"Saved in {living.X_FILE} (mode 0600). The TV uses it only with Living screensaver > X: API, "
+              f"while the screensaver runs, up to about {cfg.get('xMonthlyUsd', 1.0)} USD a month (xMonthlyUsd).")
+        return 0
+    if a.action == "forget":
+        try:
+            living.X_FILE.unlink()
+        except OSError:
+            pass
+        print("X API token removed.")
+        return 0
+    d = living.x_load()
+    print(json.dumps({"configured": bool(d.get("bearer")), "username": d.get("username"),
+                      "spentThisMonthUsd": living.x_spent(d), "limitUsd": cfg.get("xMonthlyUsd", 1.0),
+                      "enabled": cfg.get("xApi", True) is not False}, indent=2))
+    return 0
+
+
 def cmd_session(a, cfg):
-    return Session().run()
+    return Session().run(daemon=getattr(a, "daemon", False))
 
 
 def main(argv=None) -> int:
@@ -711,6 +816,26 @@ def main(argv=None) -> int:
     t.add_argument("--provider")
     t.add_argument("--lang")
     s.set_defaults(fn=cmd_ai)
+    s = sub.add_parser("office", help="GrokBot Office: hire Claude / ChatGPT bots, their spend (Admin API)",
+                       description="OmarchyTV 2.20 GrokBot Office. Hired bots are assistant.json entries (mode 600): "
+                                   "the key stays on this PC (env:ANTHROPIC_API_KEY / env:OPENAI_API_KEY by default) and is "
+                                   "checked with the provider before the bot is saved. Usage needs an admin key.")
+    osub = s.add_subparsers(dest="office_cmd", required=True)
+    t = osub.add_parser("hire", help="hire a bot: name, --provider claude|chatgpt, --role, --description, --model")
+    t.add_argument("name")
+    t.add_argument("--provider", required=True, choices=["claude", "chatgpt"])
+    t.add_argument("--role")
+    t.add_argument("--description")
+    t.add_argument("--model")
+    t = osub.add_parser("fire", help="remove a hired bot")
+    t.add_argument("name")
+    t = osub.add_parser("usage", help="this month's spend per provider (Admin API keys only)")
+    t.add_argument("--json", action="store_true")
+    t = osub.add_parser("show", help="the office JSON the TV gets from this PC")
+    t.add_argument("--json", action="store_true")
+    t = osub.add_parser("push", help="send it to the paired Android TV now")
+    t.add_argument("--json", action="store_true")
+    s.set_defaults(fn=cmd_office)
     s = sub.add_parser("hook", help="add/remove the Omarchy theme-set hook")
     s.add_argument("action", choices=["add", "remove"])
     s.set_defaults(fn=cmd_hook)
@@ -718,7 +843,13 @@ def main(argv=None) -> int:
     s.add_argument("id")
     s.add_argument("--confirmed", action="store_true")
     s.set_defaults(fn=cmd_action)
-    sub.add_parser("session", help="JSON-lines session for the bar widget").set_defaults(fn=cmd_session)
+    s = sub.add_parser("session", help="JSON-lines session for the bar widget (also runs as a service)",
+                       description="Read JSON lines on stdin, write state on stdout. The bar widget's process "
+                                   "owns stdin: when it closes the session ends. For a service (systemd, "
+                                   "/dev/null) use --daemon, which ignores EOF and keeps the session up.")
+    s.add_argument("--daemon", action="store_true",
+                   help="ignore stdin EOF: run until SIGTERM (for systemd, or stdin from /dev/null)")
+    s.set_defaults(fn=cmd_session)
     s = sub.add_parser("cast", help="send a link, file, clipboard, text or the screen to the TV",
                        description="Send to the TV. Routes: Google Cast via catt (any Cast TV) first, the OmarchyTV "
                                    "Link channel for text, screen and as fallback. See docs/CAST.md.")
@@ -753,6 +884,15 @@ def main(argv=None) -> int:
     s.add_argument("host", nargs="?")
     s.add_argument("--now", action="store_true", help="send the theme now")
     s.set_defaults(fn=cmd_prompt)
+    s = sub.add_parser("x", help="X API for the TV's Living screensaver (mentions): setup | status | forget")
+    s.add_argument("action", choices=["setup", "status", "forget"])
+    s.add_argument("--username")
+    s.set_defaults(fn=cmd_x)
+    s = sub.add_parser("liftoff", help="run a build with a rocket countdown on the TV (alarm if it fails)",
+                       description="omarchy-link liftoff -- make release   (no shell; exit code passed through)")
+    s.add_argument("--name", help="what the TV shows (default: the command)")
+    s.add_argument("command", nargs=argparse.REMAINDER)
+    s.set_defaults(fn=cmd_liftoff)
     s = sub.add_parser("desktop", help="install \"Send to TV\" launcher / Open-with entries")
     s.add_argument("--remove", action="store_true")
     s.set_defaults(fn=cmd_desktop)

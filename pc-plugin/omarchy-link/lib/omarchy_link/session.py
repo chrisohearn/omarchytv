@@ -18,6 +18,7 @@ import threading
 import time
 
 from . import ai, assistant, client as link, config, grokbot, mdns, netcheck, panes, stats, sync, theme
+from . import liftoff, living, media, omastorm, power
 
 KEYS = {"home", "back", "up", "down", "left", "right", "select", "play_pause", "play", "pause",
         "stop", "next", "previous", "rewind", "fast_forward", "volume_up", "volume_down", "mute",
@@ -165,10 +166,14 @@ class Session:
             self.last_pane = time.time()
             self.push_ai(c)
             self.push_providers(c, force=True)
+            self.push_office(c)
             self.saver_mtime = None
             self.push_home(c)
             self.grokbot_sig = None
             self.push_grokbot(c)
+            self.liftoff_sig = None
+            self.living_sig = None
+            self.send_wol_info()
         except (link.LinkError, OSError, ValueError, RuntimeError, subprocess.SubprocessError) as e:
             self.log(f"initial push: {e}")
 
@@ -180,6 +185,19 @@ class Session:
             self.publish(apps=data.get("apps", []))
         elif kind == "shortcut":
             self.run_action(str(data.get("command", "")), confirmed=False)
+        elif kind == "theme_set":
+            self.handle_theme_set(data)
+        elif kind == "omastorm":   # v2.14 Omastorm radar window from this PC to the TV
+            self.handle_omastorm(data)
+        elif kind == "media_list":   # Cinemarchy browses this PC's media folders (read-only)
+            self.handle_media_list(data)
+        elif kind == "media_play":   # ...and plays one of their files on the TV
+            self.handle_media_play(data)
+        elif kind == "living_prefs":
+            self._living().set_prefs(data)
+            self.living_sig = None
+        elif kind == "tv_power":
+            power.tv_power(data.get("state"), self.cfg, self.log)
         elif kind == "screen_mirror":
             self.handle_screen_mirror(str(data.get("action", "")))
         elif kind == "unpaired":
@@ -198,6 +216,8 @@ class Session:
             threading.Thread(target=self.handle_ask, args=(self.stream, data), daemon=True).start()
         elif kind == "grokbot_ask" and self.stream:
             threading.Thread(target=self.handle_grokbot_ask, args=(self.stream, data), daemon=True).start()
+        elif kind == "office_hire" and self.stream:   # 2.20 GrokBot Office: hire a Claude/ChatGPT bot on this PC
+            threading.Thread(target=self.handle_office_hire, args=(self.stream, data), daemon=True).start()
 
     # ------------------------------------------------------------ assistant (TV -> PC "ask")
     def handle_ask(self, stream, data: dict) -> None:
@@ -367,7 +387,7 @@ class Session:
             except (link.LinkError, OSError, ValueError, RuntimeError, subprocess.SubprocessError) as e:
                 self.log(f"AI push after source change: {e}")
 
-    # ------------------------------------------------------------ Grok Bot Desktop Companion (experimental)
+    # ------------------------------------------------------------ Agent Desktop companion (experimental)
     def handle_grokbot_ask(self, stream, data: dict) -> None:
         """TV -> PC "grokbot_ask" {id, text, bot?}: forwarded to @tcballard's companion (grokbot.py).
         Replies "grokbot_answer" {id, bot, text, mode} or "grokbot_error" {id, error, message}."""
@@ -390,6 +410,40 @@ class Session:
         self.log(f"TV question for Grok Bot {res['bot']} ({res['mode']})")
         send("grokbot_answer", res)
 
+    def handle_office_hire(self, stream, data: dict) -> None:
+        """TV -> PC "office_hire" {id, name, provider: claude|chatgpt, role?, description?}. The key is checked with the
+        provider, then the bot is saved in assistant.json. Replies "office_hire_result" {id, ok, bot} or {id, ok: false,
+        error, message}; on success the provider list and the office (PUT /v1/office) go to the TV again."""
+        from . import office
+        rid = str(data.get("id", ""))[:64]
+
+        def send(payload):
+            try:
+                stream.send("office_hire_result", {"id": rid, **payload})
+            except OSError:
+                pass
+        if not rid:
+            return
+        self._reload_cfg()
+        if not self.cfg.get("assistant", True):
+            return send({"ok": False, "error": "disabled", "message": "the assistant is off on the PC"})
+        try:
+            bot = office.hire(data.get("name"), data.get("provider"), data.get("role"), data.get("description"),
+                              path=self.assistant.settings_path)
+        except office.HireError as e:
+            return send({"ok": False, "error": e.code, "message": str(e)[:200]})
+        except (OSError, ValueError) as e:
+            return send({"ok": False, "error": "pc_error", "message": str(e)[:200]})
+        self.log(f"GrokBot Office: hired {bot['name']} ({bot['provider']})")
+        send({"ok": True, "bot": bot})
+        try:
+            c = self.client
+            if c is not None:
+                self.push_providers(c, force=True)
+                c.request("PUT", "/v1/office", office.tv_payload(self.assistant.settings_path))
+        except (link.LinkError, OSError, ValueError) as e:
+            self.log(f"office push after hire: {e}")
+
     def push_grokbot(self, c: link.Client) -> None:
         """Mirror the companion's current bot (name, shape, colour) on the TV tile when its files change.
         An older launcher answers 404/400: ignored."""
@@ -401,6 +455,25 @@ class Session:
         self.grokbot_sig = sig
         try:
             c.put_grokbot(grokbot.current(self.cfg))
+        except link.LinkError as e:
+            if e.status not in (400, 404, 429):
+                raise
+
+    def push_office(self, c: link.Client) -> None:
+        """2.20 GrokBot Office: hired Claude/ChatGPT bots and the per-provider spend (Admin API keys only).
+        Nothing to say (no hired bot, no admin key): nothing is sent, the office keeps what omarchy-tv pushed."""
+        from . import office
+        if not self.cfg.get("assistant", True):
+            return
+        try:
+            data = office.tv_payload(self.assistant.settings_path)
+        except (OSError, ValueError) as e:
+            self.log(f"office: {e}")
+            return
+        if not any(b.get("assistant") for b in data["bots"]) and not data.get("providers_usage"):
+            return
+        try:
+            c.request("PUT", "/v1/office", data)
         except link.LinkError as e:
             if e.status not in (400, 404, 429):
                 raise
@@ -450,6 +523,142 @@ class Session:
                                             stderr=subprocess.DEVNULL, start_new_session=True)
         except OSError:
             self.log("cannot start screen mirroring (omarchy-notification-send or omarchy-link missing)")
+
+    def send_wol_info(self) -> None:
+        """Tell the TV this PC's MAC, so "TV and PC power together" can wake it (Wake-on-LAN from the TV)."""
+        tv = self.pairing.tv or {}
+        info = power.wol_info(tv.get("address"))
+        if info and self.stream and self.cfg.get("powerFromTv", True) is not False:
+            if info.get("wifi"):
+                self.log("Wake-on-LAN: this PC reaches the TV over Wi-Fi; most PCs only wake over Ethernet")
+            self.stream.send("pc_wol", {"mac": info["mac"], "broadcast": info.get("broadcast")})
+
+    def handle_omastorm(self, data: dict) -> None:
+        st = getattr(self, "omastorm", None)
+        if st is None:
+            st = self.omastorm = omastorm.Session(self.log)
+        action = data.get("action")
+        if action == "start":
+            res = st.start(self.cfg)
+            if res not in ("ok", "running"):
+                self.log(f"Omastorm on the TV: {res}")
+                if self.stream:
+                    self.stream.send("omastorm_state", {"state": res})
+        elif action == "key":
+            st.key(str(data.get("key", "")))
+        elif action == "stop":
+            st.stop()
+
+    def handle_media_list(self, data: dict) -> None:
+        if not self.stream:
+            return
+        if self.cfg.get("mediaFromTv", True) is False:
+            self.stream.send("media_list", {"path": "", "dirs": [], "files": [], "error": "disabled"})
+            return
+        try:
+            res = media.listing(str(data.get("path", ""))[:1024])
+        except Exception as e:  # noqa: BLE001 - a broken folder must not stop the session
+            self.log(f"media list: {e}")
+            res = {"path": str(data.get("path", "")), "dirs": [], "files": [], "error": "unreadable"}
+        self.stream.send("media_list", res)
+
+    def handle_media_play(self, data: dict) -> None:
+        if self.cfg.get("mediaFromTv", True) is False or not self.client:
+            return
+        p = media.resolve(str(data.get("path", ""))[:1024])
+        if p is None or not p.is_file() or not media.kind_of(p.name):
+            if self.stream:
+                self.stream.send("media_list", {"path": str(data.get("path", "")), "dirs": [], "files": [], "error": "not_found"})
+            return
+        from . import cast   # noqa: PLC0415 - only when the TV asks for a file
+        client = self.client
+
+        def run():
+            try:
+                item = cast.classify(str(p), title=p.stem)
+                pos = data.get("position")
+                if isinstance(pos, (int, float)) and pos > 0:
+                    item["position"] = float(pos)
+                cast.via_link(client, item, serve_ok=True, wait=True, out=self.log)
+            except Exception as e:  # noqa: BLE001
+                self.log(f"media play {p.name}: {e}")
+        threading.Thread(target=run, daemon=True).start()
+
+    def _living(self) -> living.Living:
+        lv = getattr(self, "living", None)
+        if lv is None:
+            lv = self.living = living.Living(lambda: self.cfg, self.log)
+        return lv
+
+    def push_living(self) -> None:
+        """Living screensaver feed (notifications, GitHub, X) for the TV, on every change, only once it asked."""
+        lv = getattr(self, "living", None)
+        if lv is None or not self.stream or not lv.wanted():
+            return
+        lv.set_active(bool(self.state.get("screensaver")))
+        pub = lv.payload()
+        sig = json.dumps(pub, sort_keys=True)
+        if sig != getattr(self, "living_sig", None):
+            self.living_sig = sig
+            self.stream.send("living", pub)
+
+    def push_pulse(self) -> None:
+        """2.15 Pulse on the TV: while the TV's screensaver is on, this PC's Pulse state (private parts removed), every 2 s."""
+        if not self.stream or self.cfg.get("pulseToTv", True) is False or not self.state.get("screensaver"):
+            return
+        now = time.time()
+        if now - getattr(self, "pulse_at", 0) < 2:
+            return
+        self.pulse_at = now
+        from . import pulse_state   # noqa: PLC0415
+        st = pulse_state.read()
+        if st:
+            self.stream.send("pulse", st)
+
+    def push_agents(self) -> None:
+        """2.15: an AI agent that starts waiting for you (Pulse's agents, state "waiting"), told to the TV once.
+
+        The TV shows it only when it opted in (Settings › Grok Bot e AI). Every 3 s, from the local Pulse hub; nothing
+        when Pulse isn't running. While the screensaver is on, the TV's Pulse shows the agents anyway: no alert then.
+        """
+        if not self.stream or self.cfg.get("agentAlertToTv", True) is False:
+            return
+        now = time.time()
+        if now - getattr(self, "agents_at", 0) < 3:
+            return
+        self.agents_at = now
+        from . import pulse_state   # noqa: PLC0415
+        st = pulse_state.read()
+        waiting = pulse_state.waiting(st)
+        told = getattr(self, "agents_told", None)
+        self.agents_told = set(waiting)
+        if told is None or self.state.get("screensaver"):   # the first look only learns who already waits
+            return
+        for key, a in waiting.items():
+            if key not in told:
+                self.stream.send("agent", {"name": a["name"], "text": a["text"]})
+
+    def push_liftoff(self) -> None:
+        """A build/update countdown for the TV: on every change, and every 5 s while it runs."""
+        if not self.stream or self.cfg.get("liftoffToTv", True) is False:
+            return
+        pub = liftoff.public(liftoff.read_state())
+        sig = None if pub is None else (pub["id"], pub["state"], pub["stage"], pub["pct"], pub["elapsedS"] // 5)
+        if sig == getattr(self, "liftoff_sig", None):
+            return
+        self.liftoff_sig = sig
+        if pub is not None:
+            self.stream.send("liftoff", pub)
+
+    def handle_theme_set(self, data: dict) -> None:
+        """Reverse theme sync: the TV changed theme; follow it on the PC (themeFromTv, default on)."""
+        if self.cfg.get("themeFromTv", True) is False:
+            self.log("TV asked to change the PC theme; themeFromTv is off")
+            return
+        name = data.get("name")
+        res = theme.set_theme(name)
+        if res != "ok":
+            self.log(f"TV asked for theme {str(name)[:64]!r}: {res}")
 
     def run_action(self, action_id: str, confirmed: bool) -> None:
         actions = self.cfg.get("actions", {})
@@ -516,6 +725,13 @@ class Session:
             tick += 1
             if not self.state["connected"]:
                 continue
+            try:
+                self.push_liftoff()
+                self.push_living()
+                self.push_pulse()
+                self.push_agents()
+            except (OSError, ValueError) as e:
+                self.log(f"liftoff/living push failed: {e}")
             if tick % 3:
                 c = self._client()
                 try:
@@ -543,6 +759,7 @@ class Session:
                 if c and time.time() - self.last_ai > minutes * 60:
                     self.push_ai(c)
                     self.push_providers(c)
+                    self.push_office(c)
             except (link.LinkError, OSError, ValueError) as e:
                 self.log(f"push failed: {e}")
 
@@ -615,7 +832,12 @@ class Session:
         self.publish(paired=True, pairing=False, tv=self._tv_public())
         self.wake.set()
 
-    def stdin_loop(self) -> None:
+    def stdin_loop(self, wait_for_eof: bool = True) -> None:
+        """Handle JSON lines from stdin until it is closed.
+
+        A closed stdin normally means the widget that spawned us is gone, so the session ends. With ``--daemon``
+        (systemd, /dev/null) EOF is ignored and the session keeps running, which is what #79 asked for.
+        """
         for line in sys.stdin:
             line = line.strip()
             if not line:
@@ -625,13 +847,19 @@ class Session:
             except ValueError:
                 req = {"op": "key", "key": line}  # plain "home", "back"... like the TV remote plugins
             threading.Thread(target=self.handle_op, args=(req,), daemon=True).start()
-        self.stop.set()
-        self.wake.set()
+        if wait_for_eof:
+            self.stop.set()
+            self.wake.set()
+            return
+        # #79 --daemon: stdin belongs to a service, not to a widget, so its EOF says nothing: stay up.
+        self.log("stdin chiuso: la sessione resta attiva (SIGTERM o Ctrl-C per fermarla)")
+        while not self.stop.wait(3600):
+            pass   # the other loops do the work; this thread just keeps the process alive
 
-    def run(self) -> int:
+    def run(self, daemon: bool = False) -> int:
         self.publish()
         threading.Thread(target=self.connection_loop, daemon=True).start()
         threading.Thread(target=self.ticker, daemon=True).start()
         threading.Thread(target=self.agent_loop, daemon=True).start()
-        self.stdin_loop()
+        self.stdin_loop(wait_for_eof=not daemon)
         return 0

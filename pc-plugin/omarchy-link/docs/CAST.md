@@ -50,6 +50,20 @@ Small files (at most the TV's `castUploadMax`, 64 MiB on the mock) are uploaded 
 
 With `--serve` and an encrypted Link connection, local files also use the temporary HTTP server below 8 MiB. This avoids the raw-upload compatibility issue on Android receivers. The control connection remains encrypted; the file stream is plain HTTP protected by the TV-IP restriction and one-time URL. Without `--serve`, the upload path stays unchanged and no server is opened.
 
+### Firewall (ufw on Omarchy)
+
+Stock Omarchy turns **ufw** on and denies incoming connections, so when the PC serves a file or the screen
+(`--serve`, `--screen`) the TV can't fetch it: the cast ends as `disconnected`, `error` or `timeout` and nothing
+plays ([#82](https://github.com/piermark/omarchytv/issues/82)). Allow your TV once:
+
+```sh
+sudo ufw allow from <tv-ip> proto tcp comment 'OmarchyTV'
+```
+
+The rule lets only that TV in, on any TCP port (the stream port is random). The CLI prints this hint, with the TV's
+address filled in, when a served cast fails while ufw is active. Uploads and links the TV fetches from the internet
+need no rule.
+
 ## Screen mirroring on Hyprland (experimental)
 
 **Pipeline:**
