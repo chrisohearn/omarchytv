@@ -7,7 +7,8 @@ A plugin is declarative JSON data, never executable code. The engine:
 
 Built-in MIT catalog:
 - com.sighmon.spacex-tv ("SpaceX TV" by sighmon, https://github.com/sighmon/omarchy-spacex-tv, MIT; fork tcballard/omarchy-spacex-tv)
-- io.github.tcballard.grokbot-desktop ("Grok Bot Desktop Companion" by tcballard, https://github.com/tcballard/omarchy-plugin-grokbot-desktop, MIT)
+- io.github.tcballard.grokbot-desktop ("Agent Desktop", formerly Grok Bot Desktop Companion, by tcballard;
+  https://github.com/tcballard/omarchy-plugin-grokbot-desktop, MIT)
 """
 import json, os, re, shutil, urllib.request
 
@@ -30,7 +31,7 @@ BUILTIN = {
     "io.github.tcballard.grokbot-desktop": {
         "id": "io.github.tcballard.grokbot-desktop",
         "alias": "grokbot-desktop",
-        "name": "Grok Bot Desktop Companion",
+        "name": "Agent Desktop",
         "author": "tcballard",
         "license": "MIT",
         "kind": "companion",
@@ -64,6 +65,7 @@ def resolve_id(pid: str) -> str:
 
 def load_enabled() -> dict[str, bool]:
     defaults = {k: True for k in BUILTIN}
+    defaults["com.sighmon.spacex-tv"] = False  # 2.20: off on the TV until turned on
     sf = state_file()
     if os.path.isfile(sf):
         try:
@@ -197,7 +199,7 @@ def declarative_payload(plugins: dict | None = None, enabled: dict[str, bool] | 
         })
     return {
         "plugins": arr,
-        "spacexTv": bool(enabled.get("com.sighmon.spacex-tv", True)),
+        "spacexTv": bool(enabled.get("com.sighmon.spacex-tv", False)),
         "grokbot": bool(enabled.get("io.github.tcballard.grokbot-desktop", True)),
     }
 

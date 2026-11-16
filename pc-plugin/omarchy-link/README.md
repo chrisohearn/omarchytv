@@ -56,8 +56,16 @@ omarchy-link push-widgets [widgets.json] [--dry-run]
 omarchy-link push-ai --dry-run       # AI credits that would be sent
 omarchy-link ai providers            # AIs the TV assistant can use
 omarchy-link ai ask "a film for tonight?"
+omarchy-link office hire Trimmer --provider claude --role "cuts token use"   # GrokBot Office bot (2.20)
+omarchy-link office usage            # Claude / ChatGPT spend this month (Admin API keys only)
+omarchy-link liftoff -- make release   # rocket countdown on the TV, red alarm if it fails (exit code passed through)
+omarchy-link x setup                 # optional: X API bearer token for mentions on the TV's Living screensaver (0600)
+omarchy-link x status                # configured? estimated spend this month vs xMonthlyUsd
 omarchy-link unpair
 ```
+
+GrokBot Office (OmarchyTV 2.20): Claude and ChatGPT bots, their keys and spend are in
+[docs/OFFICE.md](docs/OFFICE.md).
 
 `omarchy-link status --waybar` prints Waybar-style JSON (`text`, `tooltip`, `class`:
 connected / screensaver / offline / unpaired) for custom bar modules. Exit code 3 means "not paired".
@@ -65,13 +73,40 @@ connected / screensaver / offline / unpaired) for custom bar modules. Exit code 
 Widget keyboard shortcuts while its panel is open: `H` home, `B` back, `P` play/pause, `+`/`-` volume,
 `M` mute, `A` apps, `T` sync theme, `R` rescan.
 
+### Run it as a service
+
+The bar widget starts `omarchy-link session` itself and the session ends when that process's stdin closes. Under
+systemd there is no widget, so pass `--daemon`: the session then ignores stdin EOF and runs until SIGTERM, while
+still reading JSON lines from stdin and writing state on stdout.
+
+```ini
+# ~/.config/systemd/user/omarchy-link.service
+[Unit]
+Description=Omarchy Link session (OmarchyTV)
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/omarchy-link session --daemon
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+systemctl --user daemon-reload && systemctl --user enable --now omarchy-link.service
+journalctl --user -u omarchy-link.service -f     # the same JSON lines the widget consumes
+```
+
 ## Configure (all optional)
 
 Files live in `~/.config/omarchy-link/`. See `examples/`.
 
 | File | What |
 |---|---|
-| `config.json` | `themeSync`, `wallpaperSync`, `pcPane`, `aiCredits`, `aiRefreshMinutes`, `aiSourcesFromTv`, `agentMonitor`, `agentControlFromTv`, `agentConfirm`, `agentToolApprovalFromTv`, `prompt`, `castPrefer` (`cast`\|`link`), `castDevice`, `castServe`, `screenCommand`, `assistant`, `allowOtherSubnets`, `actions` (PC commands a TV shortcut may run: `{"lock": {"label": "Lock PC", "exec": ["omarchy-system-lock"], "confirm": true}}`) |
+| `config.json` | `themeSync`, `screensaverSync` (push `~/.config/omarchy/branding/screensaver.txt` to the TV screensaver, default on), `themeFromTv` (TV may switch the PC theme, default on; the TV side is off until enabled there), `powerFromTv` / `powerGraceS` (TV off → PC suspends after 60 s; TV on wakes it), `updateFromTv` (LG/Samsung "Update via PC"), `liftoffToTv`, `livingToTv` / `githubUser` / `githubRepos` / `xApi` / `xPollMinutes` / `xMonthlyUsd` (Living screensaver), `tizenProfile` / `webosDevice` (where the TV update installs), `wallpaperSync`, `pcPane`, `aiCredits`, `aiRefreshMinutes`, `aiSourcesFromTv`, `agentMonitor`, `agentControlFromTv`, `agentConfirm`, `agentToolApprovalFromTv`, `prompt`, `castPrefer` (`cast`\|`link`), `castDevice`, `castServe`, `screenCommand`, `assistant`, `allowOtherSubnets`, `actions` (PC commands a TV shortcut may run: `{"lock": {"label": "Lock PC", "exec": ["omarchy-system-lock"], "confirm": true}}`) |
 | `widgets.json` | extra panes and shortcuts for the TV |
 | `ai.json` | AI credits: which bar widget to mirror (`omarchy-link ai setup`), manual entries, API fallbacks, auto-detection. See [docs/AI-CREDITS.md](docs/AI-CREDITS.md). |
 | `assistant.json` | voice assistant providers, default, memory, API fallbacks. See [docs/ASSISTANT.md](docs/ASSISTANT.md). |

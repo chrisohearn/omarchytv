@@ -443,6 +443,19 @@ def screen_argv(cfg: dict) -> list[str]:
     fps = str(max(10, min(60, int(cfg.get("screenFps", 30)))))
     # 2.13 extended display: capture one named output (e.g. a Hyprland headless monitor) instead of all screens
     output = os.environ.get("OMARCHY_LINK_SCREEN_OUTPUT") or cfg.get("screenOutput") or ""
+    # 2.14 Omastorm on the TV: one window's rectangle only ("X,Y WxH", logical pixels, from omastorm.region()).
+    reg = os.environ.get("OMARCHY_LINK_SCREEN_REGION", "")
+    m = re.match(r"^(-?\d+),(-?\d+) (\d+)x(\d+)$", reg)
+    if m:
+        x, y, w, h = m.groups()
+        if shutil.which("gpu-screen-recorder"):
+            return ["gpu-screen-recorder", "-w", "region", "-region", f"{w}x{h}+{x}+{y}", "-f", fps, "-k", "h264",
+                    "-c", "mpegts", "-o", "/dev/stdout"]
+        if shutil.which("wf-recorder"):
+            vaapi = os.path.exists("/dev/dri/renderD128") and cfg.get("screenHwEncode", True)
+            enc = ["-c", "h264_vaapi", "-d", "/dev/dri/renderD128"] if vaapi else \
+                ["-c", "libx264", "-p", "preset=ultrafast", "-p", "tune=zerolatency", "-x", "yuv420p"]
+            return ["wf-recorder", "-y", "-r", fps, "-g", reg] + enc + ["-m", "mpegts", "-f", "/dev/stdout"]
     if shutil.which("gpu-screen-recorder"):  # hardware encoder (VAAPI/NVENC), lowest latency on Hyprland
         return ["gpu-screen-recorder", "-w", output or "screen", "-f", fps, "-k", "h264", "-c", "mpegts"] + \
             (["-a", "default_output"] if audio else []) + ["-o", "/dev/stdout"]
@@ -520,6 +533,8 @@ def via_link(client, item: dict, serve_ok: bool = False, wait: bool = False, out
         res = client.request("POST", "/v1/cast", body)
         result = {"via": "link", "id": rid, "app": res.get("app"), "state": res.get("state", "opening")}
         if server:
+            result["served"] = True   # #82: a stream the TV must fetch from this PC (the CLI hints at ufw if it fails)
+            result["tvIp"] = server.allow
             out(f"Serving {item['title']} to the TV only, at a one-time address; stops when playback ends.")
         if not events:
             return result

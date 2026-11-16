@@ -1,4 +1,5 @@
-import json, os, sys, threading, unittest, urllib.error, urllib.request
+import json, os, sys, tempfile, threading, unittest, urllib.error, urllib.request
+from unittest import mock
 from http.server import HTTPServer
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
 from omarchy_tv import webos
@@ -18,7 +19,7 @@ class WebOSBridgeTest(unittest.TestCase):
                 self.assertIn("cpu", st)
                 self.assertIn("ram", st)
                 self.assertIn("host", st)
-                self.assertEqual(st.get("version"), "2.11.0-testing")
+                self.assertEqual(st.get("version"), webos.VERSION)   # the bridge reports the package it ships in
                 self.assertIsInstance(st.get("ai"), list)
 
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/v1/themes", timeout=5) as r:
@@ -31,7 +32,7 @@ class WebOSBridgeTest(unittest.TestCase):
 
 
 class FakeGrokbot:
-    UPSTREAM, UPSTREAM_REF = "https://github.com/tcballard/omarchy-plugin-grokbot-desktop", "v0.1.0"
+    UPSTREAM, UPSTREAM_REF = "https://github.com/tcballard/omarchy-plugin-grokbot-desktop", "v0.2.0"
     PALETTE = {"orange": "#FF6700"}
 
     class GrokbotError(Exception):
@@ -52,7 +53,7 @@ class FakeGrokbot:
 
     def current(self, cfg):
         return {"id": "b1", "name": "Bob", "shortName": "Bob", "avatarShape": "teardrop", "fill": "#FF6700",
-                "dispatch": "webhook", "version": "0.1.0"}
+                "dispatch": "webhook", "version": "0.2.0"}
 
     def roster(self, cfg):
         return [{"id": "b1", "name": "Bob", "avatarShape": "drop", "avatarColor": "orange"}]
@@ -117,6 +118,146 @@ class GrokbotBridgeTest(unittest.TestCase):
         self.assertEqual(self.post("/v1/nope", {}, tok)[0], 404)
 
 
+
+class FakeTheme:
+    def __init__(self):
+        self.asked = []
+
+    def set_theme(self, name):
+        self.asked.append(name)
+        return {"gruvbox": "ok", "nord": "same", "busy": "busy"}.get(name, "unknown")
+
+
+class ThemeSetBridgeTest(unittest.TestCase):
+    post = GrokbotBridgeTest.post   # reuse the server and helper, not the grokbot tests
+
+    def setUp(self):
+        GrokbotBridgeTest.setUp(self)
+        self.old_t, self.old_cfg = webos._link_theme, webos.link_cfg
+        self.th = FakeTheme()
+        self.cfg = {}
+        webos._link_theme = lambda: self.th
+        webos.link_cfg = lambda: self.cfg
+
+    def tearDown(self):
+        webos._link_theme, webos.link_cfg = self.old_t, self.old_cfg
+        GrokbotBridgeTest.tearDown(self)
+
+    def test_needs_the_code(self):
+        self.assertEqual(self.post("/v1/theme/set", {"name": "gruvbox"})[0], 401)
+        self.assertEqual(self.th.asked, [])
+
+    def test_results_map_to_status_codes(self):
+        tok = webos.bridge_token()
+        self.assertEqual(self.post("/v1/theme/set", {"name": "gruvbox"}, tok), (200, {"result": "ok"}))
+        self.assertEqual(self.post("/v1/theme/set", {"name": "nord"}, tok), (200, {"result": "same"}))
+        self.assertEqual(self.post("/v1/theme/set", {"name": "x"}, tok), (404, {"result": "unknown"}))
+        self.assertEqual(self.post("/v1/theme/set", {"name": "busy"}, tok)[0], 429)
+
+    def test_disabled_on_the_pc_and_not_installed(self):
+        tok = webos.bridge_token()
+        self.cfg["themeFromTv"] = False
+        self.assertEqual(self.post("/v1/theme/set", {"name": "gruvbox"}, tok)[0], 403)
+        self.assertEqual(self.th.asked, [])
+        webos._link_theme = lambda: None
+        self.assertEqual(self.post("/v1/theme/set", {"name": "gruvbox"}, tok)[0], 503)
+
+
+class UpdatePowerBridgeTest(unittest.TestCase):
+    post = GrokbotBridgeTest.post
+
+    def setUp(self):
+        GrokbotBridgeTest.setUp(self)
+        self.old_cfg, self.old_mod = webos.link_cfg, webos._link_mod
+        self.cfg = {}
+        webos.link_cfg = lambda: self.cfg
+        self.power_calls = []
+        outer = self
+
+        class P:
+            @staticmethod
+            def tv_power(state, cfg, log):
+                outer.power_calls.append(state)
+                return "scheduled"
+        webos._link_mod = lambda n: P if n == "power" else None
+
+    def tearDown(self):
+        webos.link_cfg, webos._link_mod = self.old_cfg, self.old_mod
+        GrokbotBridgeTest.tearDown(self)
+
+    def test_power_needs_the_code_and_reaches_omarchy_link(self):
+        self.assertEqual(self.post("/v1/power", {"state": "standby"})[0], 401)
+        tok = webos.bridge_token()
+        self.assertEqual(self.post("/v1/power", {"state": "standby"}, tok), (200, {"result": "scheduled"}))
+        self.assertEqual(self.power_calls, ["standby"])
+        webos._link_mod = lambda n: None
+        self.assertEqual(self.post("/v1/power", {"state": "on"}, tok)[0], 503)
+
+    def test_update_check_install_and_off(self):
+        from omarchy_tv import tvupdate
+        tok = webos.bridge_token()
+        self.assertEqual(self.post("/v1/update/tv", {"action": "check", "platform": "webos"})[0], 401)
+        with mock.patch.object(tvupdate, "check", return_value={"current": "2.13.11", "latest": "2.13.12", "name": "x"}):
+            st, d = self.post("/v1/update/tv", {"action": "check", "platform": "webos", "version": "2.13.11"}, tok)
+        self.assertEqual((st, d["latest"]), (200, "2.13.12"))
+        with mock.patch.object(tvupdate, "start", return_value="started") as stt:
+            st, d = self.post("/v1/update/tv", {"action": "install", "platform": "tizen", "version": "2.13.11",
+                                                "want": "2.13.12"}, tok)
+        self.assertEqual((st, d), (200, {"result": "started"}))
+        self.assertEqual(stt.call_args[0][:4], ("tizen", "2.13.11", "2.13.12", "127.0.0.1"))
+        with mock.patch.object(tvupdate, "check", side_effect=tvupdate.UpdateError("bad_platform")):
+            self.assertEqual(self.post("/v1/update/tv", {"platform": "x"}, tok)[0], 400)
+        self.cfg["updateFromTv"] = False
+        self.assertEqual(self.post("/v1/update/tv", {"action": "install"}, tok)[0], 403)
+
+    def test_living_needs_the_code_and_returns_the_feed(self):
+        class FakeLiving:
+            def __init__(self, *a):
+                self.prefs = None
+                self.touched = False
+
+            def set_prefs(self, p):
+                self.prefs = p
+
+            def touch(self):
+                self.touched = True
+
+            def payload(self):
+                return {"github": [], "notes": [{"app": "Slack", "title": "Ola", "body": "ciao"}], "x": [], "xMode": "off"}
+
+        class Mod:
+            Living = FakeLiving
+        webos._living_obj = None
+        webos._link_mod = lambda n: Mod if n == "living" else None
+        self.assertEqual(self.post("/v1/living", {"notes": True})[0], 401)
+        tok = webos.bridge_token()
+        st, d = self.post("/v1/living", {"notes": True, "x": "notify"}, tok)
+        self.assertEqual((st, d["notes"][0]["title"]), (200, "Ola"))
+        self.assertEqual(webos._living_obj.prefs, {"notes": True, "x": "notify"})
+        self.assertTrue(webos._living_obj.touched)
+        self.cfg["livingToTv"] = False
+        self.assertEqual(self.post("/v1/living", {}, tok)[0], 403)
+        webos._living_obj = None
+
+    def test_pulse_state_for_the_tv(self):   # 2.15 Pulse on the TV
+        class PS:
+            st = {"v": "1.6.0", "agents": [{"name": "codex"}]}
+
+            @staticmethod
+            def read():
+                return PS.st
+        webos._link_mod = lambda n: PS if n == "pulse_state" else None
+        self.assertEqual(self.post("/v1/pulse", {})[0], 401)
+        tok = webos.bridge_token()
+        st, d = self.post("/v1/pulse", {}, tok)
+        self.assertEqual((st, d["agents"][0]["name"]), (200, "codex"))
+        PS.st = None
+        self.assertEqual(self.post("/v1/pulse", {}, tok)[0], 404)   # Pulse not running on the PC
+
+    def test_status_has_liftoff(self):
+        with urllib.request.urlopen(self.base + "/v1/status", timeout=5) as r:
+            self.assertIn("liftoff", json.loads(r.read()))
+
 class FakeAssistantMod:
     class NoProvider(Exception): pass
     class RateLimited(Exception): pass
@@ -163,6 +304,36 @@ class AiAgentsBridgeTest(unittest.TestCase):
         self.assertEqual(self.asst.asked, [("ciao", "hermes-cli", "it-IT")])
         self.assertEqual(self.post("/v1/ai/ask", {"text": "x", "provider": "nope"}, tok)[0], 404)
         self.assertEqual(self.post("/v1/ai/ask", {"text": ""}, tok)[0], 400)
+
+
+class LiveThemePathTest(unittest.TestCase):
+    def test_theme_name_and_wallpaper_prefer_the_state_dir(self):
+        with tempfile.TemporaryDirectory() as td:
+            home = webos.Path(td)
+            state = home / ".local/state/omarchy/current"
+            legacy = home / ".config/omarchy/current"
+            state.mkdir(parents=True)
+            legacy.mkdir(parents=True)
+            (state / "theme.name").write_text("nord\n")
+            (legacy / "theme.name").write_text("tokyo-night\n")
+            live = state / "wall.png"
+            live.write_bytes(b"png")
+            (state / "background").symlink_to(live.name)
+            old = legacy / "old.png"
+            old.write_bytes(b"old")
+            (legacy / "background").symlink_to(old.name)
+            with mock.patch.object(webos.Path, "home", return_value=home):
+                self.assertEqual(webos.current_theme_name(), "nord")
+                self.assertEqual(webos.current_wallpaper_path(), live.resolve())
+
+    def test_theme_name_falls_back_to_the_config_dir(self):
+        with tempfile.TemporaryDirectory() as td:
+            home = webos.Path(td)
+            legacy = home / ".config/omarchy/current"
+            legacy.mkdir(parents=True)
+            (legacy / "theme.name").write_text("gruvbox\n")
+            with mock.patch.object(webos.Path, "home", return_value=home):
+                self.assertEqual(webos.current_theme_name(), "gruvbox")
 
 
 if __name__ == "__main__":
