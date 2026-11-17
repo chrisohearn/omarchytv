@@ -38,6 +38,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.TimeZone;
 
 /**
  * Waybar, fastfetch and btop-style widgets above app artwork. Geometry scales from
@@ -91,6 +92,8 @@ final class HomeV29 extends FrameLayout {
     private final Typeface tf, tfBold;
     private Theme t;
     private LauncherConfig cfg;
+    private int uiAccent, uiAccent2;
+    private boolean liveAccent;
 
     // bar
     private final FrameLayout bar;
@@ -107,6 +110,12 @@ final class HomeV29 extends FrameLayout {
     // widgets
     private final LinearLayout widgets;
     private final BoxView wxBox, pcBox, depBox, t3Box;
+    /** "racing": the remaining 2026 F1 and MotoGP weekends (Racing), the top row's first column, left of weather. */
+    private final BoxView raceBox;
+    private final LinearLayout raceBody;
+    private final LinearLayout statsColumn;
+    /** Bar countdown to the next F1 / MotoGP session, ticking every second while Home is attached. */
+    private final TextView barRace;
     private final LinearLayout pcBody, aiBody, depBody;
     private final LinearLayout t3Body;
     private final int t3RowHeight;
@@ -118,6 +127,7 @@ final class HomeV29 extends FrameLayout {
     private final LinearLayout[] remoteBody = new LinearLayout[3];
     /** "barWeather": icon + temperature in the bar, left of the status icons. */
     private final TextView barSpacex;
+    private final TextView barRadio;
     private final BoxView grokbotBox;
     private final TextView grokbotEyes, grokbotText;
     private final GrokbotMark grokbotMark;
@@ -126,6 +136,11 @@ final class HomeV29 extends FrameLayout {
     private final TextView barWxTemp;
     private final TextView wxTemp, wxPlace, wxCondition, wxRange;
     private final ImageView wxIcon;
+    private final LinearLayout wxForecastRow;
+    private final LinearLayout[] wxForecastCells = new LinearLayout[5];
+    private final TextView[] wxForecastDays = new TextView[5];
+    private final ImageView[] wxForecastIcons = new ImageView[5];
+    private final TextView[] wxForecastTemps = new TextView[5];
     // apps
     private final BoxView appWin;
     private final TextView appName, appHints;
@@ -186,11 +201,33 @@ final class HomeV29 extends FrameLayout {
         buildStamp.setGravity(Gravity.CENTER_VERTICAL);
         buildStamp.setPadding(px(12), 0, 0, 0);
         left.addView(buildStamp, new LinearLayout.LayoutParams(-2, -1));
+        barRace = text("", 20, false);
+        barRace.setSingleLine(true);
+        barRace.setGravity(Gravity.CENTER_VERTICAL);
+        barRace.setVisibility(GONE);   // read-only: not focusable, the D-pad path along the bar stays as it was
+        LinearLayout.LayoutParams brl = new LinearLayout.LayoutParams(-2, -1);
+        brl.leftMargin = px(24);
+        left.addView(barRace, brl);
         clock = text("", 26, true);
         bar.addView(clock, new LayoutParams(-2, -2, Gravity.CENTER));
         LinearLayout right = hbox();
         right.setPadding(0, 0, px(32) - px(13), 0);
         bar.addView(right, new LayoutParams(-2, -1, Gravity.END));
+        // v2.20: what Radiomarchy is playing, in the bar; OK opens the music app again
+        barRadio = text("", 22, false);
+        barRadio.setFocusable(true);
+        barRadio.setClickable(true);
+        barRadio.setGravity(Gravity.CENTER_VERTICAL);
+        barRadio.setSingleLine(true);
+        barRadio.setEllipsize(TextUtils.TruncateAt.END);
+        barRadio.setPadding(px(12), 0, px(12), 0);
+        barRadio.setBackground(new Underline());
+        barRadio.setVisibility(GONE);
+        barRadio.setOnClickListener(v -> host.sys("radio"));
+        LinearLayout.LayoutParams rdl = new LinearLayout.LayoutParams(-2, px(56));
+        rdl.gravity = Gravity.CENTER_VERTICAL;
+        rdl.rightMargin = px(8);
+        right.addView(barRadio, rdl);
         barSpacex = text("🚀 SpaceX TV", 22, true);
         barSpacex.setFocusable(true);
         barSpacex.setClickable(true);
@@ -215,21 +252,23 @@ final class HomeV29 extends FrameLayout {
         right.addView(barWx, bwl);
         barWx.setVisibility(GONE);
         // v2.10: no gear (the menu is the Omarchy logo on the left).
-        int[] icons = {R.drawable.ln_cinemarchy, R.drawable.ln_wifi, R.drawable.ln_bt, R.drawable.ln_vol, R.drawable.ln_input, R.drawable.ln_monitor};
+        int[] icons = {R.drawable.ln_cinemarchy, R.drawable.ln_music, R.drawable.ln_arcade, R.drawable.ln_wifi, R.drawable.ln_bt, R.drawable.ln_vol, R.drawable.ln_input, R.drawable.ln_monitor};
         for (int ic : icons) {
             View b = iconButton(ic, 24 + 26, 24);
             right.addView(b);
             barIcons.add(b);
         }
         barIcons.get(0).setOnClickListener(v -> host.sys("cinemarchy"));
-        barIcons.get(1).setOnClickListener(v -> host.wifiClick());
-        barIcons.get(2).setOnClickListener(v -> host.openBluetooth());
-        barIcons.get(3).setOnClickListener(v -> {
+        barIcons.get(1).setOnClickListener(v -> host.sys("radio"));    // v2.20: Radiomarchy next to Cinemarchy
+        barIcons.get(2).setOnClickListener(v -> host.sys("arcade"));   // v2.14: the Arcade next to Cinemarchy
+        barIcons.get(3).setOnClickListener(v -> host.wifiClick());
+        barIcons.get(4).setOnClickListener(v -> host.openBluetooth());
+        barIcons.get(5).setOnClickListener(v -> {
             android.media.AudioManager am = act.getSystemService(android.media.AudioManager.class);
             if (am != null) am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_SAME, android.media.AudioManager.FLAG_SHOW_UI);
         });
-        barIcons.get(4).setOnClickListener(host::showInputs);
-        barIcons.get(5).setOnClickListener(host::screenPc);
+        barIcons.get(6).setOnClickListener(host::showInputs);
+        barIcons.get(7).setOnClickListener(host::screenPc);
         tip = text("", 24, false);
         tip.setVisibility(GONE);
         tip.setPadding(px(14), px(8), px(14), px(8));
@@ -263,7 +302,9 @@ final class HomeV29 extends FrameLayout {
         // ---- Widgets: weather beside the AI/PC stack, with a shared 24 px gutter ----
         widgets = new LinearLayout(a);
         widgets.setOrientation(LinearLayout.VERTICAL);
-        LayoutParams wl = new LayoutParams(px(1192), -2, Gravity.END | Gravity.TOP);
+        // Extend the row 80 px to the left so Weather fills the unused margin beside the terminal widget.
+        // Keep the right edge fixed and align Weather's left and right gutters to 16 px.
+        LayoutParams wl = new LayoutParams(px(1200), -2, Gravity.END | Gravity.TOP);
         wl.rightMargin = px(32);
         wl.topMargin = px(88);
         addView(widgets, wl);
@@ -279,17 +320,24 @@ final class HomeV29 extends FrameLayout {
         LinearLayout.LayoutParams r2l = new LinearLayout.LayoutParams(-1, -2);
         r2l.topMargin = px(16);
         widgets.addView(r2, r2l);
+        // "racing" is an extra first column, in a fixed-width slot. The row never grows past the
+        // term box (widgetsWidth): weather, pc and ai share what remains, racing sits left of weather.
+        raceBox = widget(r1, "racing", 0);
+        raceBox.setFocusable(false);   // read-only, like the pc and deploys panels: the remote skips it
+        raceBody = vbox();
+        raceBox.addView(raceBody, new LinearLayout.LayoutParams(-1, -2));
         wxBox = widget(r1, act.getString(R.string.v29_weather), 0);
-        LinearLayout statsColumn = vbox();
+        statsColumn = vbox();
         statsColumn.setClipChildren(false);
         LinearLayout.LayoutParams statsLayout = new LinearLayout.LayoutParams(px(584), -2);
-        statsLayout.leftMargin = px(24);
+        statsLayout.leftMargin = px(STATS_GAP);
         r1.addView(statsColumn, statsLayout);
         BoxView ai = widget(statsColumn, "ai credits · pc", 0);
         pcBox = widget(statsColumn, "omarchy · pc", 0);
         pcBox.setFocusable(false);
-        // Explicit widths keep a lone widget from stretching when other panels are hidden.
-        for (View col : new View[]{wxBox, pcBox, ai}) {
+        // Explicit widths keep a lone widget from stretching when other panels are hidden;
+        // applyRaceColumns() sets the final ones (they depend on the racing column).
+        for (View col : new View[]{raceBox, wxBox, pcBox, ai}) {
             LinearLayout.LayoutParams cl = (LinearLayout.LayoutParams) col.getLayoutParams();
             cl.width = px(584);
             cl.weight = 0f;
@@ -329,6 +377,37 @@ final class HomeV29 extends FrameLayout {
         LinearLayout.LayoutParams rangeLayout = new LinearLayout.LayoutParams(-1, -2);
         rangeLayout.topMargin = px(12);
         wxBox.addView(wxRange, rangeLayout);
+        wxForecastRow = hbox();
+        wxForecastRow.setGravity(Gravity.CENTER_VERTICAL);
+        wxForecastRow.setBaselineAligned(false);
+        LinearLayout.LayoutParams forecastRowLp = new LinearLayout.LayoutParams(-1, -2);
+        forecastRowLp.topMargin = px(9);
+        for (int i = 0; i < wxForecastCells.length; i++) {
+            LinearLayout cell = vbox();
+            cell.setGravity(Gravity.CENTER);
+            TextView day = text("", 18, false);
+            day.setGravity(Gravity.CENTER);
+            ImageView icon = new ImageView(act);
+            icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            TextView temps = text("", 18, false);
+            temps.setSingleLine(true);
+            temps.setEllipsize(TextUtils.TruncateAt.END);
+            temps.setGravity(Gravity.CENTER);
+            LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(px(28), px(28));
+            iconLp.gravity = Gravity.CENTER_HORIZONTAL;
+            iconLp.topMargin = px(2);
+            iconLp.bottomMargin = px(2);
+            cell.addView(day, new LinearLayout.LayoutParams(-1, -2));
+            cell.addView(icon, iconLp);
+            cell.addView(temps, new LinearLayout.LayoutParams(-1, -2));
+            wxForecastRow.addView(cell, new LinearLayout.LayoutParams(0, -2, 1f));
+            wxForecastCells[i] = cell;
+            wxForecastDays[i] = day;
+            wxForecastIcons[i] = icon;
+            wxForecastTemps[i] = temps;
+        }
+        wxForecastRow.setVisibility(GONE);
+        wxBox.addView(wxForecastRow, forecastRowLp);
         pcBody = vbox();
         pcBox.addView(pcBody, new LinearLayout.LayoutParams(-1, -2));
         aiBody = vbox();
@@ -408,7 +487,7 @@ final class HomeV29 extends FrameLayout {
         rl.topMargin = px(16);
         appWin.addView(row, rl);
 
-        // ---- v2.13 Grok Bot Desktop Companion (io.github.tcballard.grokbot-desktop, MIT) ----
+        // ---- v2.13 Agent Desktop companion (io.github.tcballard.grokbot-desktop, MIT) ----
         grokbotBox = new BoxView(a, s, tf);
         grokbotBox.setLegend("grokbot", px(10), px(14));
         grokbotBox.setFocusable(true);
@@ -622,10 +701,61 @@ final class HomeV29 extends FrameLayout {
 
     // ---------------------------------------------------------------------------------------------------------
 
-    /** Re-reads config and theme and redraws everything (resume, theme push, settings change). */
+    private int accent() {
+        return liveAccent ? uiAccent : (t != null ? t.accent : 0xFFFFFFFF);
+    }
+
+    private int accent2() {
+        return liveAccent ? uiAccent2 : (t != null ? t.accent2 : 0xFFFFFFFF);
+    }
+
+    /** Accents from the Radiomarchy fractals wallpaper (already contrast-adjusted). */
+    void applyFractalAccent(int a, int a2) {
+        if (t == null) return;
+        if (liveAccent && a == uiAccent && a2 == uiAccent2) return;
+        liveAccent = true;
+        uiAccent = a;
+        uiAccent2 = a2;
+        colorizeAccents();
+    }
+
+    void clearFractalAccent() {
+        if (!liveAccent) return;
+        liveAccent = false;
+        if (t != null) colorizeAccents();
+    }
+
+    /** Top bar, widget borders/titles, tile focus: the live (or theme) accent. */
+    private void colorizeAccents() {
+        if (t == null || cfg == null) return;
+        float op = opacity(cfg), nb = noBlur();
+        int winBg = Theme.withAlpha(t.bg, Math.min(0.98f, op + nb));
+        int acc = accent(), acc2 = accent2();
+        if (ws != null) {
+            for (int i = 0; i < ws.length; i++) {
+                if (ws[i] == null || cfg == null) continue;
+                boolean on = cfg.workspaceAt(i + 1) == activeWs;
+                ws[i].setTextColor(on ? acc : t.fg);
+            }
+        }
+        for (BoxView b : new BoxView[]{term, wxBox, pcBox, aiBoxRef, depBox, raceBox, appWin, tvWin, appsWin, pcWin, sysWin, grokbotBox}) {
+            if (b != null) b.setColors(winBg, t.muted, acc, t.cyan);
+        }
+        if (barSpacex != null) barSpacex.setTextColor(acc2);
+        if (grokbotEyes != null) grokbotEyes.setTextColor(acc);
+        if (remoteBox != null) for (BoxView b : remoteBox) if (b != null) b.setColors(winBg, t.muted, acc, t.cyan);
+        if (gridName != null) gridName.setTextColor(acc);
+        if (termLogo != null) termLogo.setTextColor(acc);
+        if (appName != null) appName.setTextColor(acc);
+        if (wxTemp != null) wxTemp.setTextColor(acc);
+        invalidate();
+    }
+
+        /** Re-reads config and theme and redraws everything (resume, theme push, settings change). */
     void bind(LauncherConfig c, AppAdapter apps) {
         cfg = c;
         t = Theme.cur();
+        if (c == null || !FractalLayer.is(c.wallpaper)) liveAccent = false;
         this.apps = apps;
         catalog = apps.fullCatalog();
         int winBg = windowBackground();
@@ -634,7 +764,7 @@ final class HomeV29 extends FrameLayout {
         buildStamp.setTextColor(ink(t.fgDim));
         for (int i = 0; i < 5; i++) {
             boolean on = c.workspaceAt(i + 1) == activeWs;
-            ws[i].setTextColor(ink(on ? t.accent : t.fg));
+            ws[i].setTextColor(ink(on ? accent() : t.fg));
             ws[i].setTypeface(on ? tfBold : tf);
             ws[i].setPaintFlags(on ? ws[i].getPaintFlags() | Paint.UNDERLINE_TEXT_FLAG : ws[i].getPaintFlags() & ~Paint.UNDERLINE_TEXT_FLAG);
             ws[i].setVisibility(c.workspaceAt(i + 1) > 0 ? VISIBLE : GONE);
@@ -644,10 +774,10 @@ final class HomeV29 extends FrameLayout {
         for (View b : barIcons) tint(b, ink(t.fgBright));
         tip.setBackgroundColor(Theme.withAlpha(darkSurface(t.bg), 1f));
         tip.setTextColor(ink(t.fgBright));
-        for (BoxView b : new BoxView[]{term, wxBox, pcBox, aiBoxRef, depBox, t3Box, appWin, tvWin, appsWin, pcWin, sysWin, grokbotBox}) b.setColors(winBg, t.muted, ink(t.accent), ink(t.cyan));
-        barSpacex.setTextColor(ink(t.accent2));
+        for (BoxView b : new BoxView[]{term, wxBox, pcBox, aiBoxRef, depBox, raceBox, t3Box, appWin, tvWin, appsWin, pcWin, sysWin, grokbotBox}) b.setColors(winBg, t.muted, ink(accent()), ink(t.cyan));
+        barSpacex.setTextColor(ink(accent2()));
         barSpacex.setVisibility(c.pluginSpacexTv ? VISIBLE : GONE);
-        grokbotEyes.setTextColor(ink(t.accent));
+        grokbotEyes.setTextColor(ink(accent()));
         grokbotText.setTextColor(ink(t.fgBright));
         boolean mirrored = c.grokbotBotName != null && !c.grokbotBotName.isEmpty();
         grokbotMark.setVisibility(VISIBLE);   // v2.13: Grok Bot's ball when nothing is mirrored
@@ -658,14 +788,23 @@ final class HomeV29 extends FrameLayout {
                 : gbMsg != null ? " " + gbMsg : " companion · ask");
         // The floating face is the one companion: this "companion · ask" tile only stands in when it is off.
         grokbotBox.setVisibility(activeWs == 1 && CompanionPlacement.homeTile(c.pluginGrokbot, c.companionOverlay) ? VISIBLE : GONE);
-        for (BoxView b : remoteBox) b.setColors(winBg, t.muted, ink(t.accent), ink(t.cyan));
+        for (BoxView b : remoteBox) b.setColors(winBg, t.muted, ink(accent()), ink(t.cyan));
         // v2.10: every home widget can be switched off (Settings → Widgets); the clock lives only in the bar.
         wxBox.setVisibility(c.wWeather ? VISIBLE : GONE);
         pcBox.setVisibility(c.wPc ? VISIBLE : GONE);
         aiBoxRef.setVisibility(c.wAi ? VISIBLE : GONE);
+        raceBox.setVisibility(c.wRacing ? VISIBLE : GONE);
+        // weather is the row's first panel when racing is off: no gap in front of it then
+        LinearLayout.LayoutParams wxl = (LinearLayout.LayoutParams) wxBox.getLayoutParams();
+        wxl.leftMargin = c.wRacing ? px(16) : 0;
+        wxBox.setLayoutParams(wxl);
+        LayoutParams wl = (LayoutParams) widgets.getLayoutParams();
+        wl.width = px(widgetsWidth(c.wRacing));
+        widgets.setLayoutParams(wl);
+        applyRaceColumns(c.wRacing);
         term.setVisibility(activeWs == 1 && c.wTerm ? VISIBLE : GONE);
         if (editPanel == null) post(() -> applyPanelPos(c));
-        gridName.setTextColor(ink(t.accent));
+        gridName.setTextColor(ink(accent()));
         gridHints.setTextColor(ink(t.fg));
         gridHints.setText(gridHintsText());
         term.setLegend(null, px(18), px(22));
@@ -743,6 +882,16 @@ final class HomeV29 extends FrameLayout {
         b.setSpan(new ForegroundColorSpan(ink(color)), st, b.length(), 0);
     }
 
+    /**
+     * v2.15 (#80): the PC pushed new data (AI credits, link panes) without changing the layout: take the new config and
+     * redraw the widgets in place. Before, the ai credits pane kept the old numbers until Home was pressed.
+     */
+    void data(LauncherConfig c) {
+        if (c == null) return;
+        cfg = c;
+        refresh();
+    }
+
     /** Clock, fastfetch line, widgets; cheap (in-memory reads + small cached files). */
     void refresh() {
         if (cfg == null) return;
@@ -762,6 +911,7 @@ final class HomeV29 extends FrameLayout {
         updateWeather();
         updatePc(pcBody, depBody, depBox, cfg.wDeploys);
         updateAi(aiBody);
+        updateRacing();
         updateRemote();
         JSONObject liveAgents = OmarchyLink.agents();
         updateT3(liveAgents != null ? liveAgents : LauncherConfig.get(act).agentsData, OmarchyLink.connected());
@@ -825,6 +975,30 @@ final class HomeV29 extends FrameLayout {
         t3Box.setContentDescription(act.getString(R.string.t3_widget) + ", " + active + ", " + act.getString(R.string.t3_details));
     }
 
+    /** v2.15 (#115): a fetched pane's picture, decoded down to the pane's width; false when it can't be read. */
+    private boolean remoteImage(LinearLayout body, java.io.File f) {
+        if (!f.isFile() || f.length() > RemotePanes.MAX_IMAGE) return false;
+        try {
+            android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+            o.inJustDecodeBounds = true;
+            android.graphics.BitmapFactory.decodeFile(f.getPath(), o);
+            int want = px(360), s = 1;
+            while (o.outWidth / (s * 2) >= want) s *= 2;
+            o = new android.graphics.BitmapFactory.Options();
+            o.inSampleSize = s;
+            android.graphics.Bitmap bm = android.graphics.BitmapFactory.decodeFile(f.getPath(), o);
+            if (bm == null) return false;
+            ImageView iv = new ImageView(act);
+            iv.setImageBitmap(bm);
+            iv.setAdjustViewBounds(true);
+            iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            body.addView(iv, new LinearLayout.LayoutParams(-1, -2));
+            return true;
+        } catch (Throwable e) {   // a broken or huge picture never takes Home down
+            return false;
+        }
+    }
+
     /** Fetched panes (RemotePanes): "label … value" rows, value green/red by tone; dim after ttl, gone after 2 x ttl. */
     private void updateRemote() {
         JSONObject cache = RemotePanes.cached(act, cfg.remotePanesUrl);
@@ -841,6 +1015,7 @@ final class HomeV29 extends FrameLayout {
             shown++;
             remoteBox[i].setLegend(p.optString("title", p.optString("id")).toLowerCase(Locale.getDefault()), px(14), px(18));
             remoteBody[i].setAlpha(age > p.optInt("ttl", 180) ? 0.55f : 1f);
+            if (!p.optString("image").isEmpty() && remoteImage(remoteBody[i], new java.io.File(act.getFilesDir(), p.optString("image")))) continue;
             JSONArray lines = p.optJSONArray("lines");
             for (int k = 0; lines != null && k < lines.length(); k++) {
                 JSONObject l = lines.optJSONObject(k);
@@ -867,7 +1042,7 @@ final class HomeV29 extends FrameLayout {
         // With the widgets above switched off, the row moves up to the top (aligned with the fastfetch box).
         View row2 = (View) depBox.getParent();
         row2.setVisibility(depBox.getVisibility());
-        boolean above = wxBox.getVisibility() == VISIBLE || pcBox.getVisibility() == VISIBLE
+        boolean above = raceBox.getVisibility() == VISIBLE || wxBox.getVisibility() == VISIBLE || pcBox.getVisibility() == VISIBLE
                 || aiBoxRef.getVisibility() == VISIBLE || depBox.getVisibility() == VISIBLE;
         LinearLayout.LayoutParams rl = (LinearLayout.LayoutParams) remoteRow.getLayoutParams();
         int top = above ? px(16) : 0;
@@ -880,8 +1055,238 @@ final class HomeV29 extends FrameLayout {
     /** Fetched panes share the home widgets’ couch-readable type size. */
     private static final float REMOTE_TEXT = 24;
 
+    // ---- racing: remaining 2026 F1 / MotoGP weekends (widget) and a countdown to the next session (bar) ----
+
+    /** What the bar counts down to; recomputed on refresh() and when the session it shows is over. */
+    private Racing.Next nextRace;
+
+    private final Runnable raceTick = new Runnable() {
+        @Override
+        public void run() {
+            tickRaceBar();
+            tickRadioBar();
+            tickRaceNext();
+            postDelayed(this, 1000 - System.currentTimeMillis() % 1000 + 5);   // on the second, like a clock
+        }
+    };
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        removeCallbacks(raceTick);
+        post(raceTick);
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        removeCallbacks(raceTick);
+        super.onDetachedFromWindow();
+    }
+
+    @Override
+    protected void onLayout(boolean changed, int l, int t, int r, int b) {
+        super.onLayout(changed, l, t, r, b);
+        if (barRadio.getText().length() != 0) layoutRadioBar();
+    }
+
+    private static String raceZoneLabel(java.util.TimeZone tz) {
+        return Racing.zoneLabel(tz);
+    }
+
+    private static String shortName(Racing.Meeting m) {
+        return m.name.endsWith(" GP") ? m.name.substring(0, m.name.length() - 3) : m.name;
+    }
+
+    /** 2.15 the followed series (racing.series), each one's meetings. */
+    private java.util.LinkedHashMap<String, List<Racing.Meeting>> racingNow() {
+        java.util.LinkedHashMap<String, List<Racing.Meeting>> all = new java.util.LinkedHashMap<>();
+        for (String id : cfg.racingSeries) all.put(id, Racing.meetings(act, id));
+        return all;
+    }
+
+    private void updateRacing() {
+        long now = System.currentTimeMillis();
+        java.util.LinkedHashMap<String, List<Racing.Meeting>> all = racingNow();
+        nextRace = Racing.soonest(all, now);
+        tickRaceBar();
+        raceBody.removeAllViews();
+        if (!cfg.wRacing) return;
+        java.util.TimeZone tz = Racing.zone(cfg.racingTz);
+        raceBox.setLegend("racing · " + raceZoneLabel(tz), px(14), px(18));
+        // 2.15.1 the countdown to the next session of any followed series, at the top of the panel (it was only in the bar)
+        raceNext = line("");
+        raceNext.setTypeface(tfBold);
+        raceNextClock = line("");
+        raceNextClock.setTextSize(TypedValue.COMPLEX_UNIT_PX, 30 * s * big);
+        raceNextClock.setTypeface(tfBold);
+        ((LinearLayout.LayoutParams) raceNextClock.getLayoutParams()).topMargin = px(4);
+        raceBody.addView(raceNext);
+        raceBody.addView(raceNextClock);
+        tickRaceNext();
+        // two series: every weekend left; more: the next two of each, so all of them fit in the column
+        int rows = all.size() <= 2 ? Integer.MAX_VALUE : all.size() <= 4 ? 2 : 1, top = nextRace != null ? 14 : 0;
+        for (java.util.Map.Entry<String, List<Racing.Meeting>> e : all.entrySet()) {
+            raceSeries(Racing.label(e.getKey()).toLowerCase(Locale.ROOT), Racing.upcoming(e.getValue(), now), now, tz, top, rows);
+            top = 14;
+        }
+    }
+
+    /** "f1  4 left", then one row per remaining weekend: name … race day and time; this weekend also its next session. */
+    private void raceSeries(String label, List<Racing.Meeting> left, long now, java.util.TimeZone tz, int top, int rows) {
+        SpannableStringBuilder h = new SpannableStringBuilder();
+        span(h, label, t.accent);
+        span(h, left.isEmpty() ? "" : "  " + left.size() + " left", t.fg);
+        TextView head = line("");
+        head.setText(h);
+        head.setTypeface(tfBold);
+        ((LinearLayout.LayoutParams) head.getLayoutParams()).topMargin = px(top);
+        raceBody.addView(head);
+        if (left.isEmpty()) {
+            TextView v = line("season complete");
+            v.setTextColor(t.fg);
+            raceBody.addView(v);
+            return;
+        }
+        for (int i = 0; i < left.size() && i < rows; i++) {
+            Racing.Meeting m = left.get(i);
+            int col = i == 0 ? t.fgBright : t.fg;
+            Racing.Session rs = Racing.race(m);
+            raceBody.addView(raceRow(shortName(m), rs.dateOnly ? Racing.day(rs.start, Locale.ENGLISH) : Racing.when(rs.start, tz, Locale.ENGLISH), col, col));
+            if (i > 0) continue;
+            Racing.Session s = Racing.current(m, now);
+            if (s == null || s == Racing.race(m) && !s.live(now)) continue;
+            boolean live = s.live(now);
+            raceBody.addView(raceRow("  " + (live ? "● live " : "▸ ") + s.code.toLowerCase(Locale.ROOT),
+                    live ? "until " + Racing.when(s.endOrDefault(), tz, Locale.ENGLISH).replaceAll(".* ", "")
+                            : Racing.when(s.start, tz, Locale.ENGLISH),
+                    live ? t.green : t.accent2, live ? t.green : t.fg));
+        }
+    }
+
+    private View raceRow(String name, String when, int nameCol, int whenCol) {
+        LinearLayout r = hbox();
+        LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(-1, -2);
+        l.topMargin = px(6);
+        r.setLayoutParams(l);
+        TextView n = text(name, 19, false);
+        n.setTextColor(nameCol);
+        n.setSingleLine(true);
+        n.setEllipsize(TextUtils.TruncateAt.END);
+        r.addView(n, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView w = text(when, 19, false);
+        w.setTextColor(whenCol);
+        w.setSingleLine(true);
+        LinearLayout.LayoutParams wl = new LinearLayout.LayoutParams(-2, -2);
+        wl.leftMargin = px(10);
+        r.addView(w, wl);
+        return r;
+    }
+
+    private TextView raceNext, raceNextClock;
+
+    /** Panel: "next · f1 fp3 · São Paulo" and under it "02:14:09" (or "● live"), every second, from raceTick. */
+    private void tickRaceNext() {
+        if (cfg == null || !cfg.wRacing || raceNext == null || raceNext.getParent() != raceBody) return;
+        long now = System.currentTimeMillis();
+        Racing.Next n = nextRace;
+        if (n != null && now >= n.session.endOrDefault()) n = nextRace = Racing.soonest(racingNow(), now);
+        raceNext.setVisibility(n != null ? VISIBLE : GONE);
+        raceNextClock.setVisibility(n != null ? VISIBLE : GONE);
+        if (n == null) return;
+        SpannableStringBuilder b = new SpannableStringBuilder();
+        span(b, "next · ", t.fg);
+        span(b, Racing.label(n.series).toLowerCase(Locale.ROOT) + " " + n.session.code.toLowerCase(Locale.ROOT), t.accent);
+        span(b, " · " + shortName(n.meeting), t.fgBright);
+        raceNext.setText(b);
+        boolean live = n.session.live(now);
+        raceNextClock.setText(live ? "● live" : Racing.clock(n.session.start - now));
+        raceNextClock.setTextColor(live ? t.green : t.fgBright);
+    }
+
+    /** v2.20 Bar: "♫ Still Licensed — Michel Krapf" while Radiomarchy plays ("‖" paused); gone when it stops. */
+    private void tickRadioBar() {
+        RadioPlayer rp = RadioPlayer.peek();
+        RadioCatalog.Track tr = rp != null ? rp.current() : null;
+        if (tr == null) {
+            if (barRadio.getVisibility() != GONE) barRadio.setVisibility(GONE);
+            if (barRadio.getText().length() != 0) barRadio.setText("");
+            return;
+        }
+        SpannableStringBuilder b = new SpannableStringBuilder();
+        span(b, rp.playing() ? "♫ " : "‖ ", t.magenta);
+        span(b, tr.title, t.fgBright);
+        if (!tr.artist.isEmpty()) span(b, " — " + tr.artist, t.fg);
+        if (!b.toString().equals(barRadio.getText().toString())) barRadio.setText(b);
+        layoutRadioBar();
+    }
+
+    /**
+     * The now-playing label sits to the right of the centred clock and to the left of SpaceX,
+     * weather and the icons. Its max width is the gap that is left; if that is below RADIO_BAR_MIN
+     * the label is hidden rather than drawn over the date.
+     */
+    private void layoutRadioBar() {
+        if (barRadio.getText().length() == 0) return;
+        int clockW = clock.getWidth() != 0 ? clock.getWidth() : measureUnspecified(clock);
+        if (bar.getWidth() == 0 || clockW == 0) {
+            if (isAttachedToWindow()) post(this::layoutRadioBar);
+            return;
+        }
+        ViewGroup right = (ViewGroup) barRadio.getParent();
+        int rest = right.getPaddingLeft() + right.getPaddingRight();
+        LinearLayout.LayoutParams rp = (LinearLayout.LayoutParams) barRadio.getLayoutParams();
+        rest += rp.leftMargin + rp.rightMargin;
+        for (int i = 0; i < right.getChildCount(); i++) {
+            View c = right.getChildAt(i);
+            if (c == barRadio || c.getVisibility() == GONE) continue;
+            LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) c.getLayoutParams();
+            int w = c.getWidth() != 0 ? c.getWidth() : measureUnspecified(c);
+            rest += w + lp.leftMargin + lp.rightMargin;
+        }
+        int max = radioBarMaxWidth(bar.getWidth(), clockW, rest, px(RADIO_BAR_GAP), px(RADIO_BAR_MIN));
+        if (max == 0) {
+            if (barRadio.hasFocus()) {
+                View next = barSpacex.getVisibility() == VISIBLE ? barSpacex : (!barIcons.isEmpty() ? barIcons.get(0) : null);
+                if (next != null) next.requestFocus();
+            }
+            if (barRadio.getVisibility() != GONE) barRadio.setVisibility(GONE);
+            return;
+        }
+        if (barRadio.getMaxWidth() != max) barRadio.setMaxWidth(max);
+        if (barRadio.getVisibility() != VISIBLE) barRadio.setVisibility(VISIBLE);
+    }
+
+    private static int measureUnspecified(View v) {
+        v.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        return v.getMeasuredWidth();
+    }
+
+    /** Bar: "F1 fp3 · São Paulo  02:14:09", or "● live" while it runs. Every second, from raceTick. */
+    private void tickRaceBar() {
+        if (cfg == null || !cfg.barRacing) {
+            barRace.setVisibility(GONE);
+            return;
+        }
+        long now = System.currentTimeMillis();
+        Racing.Next n = nextRace;
+        if (n != null && now >= n.session.endOrDefault())
+            n = nextRace = Racing.soonest(racingNow(), now);
+        if (n == null) {
+            barRace.setVisibility(GONE);
+            return;
+        }
+        SpannableStringBuilder b = new SpannableStringBuilder();
+        span(b, Racing.label(n.series) + " ", t.accent);
+        span(b, n.session.code.toLowerCase(Locale.ROOT) + " · " + shortName(n.meeting) + "  ", t.fg);
+        if (n.session.live(now)) span(b, "● live", t.green);
+        else span(b, Racing.clock(n.session.start - now), t.fgBright);
+        barRace.setText(b);
+        barRace.setVisibility(VISIBLE);
+    }
+
     private void updateWeather() {
-        wxTemp.setTextColor(ink(t.accent));
+        wxTemp.setTextColor(ink(accent()));
         wxPlace.setTextColor(ink(t.fgBright));
         wxCondition.setTextColor(ink(t.fg));
         wxRange.setTextColor(ink(t.fg));
@@ -889,6 +1294,11 @@ final class HomeV29 extends FrameLayout {
         String place = Weather.place(act, cfg);
         wxPlace.setText(place);
         wxPlace.setVisibility(place.isEmpty() ? GONE : VISIBLE);
+        for (int i = 0; i < wxForecastCells.length; i++) {
+            wxForecastDays[i].setTextColor(ink(t.fg));
+            wxForecastIcons[i].setColorFilter(ink(t.fgBright));
+            wxForecastTemps[i].setTextColor(ink(t.fgBright));
+        }
         JSONObject w = Weather.cached(act);
         JSONObject cur = w != null ? w.optJSONObject("current") : null;
         barWx.setVisibility(cfg.barWeather && cur != null ? VISIBLE : GONE);
@@ -905,6 +1315,7 @@ final class HomeV29 extends FrameLayout {
             wxRange.setText("");
             wxIcon.setImageDrawable(null);
             wxIcon.setVisibility(INVISIBLE);
+            wxForecastRow.setVisibility(GONE);
             return;
         }
         wxTemp.setText(Weather.temp(cur.optDouble("temperature_2m"), cfg.tempF) + (cfg.tempF ? "°F" : "°"));
@@ -915,6 +1326,59 @@ final class HomeV29 extends FrameLayout {
         JSONObject daily = w.optJSONObject("daily");
         JSONArray mn = daily != null ? daily.optJSONArray("temperature_2m_min") : null, mx = daily != null ? daily.optJSONArray("temperature_2m_max") : null;
         wxRange.setText(mn != null && mx != null ? "min " + Weather.temp(mn.optDouble(0), cfg.tempF) + "° · max " + Weather.temp(mx.optDouble(0), cfg.tempF) + "°" : "");
+        updateForecast(daily);
+    }
+
+    /** Show the five days after today beneath the current conditions and today's min/max. */
+    private void updateForecast(JSONObject daily) {
+        JSONArray dates = daily != null ? daily.optJSONArray("time") : null;
+        JSONArray codes = daily != null ? daily.optJSONArray("weather_code") : null;
+        JSONArray mins = daily != null ? daily.optJSONArray("temperature_2m_min") : null;
+        JSONArray maxs = daily != null ? daily.optJSONArray("temperature_2m_max") : null;
+        if (dates == null || codes == null || mins == null || maxs == null) {
+            wxForecastRow.setVisibility(GONE);
+            return;
+        }
+        int available = Math.min(Math.min(dates.length(), codes.length()), Math.min(mins.length(), maxs.length()));
+        int count = Math.min(wxForecastCells.length, Math.max(0, available - 1));
+        if (count == 0) {
+            wxForecastRow.setVisibility(GONE);
+            return;
+        }
+        for (int i = 0; i < wxForecastCells.length; i++) {
+            if (i >= count) {
+                wxForecastCells[i].setVisibility(GONE);
+                continue;
+            }
+            int day = i + 1; // index 0 is today, already represented above
+            int code = codes.optInt(day, 3);
+            long min = Weather.temp(mins.optDouble(day), cfg.tempF);
+            long max = Weather.temp(maxs.optDouble(day), cfg.tempF);
+            String weekday = shortForecastDay(dates.optString(day, ""));
+            wxForecastDays[i].setText(weekday);
+            wxForecastIcons[i].setImageResource(Weather.icon(code));
+            wxForecastTemps[i].setText(min + "°/" + max + "°");
+            wxForecastCells[i].setContentDescription(weekday + ", " + act.getString(Weather.describe(code))
+                    + ", min " + min + "° max " + max + "°");
+            wxForecastCells[i].setVisibility(VISIBLE);
+        }
+        wxForecastRow.setVisibility(VISIBLE);
+    }
+
+    private String shortForecastDay(String isoDate) {
+        if (isoDate == null || isoDate.length() < 10) return "";
+        try {
+            Locale locale = act.getResources().getConfiguration().getLocales().get(0);
+            SimpleDateFormat parser = new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT);
+            parser.setTimeZone(TimeZone.getTimeZone("UTC"));
+            Date date = parser.parse(isoDate.substring(0, 10));
+            if (date == null) return "";
+            SimpleDateFormat label = new SimpleDateFormat("EEE", locale);
+            label.setTimeZone(TimeZone.getTimeZone("UTC"));
+            return label.format(date).replace(".", "");
+        } catch (Exception ignored) {
+            return "";
+        }
     }
 
     private TextView offline() {
@@ -1036,11 +1500,12 @@ final class HomeV29 extends FrameLayout {
             tip.setVisibility(GONE);
             return;
         }
-        String[] labels = {"cinemarchy", host.wifiName(), "bluetooth", act.getString(R.string.v29_volume), act.getString(R.string.inputs),
+        String[] labels = {"cinemarchy", "radiomarchy", "arcade", host.wifiName(), "bluetooth", act.getString(R.string.v29_volume), act.getString(R.string.inputs),
                 act.getString(R.string.v29_screen_pc)};
-        if (k == 3) {
+        if (k == 1 && RadioPlayer.peek() != null && RadioPlayer.peek().current() != null) labels[1] += " · " + RadioPlayer.peek().current().line();
+        if (k == 5) {
             android.media.AudioManager am = act.getSystemService(android.media.AudioManager.class);
-            if (am != null) labels[3] += " " + Math.round(100f * am.getStreamVolume(3) / Math.max(1, am.getStreamMaxVolume(3))) + "%";
+            if (am != null) labels[5] += " " + Math.round(100f * am.getStreamVolume(3) / Math.max(1, am.getStreamMaxVolume(3))) + "%";
         }
         tip.setText(labels[k]);
         tip.setVisibility(VISIBLE);
@@ -1227,7 +1692,10 @@ final class HomeV29 extends FrameLayout {
         f.setBackground(bg);
         f.setForeground(new FocusRing());
         styleTile(f, false, false);
-        f.setOnFocusChangeListener((v, has) -> styleTile((FrameLayout) v, has, true));
+        f.setOnFocusChangeListener((v, has) -> {
+            styleTile((FrameLayout) v, has, true);
+            if (has) FractalLayer.yieldForUi();
+        });
         return f;
     }
 
@@ -1366,7 +1834,7 @@ final class HomeV29 extends FrameLayout {
 
     // ---- v2.10 "Disponi riquadri": move home panels on a 12x8 grid (fractions of the screen: same at 1080p and 4K) ----
     static final int GRID_X = 12, GRID_Y = 8;
-    static final String[] PANEL_IDS = {"term", "weather", "pc", "ai", "deploys", "t3"};
+    static final String[] PANEL_IDS = {"term", "weather", "pc", "ai", "deploys", "racing", "t3"};
     private View editPanel;
     private String editId;
     private int editCx, editCy, editOldCx, editOldCy;
@@ -1378,6 +1846,7 @@ final class HomeV29 extends FrameLayout {
             case "pc": return pcBox;
             case "ai": return aiBoxRef;
             case "deploys": return depBox;
+            case "racing": return raceBox;
             case "t3": return t3Box;
             default: return null;
         }
@@ -1626,6 +2095,7 @@ final class HomeV29 extends FrameLayout {
                 List<View> order = new ArrayList<>();
                 order.add(menuBtn);
                 for (TextView w : ws) order.add(w);
+                order.add(barRadio);
                 order.add(barSpacex);
                 order.addAll(barIcons);
                 // hidden workspaces (and SpaceX TV when off) are GONE: skip them, or focus gets stuck
@@ -1860,6 +2330,72 @@ final class HomeV29 extends FrameLayout {
         return (inner - gap * (cols - 1)) / cols;
     }
 
+    /** Design-px gap left between the centred clock and the now-playing label; below RADIO_BAR_MIN the label hides. */
+    static final int RADIO_BAR_GAP = 16, RADIO_BAR_MIN = 80;
+
+    /**
+     * Max width for the now-playing label to the right of the centred clock and to the left of
+     * the remaining right-hand bar (SpaceX, weather, icons; on LG/Samsung also the racing countdown).
+     * {@code rightRestW} is that cluster plus the bar's right padding and the label's own side margins.
+     * Returns 0 when the space is below {@code minW}, so the label should be hidden.
+     */
+    static int radioBarMaxWidth(int barW, int clockW, int rightRestW, int gap, int minW) {
+        int avail = (barW - rightRestW) - (barW + clockW) / 2 - gap;
+        return avail < minW ? 0 : avail;
+    }
+
+    // Home is designed at 1920×1080. The term box is 32+640; a 16 px gutter stays between it and the widgets.
+    // Racing off: weather and a stats column (ai credits over pc) of 584 px each, a 24 px gutter apart (1192).
+    // Racing on: the row uses the space from the term gutter to the right margin (1200) and the racing column
+    // takes 382 px: wide enough for a full Grand Prix name plus the session time at 19 px Caskaydia Mono
+    // ("United States" + 10 px + "sun 22 nov 05:00", 18 px pad each side). Weather keeps 440 (a city, the
+    // condition and the five-day forecast) and the stats column gets the 338 px that remain.
+    static final int HOME_W = 1920, HOME_MARGIN = 32, TERM_W = 640, WIDGET_GAP = 16, STATS_GAP = 24, WIDGETS_W = 1192, RACE_COL_W = 382;
+
+    /** Right-aligned widgets row width in design px; never reaches into the term box. */
+    static int widgetsWidth(boolean racing) {
+        if (!racing) return WIDGETS_W;
+        return HOME_W - HOME_MARGIN - (HOME_MARGIN + TERM_W + WIDGET_GAP);
+    }
+
+    /** Racing column: a fixed slot, only when the widget is on. */
+    static int raceColWidth() { return RACE_COL_W; }
+
+    static int weatherColWidth(boolean racing) {
+        return racing ? 440 : 584;
+    }
+
+    /** The stats column (ai credits, pc) and the deploys panel under it. */
+    static int sideColWidth(boolean racing) {
+        return widgetsWidth(racing) - (racing ? RACE_COL_W + WIDGET_GAP : 0) - weatherColWidth(racing) - STATS_GAP;
+    }
+
+    /** Left edge of the right-aligned widgets row; must stay to the right of the term box. */
+    static int widgetsLeft(boolean racing) {
+        return HOME_W - HOME_MARGIN - widgetsWidth(racing);
+    }
+
+    private void applyRaceColumns(boolean racing) {
+        float raceW = raceColWidth(), side = sideColWidth(racing), weather = weatherColWidth(racing);
+        LinearLayout.LayoutParams rl = (LinearLayout.LayoutParams) raceBox.getLayoutParams();
+        rl.width = px(raceW);
+        rl.weight = 0f;
+        raceBox.setLayoutParams(rl);
+        LinearLayout.LayoutParams wxl = (LinearLayout.LayoutParams) wxBox.getLayoutParams();
+        wxl.width = px(weather);
+        wxl.weight = 0f;
+        wxBox.setLayoutParams(wxl);
+        LinearLayout.LayoutParams sl = (LinearLayout.LayoutParams) statsColumn.getLayoutParams();
+        sl.width = px(side);
+        statsColumn.setLayoutParams(sl);
+        for (View col : new View[]{pcBox, aiBoxRef, depBox}) {
+            LinearLayout.LayoutParams cl = (LinearLayout.LayoutParams) col.getLayoutParams();
+            cl.width = px(side);
+            cl.weight = 0f;
+            col.setLayoutParams(cl);
+        }
+    }
+
     // ---- tiles: home row (TV + apps, App size per row, 16:9) and the 7-per-row grid of workspace 3 ----
     // Focus uses scale plus a wide accent border and a contrasting outer outline.
 
@@ -2061,7 +2597,7 @@ final class HomeV29 extends FrameLayout {
             p.setColor(ink(t.fgBright));
             c.drawRect(b.left + o / 2, b.top + o / 2, b.right - o / 2, b.bottom - o / 2, p);
             p.setStrokeWidth(a);
-            p.setColor(t.accent);
+            p.setColor(accent());
             c.drawRect(b.left + o + a / 2, b.top + o + a / 2, b.right - o - a / 2, b.bottom - o - a / 2, p);
         }
 

@@ -342,6 +342,30 @@ public final class LinkServer {
         } catch (IOException | RuntimeException e) {
             // peer went away, timeout, or malformed input
         } finally {
+            lingerClose(sock);
+        }
+    }
+
+    /**
+     * Close after an answer without losing it. A refused request (403 not_lan, 413 too_large, ...) is answered
+     * before its body is read; closing a socket with unread input makes the kernel send RST instead of FIN, and the
+     * RST can destroy the answer before the client reads it ("Connection reset" instead of the 403/413). So: FIN
+     * first, then read and drop what the client still sends (at most 256 KiB, at most 1 s), then close.
+     */
+    static void lingerClose(Socket sock) {
+        try {
+            if (!sock.isClosed() && sock.isConnected() && !sock.isOutputShutdown()) {
+                sock.shutdownOutput();
+                sock.setSoTimeout(250);
+                InputStream in = sock.getInputStream();
+                byte[] buf = new byte[8192];
+                long until = System.currentTimeMillis() + 1000;
+                int total = 0, n;
+                while (total < 256 * 1024 && System.currentTimeMillis() < until && (n = in.read(buf)) >= 0) total += n;
+            }
+        } catch (IOException | RuntimeException ignored) {
+            // timeout or the peer already closed: nothing left to save
+        } finally {
             closeQuietly(sock);
         }
     }
@@ -671,6 +695,7 @@ public final class LinkServer {
             else if (themeUpload(req)) retry = limited(req.peer + "|themes", 1, 5_000);
             else if (castUpload(req)) retry = limited(req.peer + "|castfile", 2, 5_000);
             else if ("PUT".equals(req.method) && "/v1/agents".equals(path)) retry = limited(req.peer + "|agents", 2, 5_000);
+            else if ("PUT".equals(req.method) && "/v1/office".equals(path)) retry = limited(req.peer + "|office", 2, 5_000);
             else if ("PUT".equals(req.method) && "/v1/stats".equals(path)) retry = limited(req.peer + "|stats", 1, 1_500);
             else if ("PUT".equals(req.method) && "/v1/screensaver".equals(path)) retry = limited(req.peer + "|saver", 1, 5_000);
         }
@@ -973,6 +998,8 @@ public final class LinkServer {
         if ("PUT".equals(m) && "/v1/ai/providers".equals(p)) return providers(body, a.pcId);
         if ("PUT".equals(m) && "/v1/agents".equals(p)) return agentsPut(body, a.pcId);
         if ("GET".equals(m) && "/v1/agents".equals(p)) return new Response(200, agents());
+        if ("PUT".equals(m) && "/v1/office".equals(p)) return officePut(body);
+        if ("GET".equals(m) && "/v1/office".equals(p)) return new Response(200, com.omarchytv.home.Office.get(officeDir()));
         if ("GET".equals(m) && "/v1/cinemarchy/library".equals(p)) return new Response(200, cinemarchyLibrary());
         if ("PUT".equals(m) && "/v1/cinemarchy/library".equals(p)) return cinemarchyLibraryPut(body, a.pcId);
         if ("GET".equals(m) && "/v1/cinemarchy/snippets".equals(p)) return new Response(200, cinemarchySnippets());
@@ -1016,6 +1043,16 @@ public final class LinkServer {
         }
     }
 
+    /** The launcher's own versionName, as reported by the Host status; "0" only if the host has none. */
+    private String launcherVersion() {
+        try {
+            String v = host.status().optString("launcherVersion", "");
+            return v.matches("\\d{1,3}(\\.\\d{1,3}){1,2}(-[A-Za-z0-9.]+)?") ? v : "0";
+        } catch (Exception e) {
+            return "0";
+        }
+    }
+
     /**
      * Native Model Context Protocol (MCP) JSON-RPC 2.0 endpoint (/mcp and /v1/mcp) for Grok Bot, Claude,
      * Hermes, and desktop MCP clients. Authenticated via OTV1 HMAC or Authorization: Bearer <paired-token>.
@@ -1031,7 +1068,7 @@ public final class LinkServer {
                 JSONObject r = new JSONObject()
                         .put("protocolVersion", "2024-11-05")
                         .put("capabilities", new JSONObject().put("tools", new JSONObject()))
-                        .put("serverInfo", new JSONObject().put("name", "omarchytv-mcp").put("version", "2.12.0"));
+                        .put("serverInfo", new JSONObject().put("name", "omarchytv-mcp").put("version", launcherVersion()));
                 return new Response(200, res.put("result", r));
             }
             case "notifications/initialized":
@@ -1150,6 +1187,7 @@ public final class LinkServer {
             caps0.put("plugins");
             caps0.put("enc-a256gcm");
             caps0.put("mcp");   // v-next: PUT/DELETE /v1/banners/<package> (PNG), GET /v1/banners   // v2.10.1: PUT/DELETE /v1/themes/<name>, GET /v1/themes, POST /v1/themes/<name>/select   // §6 Agents: PUT/GET /v1/agents, agent_activity, agent_ask
+            caps0.put("office");   // v2.20 GrokBot Office: PUT/GET /v1/office, office_hire / office_hire_result
             List<String> kinds = host.castKinds();
             if (kinds != null && !kinds.isEmpty()) {
                 JSONArray caps = st.optJSONArray("capabilities");
@@ -1357,6 +1395,37 @@ public final class LinkServer {
     }
 
     /** Printable text only (no control characters), trimmed, at most {@code max} code points. */
+    /** A PC media folder listing, bounded: relative paths (never absolute, never ".."), names, kinds, sizes. */
+    static JSONObject mediaList(JSONObject d) throws JSONException {
+        JSONObject out = new JSONObject().put("path", safeRel(d.optString("path", "")));
+        if (d.has("parent") && !d.isNull("parent")) out.put("parent", safeRel(d.optString("parent", "")));
+        if (d.has("error")) out.put("error", printable(d.optString("error", ""), 24));
+        JSONArray dirs = new JSONArray(), files = new JSONArray();
+        JSONArray in = d.optJSONArray("dirs");
+        for (int i = 0; in != null && i < in.length() && i < 2000; i++) {
+            JSONObject o = in.optJSONObject(i);
+            if (o == null) continue;
+            String p = safeRel(o.optString("path", ""));
+            if (!p.isEmpty()) dirs.put(new JSONObject().put("name", printable(o.optString("name", ""), 200)).put("path", p));
+        }
+        in = d.optJSONArray("files");
+        for (int i = 0; in != null && i < in.length() && i < 2000; i++) {
+            JSONObject o = in.optJSONObject(i);
+            if (o == null) continue;
+            String p = safeRel(o.optString("path", "")), k = o.optString("kind", "");
+            if (p.isEmpty() || !(k.equals("video") || k.equals("audio") || k.equals("image"))) continue;
+            files.put(new JSONObject().put("name", printable(o.optString("name", ""), 200)).put("path", p).put("kind", k)
+                    .put("size", Math.max(0, o.optLong("size", 0))));
+        }
+        return out.put("dirs", dirs).put("files", files);
+    }
+
+    static String safeRel(String p) {
+        if (p == null || p.length() > 1024 || p.startsWith("/") || p.contains("\\")) return "";
+        for (String part : p.split("/")) if (part.equals("..") || part.equals(".")) return "";
+        return printable(p, 1024);
+    }
+
     static String printable(String s, int max) {
         if (s == null) return "";
         StringBuilder b = new StringBuilder();
@@ -1583,6 +1652,9 @@ public final class LinkServer {
             if (p.has("kind")) o.put("kind", printable(p.optString("kind"), 16));
             if (p.has("model")) o.put("model", p.isNull("model") ? JSONObject.NULL : printable(p.optString("model"), 64));
             if (p.has("streaming")) o.put("streaming", p.optBoolean("streaming"));
+            // 2.20 GrokBot Office: which AI it is (claude, chatgpt, grok, ...), only a tag on the TV
+            String fam = p.optString("provider", "").toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9._-]", "");
+            if (!fam.isEmpty()) o.put("provider", fam.length() > 16 ? fam.substring(0, 16) : fam);
             clean.put(o);
         }
         String def = a.isNull("default") ? "" : a.optString("default", "");
@@ -1612,6 +1684,20 @@ public final class LinkServer {
         }
         agentsNow = j;
         return j;
+    }
+
+    // v2.20 GrokBot Office: the bots (and weekly usage) the PC pushes with omarchy-tv office push. Stored next to
+    // the launcher's other files; the Office screen reads it while open. Nothing is invented: what is not sent is not shown.
+    private File officeDir() {
+        return host.wallpaperDir().getParentFile();
+    }
+
+    private Response officePut(JSONObject body) throws Exception {
+        JSONArray in = body.optJSONArray("bots");
+        if (in == null || in.length() > 24) return new Response(400, err("bad_office", "bots: a list of at most 24"));
+        if (body.toString().length() > 64 * 1024) return new Response(413, err("too_large", "at most 64 KiB"));
+        JSONObject clean = com.omarchytv.home.Office.put(officeDir(), body);
+        return new Response(200, ok().put("bots", clean.optJSONArray("bots").length()));
     }
 
     private Response agentsPut(JSONObject body, String pcId) throws Exception {
@@ -1748,20 +1834,20 @@ public final class LinkServer {
             out[0] = pl != null ? new JSONObject(pl.toString()) : new JSONObject();
         });
         JSONObject r = out[0];
-        if (!r.has("spacexTv")) r.put("spacexTv", true);
+        if (!r.has("spacexTv")) r.put("spacexTv", false);   // 2.20: off by default
         if (!r.has("grokbot")) r.put("grokbot", true);
         if (!r.has("plugins")) {
             r.put("plugins", new JSONArray()
                     .put(new JSONObject().put("id", "com.sighmon.spacex-tv").put("name", "SpaceX TV")
-                            .put("author", "sighmon").put("license", "MIT").put("enabled", r.optBoolean("spacexTv", true)))
-                    .put(new JSONObject().put("id", "io.github.tcballard.grokbot-desktop").put("name", "Grok Bot Desktop Companion")
+                            .put("author", "sighmon").put("license", "MIT").put("enabled", r.optBoolean("spacexTv", false)))
+                    .put(new JSONObject().put("id", "io.github.tcballard.grokbot-desktop").put("name", "Agent Desktop")
                             .put("author", "tcballard").put("license", "MIT").put("enabled", r.optBoolean("grokbot", true))));
         }
         return r;
     }
 
     private Response pluginsPut(JSONObject body, String pcId) throws Exception {
-        final boolean sx = body.optBoolean("spacexTv", true);
+        final boolean sx = body.optBoolean("spacexTv", false);
         final boolean gb = body.optBoolean("grokbot", true);
         JSONArray in = body.optJSONArray("plugins");
         final JSONArray cleanArr = new JSONArray();
@@ -1809,7 +1895,7 @@ public final class LinkServer {
         return new JSONObject().put("ok", true).put("message", msg[0]).put("bot", bot[0]);
     }
 
-    /** Shapes/colours @tcballard's Grok Bot Desktop Companion uses (names only; the TV draws its own primitives). */
+    /** Shapes/colours @tcballard's Agent Desktop uses (names only; the TV draws its own primitives). */
     static final java.util.Set<String> GROKBOT_SHAPES = new java.util.HashSet<>(java.util.Arrays.asList(
             "circle", "square", "triangle", "diamond", "pentagon", "hexagon", "octagon", "heptagon", "pill", "cloud",
             "heart", "crescent", "star", "spark", "burst", "flower", "clover", "sprout", "drop", "bean", "peanut",
@@ -1835,7 +1921,7 @@ public final class LinkServer {
                 .put("color", GROKBOT_COLORS.contains(color) ? color : "orange")
                 .put("fill", fill.matches("#[0-9A-Fa-f]{6}") ? fill.toUpperCase(java.util.Locale.ROOT) : JSONObject.NULL)
                 .put("mode", "relay".equals(mode) || "ipc".equals(mode) ? mode : "offline")
-                // v0.1.0 = the companion release the bridge targets; the branch may report none.
+                // v0.2.0 = the companion release the bridge targets; the branch may report none.
                 .put("version", version.matches("v?\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}") ? version.replaceFirst("^v", "") : JSONObject.NULL)
                 .put("compat", GROKBOT_COMPAT.contains(compat) ? compat : "branch");
     }
@@ -1852,7 +1938,7 @@ public final class LinkServer {
         if (msg.isEmpty() && !hasBot) return new Response(400, err("bad_request", "message or bot required"));
         host.editConfig(j -> {
             JSONObject pl = j.optJSONObject("plugins");
-            if (pl == null) j.put("plugins", pl = new JSONObject().put("spacexTv", true).put("grokbot", true));
+            if (pl == null) j.put("plugins", pl = new JSONObject().put("spacexTv", false).put("grokbot", true));
             if (!msg.isEmpty()) pl.put("grokbotMessage", msg).put("grokbotAt", now());
             if (hasBot) {
                 if (bot == null) pl.remove("grokbotBot");
@@ -2158,7 +2244,11 @@ public final class LinkServer {
                 if (!fin) continue;
                 String text = new String(msg.toByteArray(), StandardCharsets.UTF_8);
                 msg.reset();
-                if (!incoming(c, text)) break;
+                try {
+                    if (!incoming(c, text)) break;
+                } catch (JSONException e) {
+                    continue;   // a frame we cannot rebuild is dropped, the link stays up
+                }
             }
         } catch (SocketException e) {
             // closed
@@ -2169,7 +2259,7 @@ public final class LinkServer {
     }
 
     /** One sealed frame from the PC; false = protocol violation (bad MAC or seq), close. */
-    private boolean incoming(WsClient c, String text) throws IOException {
+    private boolean incoming(WsClient c, String text) throws IOException, JSONException {
         String payload = LinkCrypto.open(c.ks, text);
         if (payload == null) return false;
         JSONObject m;
@@ -2203,6 +2293,36 @@ public final class LinkServer {
             case "grokbot_error":
                 host.onEvent(c.pcId, type, grokbotReply(type, data));
                 break;
+            case "office_hire_result":   // v2.20 GrokBot Office: what the PC really did with a hire
+                host.onEvent(c.pcId, type, officeHireResult(data));
+                break;
+            case "pc_wol": {   // v2.14 the PC's MAC for Wake-on-LAN ("TV and PC power together")
+                String mac = data.optString("mac", "").toLowerCase(Locale.ROOT);
+                String bc = data.optString("broadcast", "");
+                if (!mac.matches("^([0-9a-f]{2}:){5}[0-9a-f]{2}$")) break;
+                JSONObject wol = new JSONObject().put("mac", mac);
+                if (bc.matches("^\\d{1,3}(\\.\\d{1,3}){3}$")) wol.put("broadcast", bc);
+                host.onEvent(c.pcId, "pc_wol", wol);
+                break;
+            }
+            case "omastorm_state":   // v2.14 the PC could not open Omastorm (not_installed, disabled, ...)
+                host.onEvent(c.pcId, type, new JSONObject().put("state", printable(data.optString("state", ""), 24)));
+                break;
+            case "media_list":   // Cinemarchy: a folder of the PC's media (names and relative paths only)
+                host.onEvent(c.pcId, type, mediaList(data));
+                break;
+            case "living":   // v2.14 Living screensaver feed (GitHub, PC notifications, X), memory only
+                host.onEvent(c.pcId, type, living(data));
+                break;
+            case "agent":   // v2.15 an AI agent on the PC needs you: {name, text}, shown only when the TV opted in
+                if (data.optString("name", "").length() <= 200 && data.optString("text", "").length() <= 500) host.onEvent(c.pcId, type, data);
+                break;
+            case "pulse":   // v2.15 the PC's Omarchy Pulse state for the Pulse screensaver, memory only
+                if (data.has("v") && data.toString().length() <= 256 * 1024) host.onEvent(c.pcId, type, data);
+                break;
+            case "liftoff":   // v2.14 a build/update on the PC: rocket countdown on Home (LiftoffView)
+                host.onEvent(c.pcId, type, liftoff(data));
+                break;
             default:
                 break;   // ping/pong (keep-alive only; the TV uses WebSocket ping frames) and unknown types
         }
@@ -2217,6 +2337,61 @@ public final class LinkServer {
                 c.close();
             }
         }
+    }
+
+    /** v2.14 "living" from the PC, re-built with known fields only, every string clipped and printable. */
+    static JSONObject living(JSONObject d) throws JSONException {
+        JSONObject o = new JSONObject();
+        String[][] spec = {
+                {"github", "6", "repo:60", "what:24", "who:39", "text:90", "at:24"},
+                {"notes", "12", "app:32", "title:80", "body:200", "at:24"},
+                {"x", "8", "kind:10", "user:80", "text:240", "at:24"},
+        };
+        for (String[] s : spec) {
+            JSONArray in = d.optJSONArray(s[0]), out = new JSONArray();
+            int max = Integer.parseInt(s[1]);
+            for (int i = 0; in != null && i < in.length() && out.length() < max; i++) {
+                JSONObject x = in.optJSONObject(i);
+                if (x == null) continue;
+                JSONObject y = new JSONObject();
+                for (int k = 2; k < s.length; k++) {
+                    String[] f = s[k].split(":");
+                    y.put(f[0], printable(x.optString(f[0], ""), Integer.parseInt(f[1])));
+                }
+                out.put(y);
+            }
+            o.put(s[0], out);
+        }
+        String xm = d.optString("xMode", "off");
+        o.put("xMode", "notify".equals(xm) || "api".equals(xm) ? xm : "off");
+        if (d.has("xError")) o.put("xError", printable(d.optString("xError", ""), 100));
+        // v2.14 Omastorm radar snapshot: a JPEG data URL only, at most ~300 KB of image.
+        JSONObject rad = d.optJSONObject("radar");
+        String img = rad != null ? rad.optString("img", "") : "";
+        if (img.startsWith("data:image/jpeg;base64,") && img.length() <= 420_000
+                && img.substring(23).matches("[A-Za-z0-9+/=]+")) {
+            o.put("radar", new JSONObject().put("img", img).put("at", printable(rad.optString("at", ""), 24)));
+        }
+        return o;
+    }
+
+    static final Set<String> LIFTOFF_KINDS = new HashSet<>(Arrays.asList("build", "update"));
+    static final Set<String> LIFTOFF_STATES = new HashSet<>(Arrays.asList("running", "ok", "failed"));
+
+    /** v2.14 "liftoff" from the PC, re-built with only known fields, clipped; state "invalid" if unusable. */
+    static JSONObject liftoff(JSONObject d) throws JSONException {
+        String kind = d.optString("kind", ""), st = d.optString("state", "");
+        if (!LIFTOFF_KINDS.contains(kind) || !LIFTOFF_STATES.contains(st)) return new JSONObject().put("state", "invalid");
+        JSONObject o = new JSONObject().put("id", printable(d.optString("id", ""), 32)).put("kind", kind).put("state", st)
+                .put("name", printable(d.optString("name", ""), 40)).put("stage", printable(d.optString("stage", ""), 40))
+                .put("elapsedS", Math.max(0, Math.min(864_000, d.optInt("elapsedS", 0))));
+        int exp = d.optInt("expectedS", 0);
+        if (exp > 0 && exp < 86_400) o.put("expectedS", exp);
+        if (d.has("pct") && !d.isNull("pct")) o.put("pct", Math.max(0, Math.min(100, d.optInt("pct"))));
+        if (d.has("code") && !d.isNull("code")) o.put("code", d.optInt("code"));
+        JSONArray tail = d.optJSONArray("tail"), t = new JSONArray();
+        if (tail != null) for (int i = Math.max(0, tail.length() - 6); i < tail.length(); i++) t.put(printable(tail.optString(i, ""), 120));
+        return o.put("tail", t);
     }
 
     /** Sends an event to every connected PC. */
@@ -2274,6 +2449,50 @@ public final class LinkServer {
     }
 
     /**
+     * v2.20 GrokBot Office: hire a Claude / ChatGPT bot on the PC. Sends {"id","name","provider","role","description"}
+     * as "office_hire" to the PC that announced the providers (else the first connected one). Returns null when sent,
+     * else "bad_request", "busy" (1 per 3 s) or "not_connected". The PC answers office_hire_result.
+     */
+    public synchronized String officeHire(JSONObject data) {
+        String prov = data.optString("provider", "");
+        if (data.optString("id", "").isEmpty() || !("claude".equals(prov) || "chatgpt".equals(prov))) return "bad_request";
+        long t = System.currentTimeMillis();
+        if (limits && t - lastAskMs < 3000) return "busy";
+        WsClient target = null;
+        for (WsClient c : clients) {
+            if (c.closed) continue;
+            if (target == null || c.pcId.equals(providersFrom)) target = c;
+        }
+        if (target == null) return "not_connected";
+        try {
+            target.send("office_hire", new JSONObject().put("id", printable(data.optString("id"), 64)).put("provider", prov)
+                    .put("name", printable(data.optString("name", ""), 24)).put("role", printable(data.optString("role", ""), 40))
+                    .put("description", printable(data.optString("description", ""), 600)));
+            lastAskMs = t;
+            return null;
+        } catch (JSONException e) {
+            return "bad_request";
+        } catch (IOException e) {
+            target.close();
+            return "not_connected";
+        }
+    }
+
+    /** office_hire_result reduced to plain fields: {id, ok, bot?{name, provider, role, color, assistant}, error?, message?}. */
+    private static JSONObject officeHireResult(JSONObject d) throws JSONException {
+        JSONObject o = new JSONObject().put("id", printable(d.optString("id", ""), 64)).put("ok", d.optBoolean("ok"));
+        JSONObject b = d.optJSONObject("bot");
+        if (d.optBoolean("ok") && b != null) {
+            JSONObject c = new JSONObject();
+            for (String k : new String[]{"id", "name", "provider", "role", "color", "assistant", "status"}) if (b.has(k)) c.put(k, printable(b.optString(k), 64));
+            o.put("bot", c);
+        }
+        if (d.has("error")) o.put("error", printable(d.optString("error"), 32));
+        if (d.has("message")) o.put("message", printable(d.optString("message"), 200));
+        return o;
+    }
+
+    /**
      * The user flipped an AI-pane source switch: send {"id","enabled":[ids]} as "ai_sources" to the PC that
      * pushed the aiSources list (else any connected one). Returns null, "busy" or "not_connected".
      * The PC answers ai_sources_ok / ai_sources_error (delivered to Host.onEvent), then re-pushes PUT /v1/ai.
@@ -2305,6 +2524,16 @@ public final class LinkServer {
 
     public void shortcut(String command) throws JSONException {
         broadcast("shortcut", new JSONObject().put("command", command));
+    }
+
+    /** Reverse theme sync: the TV picked a theme; the PC switches to it if installed there (omarchy-link theme_set). */
+    /** v2.14 what the Living screensaver wants from the PC ({notes, github, x}). */
+    public void livingPrefs(JSONObject prefs) {
+        broadcast("living_prefs", prefs);
+    }
+
+    public void themeSet(String name) throws JSONException {
+        broadcast("theme_set", new JSONObject().put("name", name));
     }
 
     /** Forget PC on the TV: send "unpaired", close its sockets, delete it. */

@@ -16,6 +16,8 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Lets "Uninstall" in the tile menu open the system uninstall dialog (the system always asks). -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <!-- v2.14 "Update OmarchyTV": hands the official release APK to Android's installer (the system always asks). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Omarchy Link status: which app is in front. Granted by the user (Usage access) or over adb:
          adb shell appops set com.omarchytv.home GET_USAGE_STATS allow   (nothing breaks without it) -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
@@ -82,11 +84,16 @@
     </queries>
 
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- Omarchy Link runs as a foreground service (type connectedDevice; Android 14 needs the type permission
-         plus one of CHANGE_WIFI_MULTICAST_STATE / CHANGE_WIFI_STATE / CHANGE_NETWORK_STATE). All normal permissions. -->
+    <!-- v2.20 Radiomarchy: the music keeps playing outside the app (a media-playback foreground service), and the
+         Wi-Fi stays awake while it streams. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Omarchy Link keep-alive, only while a PC is paired: a connectedDevice foreground service. Android 14 needs the
+         type permission plus one of CHANGE_NETWORK_STATE / CHANGE_WIFI_STATE / CHANGE_WIFI_MULTICAST_STATE (all normal;
+         CHANGE_NETWORK_STATE, unlike the Wi-Fi ones, implies no Wi-Fi hardware, so Ethernet-only TVs are unaffected). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
-    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 
     <application
         android:name=".OmarchyApp"
@@ -133,6 +140,15 @@
             </intent-filter>
         </activity>
 
+        <!-- v2.14 OmarchyTV Arcade: the games in a WebView (assets/games), in the launcher's process so it can reach the PC link. -->
+        <activity
+            android:name=".ArcadeActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.TvHome" />
+
         <!-- Web apps: own process, so the launcher never holds a WebView; the process exits with the web app. -->
         <activity
             android:name=".WebAppActivity"
@@ -143,8 +159,12 @@
             android:screenOrientation="landscape"
             android:theme="@style/Theme.TvHome" />
 
-        <!-- After a reboot: start Omarchy Link, and if the stock launcher took the home screen back, ask once
-             (never changes it). After an update of this app: start Omarchy Link again. -->
+        <!-- v2.14 Updater: PackageInstaller result (shows Android's confirm, reports failures). -->
+        <receiver
+            android:name=".Updater$Done"
+            android:exported="false" />
+        <!-- After a reboot: start Omarchy Link (with a paired PC), and if the stock launcher took the home screen back,
+             ask once (never changes it). After an update of this app: start Omarchy Link again. -->
         <receiver
             android:name=".HomeCheck"
             android:exported="true">
@@ -167,6 +187,63 @@
             android:excludeFromRecents="true"
             android:screenOrientation="landscape"
             android:theme="@style/Theme.TvHome" />
+
+        <!-- v2.20 Radiomarchy: Omarchy Radio (songs + Omarchy Stories) over music-driven fractals. An app of its own
+             in the TV's app row (own task, label and banner); exported so the TV launcher can open it. -->
+        <activity
+            android:name=".RadioActivity"
+            android:exported="true"
+            android:label="Radiomarchy"
+            android:banner="@drawable/radiomarchy_banner"
+            android:icon="@mipmap/ic_launcher"
+            android:taskAffinity="com.omarchytv.home.radiomarchy"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation|uiMode"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.TvHome">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".RadioService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+        <receiver
+            android:name=".RadioService$Buttons"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- v2.20 GrokBot Office (optional, off by default): the user's Grok Bot bots at their desks. Not exported; the
+             app-row tile is the alias below, enabled only when the user turns the Office on in Settings. -->
+        <activity
+            android:name=".OfficeActivity"
+            android:exported="false"
+            android:label="GrokBot Office"
+            android:taskAffinity="com.omarchytv.home.office"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation|uiMode"
+            android:screenOrientation="landscape"
+            android:windowSoftInputMode="adjustPan|stateHidden"
+            android:theme="@style/Theme.TvHome" />
+        <activity-alias
+            android:name=".OfficeLauncher"
+            android:targetActivity=".OfficeActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:label="GrokBot Office"
+            android:banner="@drawable/office_banner"
+            android:icon="@mipmap/ic_launcher">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <!-- "> ask" voice assistant pane (answers come from the paired Omarchy Linux PC). -->
         <activity
@@ -267,8 +344,9 @@
             </intent-filter>
         </service>
 
-        <!-- Omarchy Link (TV side, TCP 47800 on the LAN only). Foreground service (low-importance
-             notification, no wakelock) started at boot and from the launcher; the server lives in this process. -->
+        <!-- Omarchy Link (TV side, TCP 47800 on the LAN only). While a PC is paired: a foreground service (quiet
+             low-importance notification, no wakelock) started at boot, after an update and from the launcher, so the
+             server stays reachable and keeps network access in doze. The server itself lives in this process. -->
         <service
             android:name=".OmarchyLink$KeepAlive"
             android:foregroundServiceType="connectedDevice"

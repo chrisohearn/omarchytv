@@ -31,9 +31,12 @@ if [ -d "$ANDROID_MAIN" ]; then
   cp -f "$ANDROID_MAIN/res/font/caskaydia_mono_bold.ttf" "$APP/fonts/"
   cp -f "$ANDROID_MAIN/assets/omarchy_themes.json" "$APP/omarchy_themes.json"
   cp -rf "$ANDROID_MAIN/assets/wallpapers/"* "$APP/wallpapers/"
+  mkdir -p "$APP/fractals"
+  cp -rf "$ANDROID_MAIN/assets/fractals/"* "$APP/fractals/"
   cp -rf "$ANDROID_MAIN/assets/licenses/"* "$APP/licenses/"
   cp -f "$ANDROID_MAIN/assets/saver/tte-bundle.js" "$APP/saver/tte-bundle.js"
   cp -f "$ANDROID_MAIN/assets/saver/screensaver-tv.txt" "$APP/saver/screensaver-tv.txt"
+  cp -f "$ANDROID_MAIN/assets/racing_2026.json" "$APP/racing_2026.json"
   cp -rf "$ANDROID_MAIN/assets/saver/tte-js" "$APP/saver/"
 fi
 
@@ -46,8 +49,17 @@ for f in "$APP"/wallpapers/*/*.webp; do
   fi
 done
 
+# Rooted-only backend is optional and brings no runtime dependency to the ordinary launcher.
+if [ "${OMARCHY_IPHONE_REMOTE:-0}" = 1 ]; then
+  npm ci --prefix "$SCRIPT_DIR/iphone-remote" --omit=dev --ignore-scripts
+  node "$SCRIPT_DIR/iphone-remote/build.js"
+else
+  rm -rf "$APP/rooted/iphone-remote"
+fi
 OUT_DIR="${1:-$SCRIPT_DIR}"
 mkdir -p "$OUT_DIR"
 ares-package "$APP" -o "$OUT_DIR"
-mv -f "$OUT_DIR/com.omarchytv.home_${VERSION}_all.ipk" "$OUT_DIR/omarchytv-webos-${VERSION}-testing.ipk"
-sha256sum "$OUT_DIR/omarchytv-webos-${VERSION}-testing.ipk"
+SUFFIX=testing
+[ "${OMARCHY_IPHONE_REMOTE:-0}" = 1 ] && SUFFIX=iphone-remote-testing
+mv -f "$OUT_DIR/com.omarchytv.home_${VERSION}_all.ipk" "$OUT_DIR/omarchytv-webos-${VERSION}-${SUFFIX}.ipk"
+sha256sum "$OUT_DIR/omarchytv-webos-${VERSION}-${SUFFIX}.ipk"

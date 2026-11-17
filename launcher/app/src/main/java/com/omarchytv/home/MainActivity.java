@@ -120,6 +120,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                 home.refresh();
                 LauncherConfig c = LauncherConfig.get(MainActivity.this);
                 Weather.refreshAuto(MainActivity.this, c, home::refresh);
+                if (c.wRacing || c.barRacing) Racing.refreshIfStale(MainActivity.this, c.racingSeries, home::refresh);
                 RemotePanes.refreshIfStale(MainActivity.this, c.remotePanesUrl, c.remotePanesRefreshSec, home::refresh);
             }
             handler.postDelayed(this, untilNextMinute());
@@ -150,6 +151,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         Watchdog.install(this);
         setContentView(R.layout.activity_main);
         Theme.apply(getWindow().getDecorView());
+        BootScreenView.onCreate(this, findViewById(R.id.root));   // v2.14 boot screen (once per boot by default)
+        current = new java.lang.ref.WeakReference<>(this);
+        CrtOverlay.attach(this, findViewById(R.id.root), LauncherConfig.get(this).pluginRetroCrt);   // v2.14 Retro CRT plugin
         // Lights hub only while OmarchyTV is on screen; the snapshot ("Restore previous") is queued before the paint.
         com.omarchytv.home.lights.LightsPresence.install(this, new com.omarchytv.home.lights.LightsPresence.Painter() {
             @Override
@@ -302,6 +306,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
     private HomeV29 home;
     private Walker walker;
     private int workspace = 1;
+
+    /** Palette from the Radiomarchy fractals wallpaper: Home accents follow it (WCAG-ish contrast). */
+    void applyFractalAccent(int accent, int accent2) {
+        if (home != null) home.applyFractalAccent(accent, accent2);
+    }
+
+    void clearFractalAccent() {
+        if (home != null) home.clearFractalAccent();
+    }
 
     private void setupHomeV29() {
         home = new HomeV29(this, new HomeV29.Host() {
@@ -615,6 +628,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             case "cinemarchy":
                 open(new Intent(this, CinemarchyActivity.class));
                 break;
+            case "radio":   // v2.20: Radiomarchy, the top-bar icon and the now-playing tag
+                open(new Intent(this, RadioActivity.class));
+                break;
+            case "office":   // v2.20: GrokBot Office (only when turned on)
+                if (OfficeActivity.enabled(this)) OfficeActivity.open(this);
+                break;
+            case "arcade":   // v2.14: top-bar icon next to Cinemarchy
+                ArcadeActivity.open(this);
+                break;
             case "grok-bot":
                 showMenu("grok-bot", null);
                 break;
@@ -722,9 +744,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
 
     private void cityDialog() {
         android.widget.EditText q = new android.widget.EditText(this);
-        q.setSingleLine(true);
-        new android.app.AlertDialog.Builder(this).setTitle(R.string.v29_wx_search).setView(q)
-                .setPositiveButton(android.R.string.ok, (d, w) -> {
+        android.app.AlertDialog d = new android.app.AlertDialog.Builder(this).setTitle(R.string.v29_wx_search).setView(q)
+                .setPositiveButton(android.R.string.ok, (dlg, w) -> {
                     String name = q.getText().toString();
                     String lang = getResources().getConfiguration().getLocales().get(0).getLanguage();
                     new Thread(() -> {
@@ -732,7 +753,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                         runOnUiThread(() -> cityResults(res));
                     }, "omarchytv-geocode").start();
                 })
-                .setNegativeButton(android.R.string.cancel, null).show();
+                .setNegativeButton(android.R.string.cancel, null).create();
+        DialogInput.wire(q, d);   // #86: DONE on the TV keyboard, or ▼ from the field, presses OK
+        d.show();
     }
 
     private void cityResults(List<org.json.JSONObject> res) {
@@ -778,7 +801,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                 items.add(new Walker.Item(w.name, tApp, () -> WebAppActivity.open(this, fw)));
             }
         }
+        items.add(new Walker.Item("X (x.com)", tApp, () -> WebAppActivity.open(this, LauncherConfig.X_WEBAPP)));
+        if (cfg.pluginOmastorm) items.add(new Walker.Item("⛈ Omastorm (radar)", tApp, this::openOmastorm));
+        items.add(new Walker.Item("🕹 OmarchyTV Arcade (V-HOLD · RICE WARS · FORK BOMB)", tApp, () -> ArcadeActivity.open(this)));
         items.add(new Walker.Item("🎬 Cinemarchy (Media, Streaming, Live TV & Snippets)", str(R.string.cinemarchy_hub), () -> open(new Intent(this, CinemarchyActivity.class))));
+        items.add(new Walker.Item("♫ Radiomarchy (Omarchy Radio · songs, Omarchy Stories, fractals)", str(R.string.radio_hub), () -> open(new Intent(this, RadioActivity.class))));
+        items.add(new Walker.Item("✦ Radiomarchy demo (fractals + music)", str(R.string.radio_hub), () -> RadioActivity.open(this, true, false)));
+        if (OfficeActivity.enabled(this)) items.add(new Walker.Item("󰚩 GrokBot Office (your Grok Bot bots at their desks)", str(R.string.grok_bot_hub), () -> OfficeActivity.open(this)));
         items.add(new Walker.Item("Aquarium Screensaver (Omarchy Cyber-TUI Ocean)", str(R.string.menu_screensaver), () -> {
             LauncherConfig.update(this, j -> screensaver(j).put("art", "aquarium").put("mode", "aquarium"));
             open(new Intent(this, ScreensaverPreviewActivity.class));
@@ -849,6 +878,34 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                 if (next != null) applyLive(null, null, AskActivity.themeEdit(next));
                 break;
             }
+            case "cinemarchy":   // issue #94: a remote key or an external tool opens Cinemarchy (it stays unexported)
+                if (walker != null) walker.close();
+                if (menu != null && menu.isShowing()) menu.dismiss();
+                open(new Intent(this, CinemarchyActivity.class));
+                break;
+            case "radio":   // v2.20: a key (or an external tool) opens Radiomarchy
+                if (walker != null) walker.close();
+                if (menu != null && menu.isShowing()) menu.dismiss();
+                open(new Intent(this, RadioActivity.class));
+                break;
+            case "arcade":
+                if (walker != null) walker.close();
+                if (menu != null && menu.isShowing()) menu.dismiss();
+                ArcadeActivity.open(this);
+                break;
+            case "office":   // v2.20: GrokBot Office, when the user turned it on
+                if (walker != null) walker.close();
+                if (menu != null && menu.isShowing()) menu.dismiss();
+                if (OfficeActivity.enabled(this)) OfficeActivity.open(this);
+                break;
+            case "grokbot":   // v2.15 (#91): a key remapper can bind any key to the Grok Bot companion (Philips: Blue)
+                if (walker != null) walker.close();
+                if (menu != null && menu.isShowing()) menu.dismiss();
+                openCompanionChat(false);
+                break;
+            case "terminal":   // v2.15: the Grok terminal, listening
+                openTerminal();
+                break;
             default:
                 break;
         }
@@ -889,6 +946,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                 break;
             case "stats":
                 if (resumed && home != null) home.refresh();
+                break;
+            case "omastorm_state": {   // v2.14 the PC could not open Omastorm
+                String st = data.optString("state");
+                Toast.makeText(this, "not_installed".equals(st) ? str(R.string.omastorm_not_installed)
+                        : getString(R.string.omastorm_failed, st), Toast.LENGTH_LONG).show();
+                break;
+            }
+            case "liftoff":   // v2.14 a build/update on the PC: rocket countdown, alarm if it fails
+                LiftoffView.onState(this, findViewById(R.id.root), data, resumed);
                 break;
             case "banners":   // a custom app banner was pushed or removed (banners/<package>.png)
                 if (resumed && adapter != null) {
@@ -954,6 +1020,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         if (builtWith != null && cfg.restSig.equals(builtWith.restSig)) {
             boolean scChanged = !sameShortcuts(builtWith, cfg);
             builtWith = cfg;
+            if (home != null) home.data(cfg);   // #80: the ai credits / pc widgets of Home redraw now, not on the next Home press
             buildPanes();   // PC panes may come, go or change size
             if (scChanged) applyShortcuts();
             refreshMenu("ai");
@@ -973,11 +1040,24 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
     @Override
     protected void onResume() {
         super.onResume();
+        BootScreenView.onResume(this, findViewById(R.id.root));
+        // migrations first, then the wallpaper layers: a first launch must not attach OmaFire/fractals to the old default
+        LauncherConfig.update(this, j -> { LauncherConfig.pulseDefault(j); LauncherConfig.fractalWallpaperDefault(j); });
+        OmaFireLayer.onResume(this, findViewById(R.id.wallpaper));   // v2.14 OmaFire animated wallpaper   // "wake" mode: replay after the screen came on
+        FractalLayer.onResume(this, findViewById(R.id.wallpaper));  // v2.20 Radiomarchy fractals wallpaper
+        RadioPlayer rp = RadioPlayer.peek();
+        if (rp != null) rp.claimSession();   // v2.20: after YouTube took audio focus, media keys on Home still resume
         bindCompanion();
         OmarchyLink.sweepCasts(this);   // 24 h cleanup of cast uploads (no-op when nothing was ever cast)
         LauncherConfig cfg = LauncherConfig.get(this);
+        if (cfg.pulseNotice) {
+            Toast.makeText(this, R.string.pulse_notice, Toast.LENGTH_LONG).show();
+            LauncherConfig.update(this, j -> j.remove("pulseNotice"));
+            cfg = LauncherConfig.get(this);
+        }
         if (builtWith != null && reopenPage == null && (cfg.randomTheme || cfg.randomWallpaper)) {
-            LauncherConfig.update(this, j -> LauncherConfig.applyRandomRotation(j, new java.util.Random()));
+            final String[] allThemes = Theme.names(this);
+            LauncherConfig.update(this, j -> LauncherConfig.applyRandomRotation(j, new java.util.Random(), allThemes));
             cfg = LauncherConfig.get(this);
         }
         if (builtWith != null && cfg != builtWith && !cfg.restSig.equals(builtWith.restSig)) {
@@ -1027,6 +1107,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         if (home != null) {
             home.bind(cfg, adapter);
             Weather.refreshAuto(this, cfg, home::refresh);
+            if (cfg.wRacing || cfg.barRacing) Racing.refreshIfStale(this, cfg.racingSeries, home::refresh);
             RemotePanes.refreshIfStale(this, cfg.remotePanesUrl, cfg.remotePanesRefreshSec, home::refresh);
         }
         // Stock launcher back as home after a reboot? Ask once per boot, gently; never change it ourselves.
@@ -1063,9 +1144,24 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
     }
 
     @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        // The screensaver lives in :saver; on some TVs Home can keep running GL behind it if we only wait for onPause.
+        if (!hasFocus) {
+            OmaFireLayer.onPause();
+            FractalLayer.onPause();
+        } else if (resumed) {
+            OmaFireLayer.onResume(this, findViewById(R.id.wallpaper));
+            FractalLayer.onResume(this, findViewById(R.id.wallpaper));
+        }
+    }
+
+    @Override
     protected void onPause() {
         super.onPause();
         if (companion != null) { companion.setArmed(false); companion.stop(); }
+        OmaFireLayer.onPause();
+        FractalLayer.onPause();
         resumed = false;
         OmarchyLink.setHomeVisible(false);
         handler.removeCallbacks(idle);
@@ -1084,6 +1180,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        BootScreenView.onDestroy(this);
+        LiftoffView.onDestroy();
+        OmaFireLayer.onPause();
+        FractalLayer.drop();
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
         if (cm != null) cm.unregisterNetworkCallback(networkCallback);
         OmarchyLink.removeListener(linkListener);
@@ -1625,6 +1725,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             case "menu": return str(R.string.keys_action_menu);
             case "screensaver": return str(R.string.keys_action_screensaver);
             case "next-theme": return str(R.string.keys_action_next_theme);
+            case "cinemarchy": return "🎬 Cinemarchy";   // product names: the same in every language
+            case "radio": return "♫ Radiomarchy";
+            case "arcade": return "🕹 OmarchyTV Arcade";
+            case "grokbot": return "● Grok Bot";
+            case "office": return "󰚩 GrokBot Office";
+            case "terminal": return "▌ Grok terminal";
             default: return id;
         }
     }
@@ -1757,6 +1863,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             case "arrange": return arrangePage();
             case "workspaces": return workspacesPage();
             case "screensaver": return screensaverPage();
+            case "pulse-panels": return pulsePanelsPage();
             case "hidden": return hiddenPage();
             case "link": return linkPage();
             case "ai": return aiPage();
@@ -1874,6 +1981,30 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         });
         p.add("Open Grok Bot Companion (TV)", "[ ◉ ◉ ] ›", r -> {
             handler.post(this::showGrokbotCompanionDialog);
+            return false;
+        });
+        // v2.14 Retro CRT: off -> light -> strong (curved tube on Android 13+).
+        String lCrt = str(R.string.plugin_retro_crt);
+        String[] crtModes = {"off", "light", "strong"};
+        p.add(lCrt, crtLabel(cfg.pluginRetroCrt), r -> {
+            String n = next(crtModes, cfg.pluginRetroCrt);
+            applyLive("plugins", lCrt, j -> plugins(j).put("retroCrt", n));
+            return true;
+        });
+        // v2.14 Omastorm (Wes Grimes, MIT): the real radar window from the Omarchy PC, driven by the remote.
+        String lStorm = "Omastorm (@wesleygrimes, MIT)";
+        p.add(lStorm, cfg.pluginOmastorm ? on : off, r -> {
+            boolean n = !cfg.pluginOmastorm;
+            applyLive("plugins", lStorm, j -> plugins(j).put("omastorm", n));
+            return true;
+        });
+        if (cfg.pluginOmastorm) p.add(str(R.string.omastorm_open), "⛈ ›", r -> {
+            handler.post(this::openOmastorm);
+            return false;
+        });
+        // v2.14 OmarchyTV Arcade: V-HOLD, RICE WARS, FORK BOMB (assets/games, the same as on LG/Samsung).
+        p.add("🕹 OmarchyTV Arcade", "V-HOLD · RICE WARS · FORK BOMB ›", r -> {
+            handler.post(() -> ArcadeActivity.open(this));
             return false;
         });
         return p;
@@ -2048,14 +2179,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         final boolean bridge = cfg.grokbotBotName != null && !cfg.grokbotBotName.isEmpty() && OmarchyLink.hasPc();
         String who = bridge ? cfg.grokbotBotName : "Grok Bot";
         e.setHint(bridge ? "Ask " + who + " on the PC companion…" : "Ask Grok Bot…");
-        String state = bridge ? "Mirroring " + who + " from @tcballard's Grok Bot Desktop Companion on the PC ("
+        String state = bridge ? "Mirroring " + who + " from @tcballard's Agent Desktop on the PC ("
                 + ("relay".equals(cfg.grokbotBotMode) ? "replies come back here" : "replies stay in the desktop bubble") + ")."
                 : "Not linked to the desktop companion: questions open the Ask screen. Install omarchy-link and "
                 + "@tcballard's companion on the PC to mirror the bot here.";
         String msg = (cfg.grokbotMessage != null && !cfg.grokbotMessage.isEmpty() ? "Last: " + cfg.grokbotMessage + "\n\n" : "")
-                + state + "\n\nBuilt for @tcballard's Grok Bot Desktop Companion v0.1.0 (MIT)"
+                + state + "\n\nBuilt for @tcballard's Agent Desktop v0.2.0 (MIT)"
                 + (bridge && cfg.grokbotBotVersion != null && !cfg.grokbotBotVersion.isEmpty()
-                ? " · companion v" + cfg.grokbotBotVersion : "") + " · built for v0.1.0.";
+                ? " · companion v" + cfg.grokbotBotVersion : "") + " · built for v0.2.0.";
         new android.app.AlertDialog.Builder(this)
                 .setTitle("Grok Bot Companion (TV)")
                 .setMessage(msg)
@@ -2142,6 +2273,30 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                 }).setNegativeButton(android.R.string.cancel, null).show();
     }
 
+    /** v2.15 (#70): the ntfy server the routine publishes to and the TV reads (empty = ntfy.sh), and its read token. */
+    private void replyServerDialog(boolean token) {
+        android.content.SharedPreferences sp = GrokbotDirectActivity.prefs(this);
+        android.widget.EditText e = new android.widget.EditText(this);
+        e.setSingleLine(true);
+        if (token) {
+            e.setHint("tk_…");
+            e.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        } else {
+            e.setText(sp.getString("server", ""));
+            e.setHint("https://ntfy.example.com/");
+            e.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        }
+        new android.app.AlertDialog.Builder(this).setTitle(token ? "Reply server token (optional)" : "Reply server (empty = ntfy.sh)").setView(e)
+                .setPositiveButton(android.R.string.ok, (d, w) -> {
+                    String v = e.getText().toString().trim();
+                    String k = token ? "ntfy_token" : "server";
+                    if (v.isEmpty()) sp.edit().remove(k).apply();
+                    else if (token ? GrokbotDirect.validToken(v) : GrokbotDirect.validServer(v)) sp.edit().putString(k, v).apply();
+                    else Toast.makeText(this, token ? "An ntfy access token starts with tk_" : "The reply server must start with https://", Toast.LENGTH_SHORT).show();
+                    showMenu("grok-bot", null);
+                }).setNegativeButton(android.R.string.cancel, null).show();
+    }
+
     /** xAI API key for the optional Grok voice: typed on the TV, kept in its own prefs, never shown back. */
     private void xaiKeyDialog() {
         android.content.SharedPreferences sp = GrokbotDirectActivity.prefs(this);
@@ -2172,17 +2327,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
     private void promptDialog(boolean host) {
         LauncherConfig cfg = LauncherConfig.get(this);
         android.widget.EditText e = new android.widget.EditText(this);
-        e.setSingleLine(true);
         e.setText(host ? cfg.promptHost : cfg.promptUser);
         e.setSelection(e.getText().length());
         e.setHint(host ? "omarchytv" : "user");
         e.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         e.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(16)});
         String row = str(host ? R.string.set_prompt_host : R.string.set_prompt_name);
-        new android.app.AlertDialog.Builder(this)
+        android.app.AlertDialog d = new android.app.AlertDialog.Builder(this)
                 .setTitle(row)
                 .setView(e)
-                .setPositiveButton(android.R.string.ok, (d, w) -> {
+                .setPositiveButton(android.R.string.ok, (dlg, w) -> {
                     String v = LauncherConfig.promptPart(e.getText().toString(), host ? "omarchytv" : "user");
                     applyLive("launcher", row, j -> {
                         org.json.JSONObject p = j.optJSONObject("prompt");
@@ -2191,19 +2345,60 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                     });
                 })
                 .setNegativeButton(android.R.string.cancel, null)
-                .show();
+                .create();
+        DialogInput.wire(e, d);   // #86: DONE on the TV keyboard, or ▼ from the field, presses OK
+        d.show();
+    }
+
+    private static org.json.JSONObject living(org.json.JSONObject j) throws org.json.JSONException {
+        org.json.JSONObject o = j.optJSONObject("living");
+        if (o == null) j.put("living", o = new org.json.JSONObject());
+        return o;
+    }
+
+    private String livingXLabel(String m) {
+        if ("api".equals(m)) return str(R.string.living_x_api);
+        if ("notify".equals(m)) return str(R.string.living_x_notify);
+        return str(R.string.off);
+    }
+
+    /** v2.14 Omastorm: ask the PC to show its Omastorm window here (it arrives as a cast titled "Omastorm"). */
+    private void openOmastorm() {
+        if (!OmarchyLink.hasPc()) {
+            Toast.makeText(this, R.string.omastorm_need_pc, Toast.LENGTH_LONG).show();
+            return;
+        }
+        OmarchyLink.omastorm("start", null);
+        Toast.makeText(this, R.string.omastorm_opening, Toast.LENGTH_LONG).show();
+    }
+
+    private static org.json.JSONObject plugins(org.json.JSONObject j) throws org.json.JSONException {
+        org.json.JSONObject o = j.optJSONObject("plugins");
+        if (o == null) j.put("plugins", o = new org.json.JSONObject());
+        return o;
+    }
+
+    private String crtLabel(String m) {
+        if ("light".equals(m)) return str(R.string.crt_light);
+        if ("strong".equals(m)) return str(R.string.crt_strong);
+        return str(R.string.off);
+    }
+
+    private String bootLabel(String mode) {
+        if ("wake".equals(mode)) return str(R.string.boot_mode_wake);
+        if ("off".equals(mode)) return str(R.string.off);
+        return str(R.string.boot_mode_boot);
     }
 
     private AsciiMenu.Page launcherPage() {
         LauncherConfig cfg = LauncherConfig.get(this);
-        String[] langs = {"auto", "en", "it", "de"};
         String[] sizes = {"small", "medium", "large"};
         String[] logos = {"omarchy-tv", "omarchy", "cinemarchy", "original"};
         AsciiMenu.Page p = new AsciiMenu.Page(str(R.string.menu_launcher));
         String lLang = str(R.string.set_language), lSize = str(R.string.set_ui_size), lLogo = str(R.string.set_logo),
                 lAcc = str(R.string.set_accent);
         p.add(lLang, langLabel(cfg.language), r -> {
-            String n = next(langs, cfg.language);
+            String n = LauncherConfig.nextLanguage(cfg.language);
             applyLive("launcher", lLang, j -> j.put("language", n));
             return true;
         });
@@ -2218,17 +2413,63 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             return true;
         });
         // Theme = an Omarchy stock theme (bundled palettes); the PC's Omarchy Link sync overrides it with the live one.
+        // #92: picking one here is a manual choice, so it locks the random rotation (as the themes page does).
         String[] themes = Theme.names(this);
         p.add(lAcc, Theme.cur().name, r -> {
             String n = next(themes, Theme.cur().name);
-            applyLive("launcher", lAcc, j -> {
-                org.json.JSONObject t = new org.json.JSONObject();
-                t.put("name", n);
-                t.put("source", "tv");
-                j.put("theme", t);
-                j.put("wallpaper_bg", 0);
-            });
+            applyLive("launcher", lAcc, j -> LauncherConfig.pickTheme(j, n));
+            themeToPc(n);
             return true;
+        });
+        // v2.14: boot screen, theme sync and power with the PC, update: switched here.
+        String lBoot = str(R.string.set_boot_screen);
+        String[] bootModes = {"boot", "wake", "off"};
+        p.add(lBoot, bootLabel(cfg.bootScreen), r -> {
+            String n = next(bootModes, cfg.bootScreen);
+            applyLive("launcher", lBoot, j -> j.put("bootScreen", n));
+            return true;
+        });
+        String lBootSnd = "  " + str(R.string.boot_sound);
+        p.add(lBootSnd, str(cfg.bootSound ? R.string.on : R.string.off), r -> {
+            boolean n = !cfg.bootSound;
+            applyLive("launcher", lBootSnd, j -> j.put("bootSound", n));
+            return true;
+        });
+        String lToPc = str(R.string.theme_to_pc);
+        p.add(lToPc, str(cfg.themeToPc ? R.string.on : R.string.off), r -> {
+            boolean n = !cfg.themeToPc;
+            applyLive("launcher", lToPc, j -> j.put("themeToPc", n));
+            return true;
+        });
+        String lQr = str(R.string.share_qr);
+        String[] qrModes = {"live", "boot", "off"};
+        p.add(lQr, "boot".equals(cfg.shareQr) ? "boot + Live" : "off".equals(cfg.shareQr) ? str(R.string.off) : "Live", r -> {
+            String n = next(qrModes, cfg.shareQr);
+            applyLive("launcher", lQr, j -> j.put("shareQr", n));
+            return true;
+        });
+        String lArcSnd = "🕹 " + str(R.string.arcade_sound);
+        p.add(lArcSnd, str(cfg.arcadeSound ? R.string.on : R.string.off), r -> {
+            boolean n = !cfg.arcadeSound;
+            applyLive("launcher", lArcSnd, j -> j.put("arcadeSound", n));
+            return true;
+        });
+        String lArcPc = "🕹 " + str(R.string.arcade_pc_theme);
+        p.add(lArcPc, str(cfg.arcadePcTheme ? R.string.on : R.string.off), r -> {
+            boolean n = !cfg.arcadePcTheme;
+            applyLive("launcher", lArcPc, j -> j.put("arcadePcTheme", n));
+            return true;
+        });
+        String lPower = str(R.string.set_pc_power);
+        p.add(lPower, str(cfg.pcPower ? R.string.on : R.string.off), r -> {
+            boolean n = !cfg.pcPower;
+            applyLive("launcher", lPower, j -> j.put("pcPower", n));
+            if (n && cfg.pcMac.isEmpty()) Toast.makeText(this, R.string.pc_power_no_mac, Toast.LENGTH_LONG).show();
+            return true;
+        });
+        p.add(str(R.string.set_update), Updater.currentVersion(this), r -> {
+            handler.post(this::checkUpdate);
+            return false;
         });
         // v2.10: the old per-pane toggles (clock, ai, sysinfo, ...) drove the removed pane layer and did nothing on the
         // home; every home panel is switched in Widgets (workspace 5).
@@ -2955,6 +3196,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             applyLive("themes", lRandTheme, j -> j.put("random_theme", n));
             return true;
         });
+        String lScope = str(R.string.set_random_scope);   // v2.15 (#71): the intros (default) or every theme
+        boolean all = "all".equals(cfg.randomScope);
+        p.add(lScope, str(all ? R.string.set_random_all : R.string.set_random_intros), r -> {
+            applyLive("themes", lScope, j -> j.put("randomScope", all ? "intros" : "all"));
+            return true;
+        });
         p.add(lRandWp, str(cfg.randomWallpaper ? R.string.on : R.string.off), r -> {
             boolean n = !cfg.randomWallpaper;
             applyLive("themes", lRandWp, j -> j.put("random_wallpaper", n));
@@ -2963,6 +3210,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         p.add(lSync, str(cfg.syncPcWallpaper ? R.string.on : R.string.off), r -> {
             boolean n = !cfg.syncPcWallpaper;
             applyLive("themes", lSync, j -> j.put("syncPcWallpaper", n));
+            return true;
+        });
+        String lToPc = str(R.string.theme_to_pc);
+        p.add(lToPc, str(cfg.themeToPc ? R.string.on : R.string.off), r -> {
+            boolean n = !cfg.themeToPc;
+            applyLive("themes", lToPc, j -> j.put("themeToPc", n));
             return true;
         });
         for (String n : Theme.names(this)) {
@@ -2974,6 +3227,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                         j.put("wallpaper", "omarchy");
                     }
                 });
+                themeToPc(n);
                 return true;
             });
         }
@@ -2991,11 +3245,99 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                         j.put("random_theme", false);
                         j.put("random_wallpaper", false);
                     });
+                    themeToPc(n);
                     return true;
                 });
             }
         }
         return p;
+    }
+
+    /**
+     * v2.14 reverse theme sync: with "Also change the PC theme" on and a PC connected, the theme just picked here
+     * is sent to the PC, which switches with omarchy-theme-set when it has that theme (else only the TV changes).
+     * The PC's normal theme push then comes back with the same theme, so nothing loops.
+     */
+    // ---- v2.14 "Update OmarchyTV": official release APK, checked, Android's installer confirms ----
+
+    private static java.lang.ref.WeakReference<MainActivity> current;
+    private String updateId = "", updateName = "";
+    private long updateStart;
+    private boolean updating;
+
+    private void checkUpdate() {
+        if (updating) return;
+        Toast.makeText(this, R.string.update_checking, Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            Updater.Asset a;
+            try {
+                a = Updater.check(this);
+            } catch (Exception e) {
+                String m = e.getMessage() != null ? e.getMessage() : e.toString();
+                handler.post(() -> Toast.makeText(this, getString(R.string.update_failed, m), Toast.LENGTH_LONG).show());
+                return;
+            }
+            String cur = Updater.currentVersion(this);
+            handler.post(() -> {
+                if (isFinishing()) return;
+                if (a == null) {
+                    Toast.makeText(this, getString(R.string.update_none, cur), Toast.LENGTH_LONG).show();
+                    return;
+                }
+                new android.app.AlertDialog.Builder(this)
+                        .setTitle(getString(R.string.update_available_title, a.version))
+                        .setMessage(getString(R.string.update_available_msg, cur))
+                        .setPositiveButton(R.string.update_install, (d, w) -> startUpdate(a))
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show();
+            });
+        }, "update-check").start();
+    }
+
+    private void startUpdate(Updater.Asset a) {
+        if (updating || !Updater.mayInstall(this)) return;
+        updating = true;
+        updateId = "tv-" + System.currentTimeMillis();
+        updateName = "OmarchyTV " + a.version;
+        updateStart = android.os.SystemClock.elapsedRealtime();
+        localLiftoff("running", "download", 0, null);
+        new Thread(() -> {
+            try {
+                java.io.File apk = Updater.download(this, a, pct -> handler.post(() -> localLiftoff("running", "download", pct < 0 ? -1 : pct * 8 / 10, null)));
+                handler.post(() -> localLiftoff("running", "install", 90, null));
+                Updater.install(this, apk);   // Android asks to confirm; on success the launcher restarts as the new version
+            } catch (Exception e) {
+                updateFinished(false, e.getMessage() != null ? e.getMessage() : e.toString());
+            }
+        }, "update").start();
+    }
+
+    /** The install failed or was cancelled (Updater.Done, or the download/checks). */
+    static void updateFinished(boolean ok, String message) {
+        MainActivity a = current != null ? current.get() : null;
+        if (a == null) return;
+        a.handler.post(() -> {
+            if (!a.updating) return;
+            a.updating = false;
+            a.localLiftoff(ok ? "ok" : "failed", ok ? "" : "install", ok ? 100 : -1, message);
+        });
+    }
+
+    private void localLiftoff(String st, String stage, int pct, String message) {
+        try {
+            org.json.JSONObject o = new org.json.JSONObject().put("id", updateId).put("kind", "update").put("name", updateName)
+                    .put("state", st).put("stage", stage).put("expectedS", 90)
+                    .put("elapsedS", (android.os.SystemClock.elapsedRealtime() - updateStart) / 1000);
+            if (pct >= 0) o.put("pct", pct);
+            org.json.JSONArray t = new org.json.JSONArray();
+            if (message != null) t.put(message.length() > 120 ? message.substring(0, 120) : message);
+            LiftoffView.onState(this, findViewById(R.id.root), o.put("tail", t), resumed);
+        } catch (org.json.JSONException ignored) {
+        }
+    }
+
+    private void themeToPc(String name) {
+        if (LauncherConfig.get(this).themeToPc && OmarchyLink.hasPc()) OmarchyLink.themeSet(name);
     }
 
     /** Same folder as OmarchyLink.wallpaperDir(): the link's files (custom themes live in themes/). */
@@ -3031,6 +3373,31 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                 return true;
             });
         }
+        for (String fm : new String[]{"campfire", "embers"}) {   // v2.14 OmaFire (Wes Grimes, MIT), animated
+            String label = "OmaFire · " + str("campfire".equals(fm) ? R.string.omafire_campfire : R.string.omafire_embers);
+            p.add(label, ("omafire:" + fm).equals(cfg.wallpaper) ? str(R.string.mark_current) : "", r -> {
+                applyLive("wallpaper", label, j -> LauncherConfig.lockWallpaper(j, "omafire:" + fm, 0));
+                return true;
+            });
+        }
+        String lFrac = str(R.string.wp_radiomarchy_fractals);   // v2.20, off by default
+        p.add(lFrac, FractalLayer.is(cfg.wallpaper) ? str(R.string.mark_current) : "", r -> {
+            applyLive("wallpaper", lFrac, j -> LauncherConfig.lockWallpaper(j, FractalLayer.ID, 0));
+            return true;
+        });
+        String lAnim = str(R.string.radio_animated);
+        String anim = RadioPlayer.animatedMode(this);
+        int animLab = "on".equals(anim) ? R.string.radio_animated_on : "off".equals(anim) ? R.string.radio_animated_off : R.string.radio_animated_auto;
+        p.add(lAnim, str(animLab), r -> {
+            RadioPlayer.setAnimatedMode(this, RadioPlayer.nextAnimatedMode(RadioPlayer.animatedMode(this)));
+            return true;
+        });
+        String lFireSnd = "  " + str(R.string.omafire_sound);
+        p.add(lFireSnd, str(cfg.omafireSound ? R.string.on : R.string.off), r -> {
+            boolean n = !cfg.omafireSound;
+            applyLive("wallpaper", lFireSnd, j -> j.put("omafireSound", n));
+            return true;
+        });
         p.add(str(R.string.wp_procedural), "procedural".equals(cfg.wallpaper) ? str(R.string.mark_current) : "", r -> {
             applyLive("wallpaper", str(R.string.wp_procedural), j -> LauncherConfig.lockWallpaper(j, "procedural", 0));
             return true;
@@ -3056,21 +3423,88 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         return String.format(java.util.Locale.getDefault(), "%.1f min", sec / 60f);
     }
 
+    private static final int[] PULSE_PANEL_LABELS = {
+            R.string.ss_pulse_panel_weather, R.string.ss_pulse_panel_air, R.string.ss_pulse_panel_system,
+            R.string.ss_pulse_panel_sky, R.string.ss_pulse_panel_space, R.string.ss_pulse_panel_launches,
+            R.string.ss_pulse_panel_planes, R.string.ss_pulse_panel_earthquakes, R.string.ss_pulse_panel_racing,
+            R.string.ss_pulse_panel_omarchy, R.string.ss_pulse_panel_pc
+    };
+
+    /** 2.15.1 Settings › Screensaver › Pulse panels: which side panels Pulse shows. */
+    private AsciiMenu.Page pulsePanelsPage() {
+        LauncherConfig cfg = LauncherConfig.get(this);
+        AsciiMenu.Page p = new AsciiMenu.Page(str(R.string.ss_pulse_panels));
+        for (int i = 0; i < LauncherConfig.PULSE_PANEL_IDS.length; i++) {
+            final String id = LauncherConfig.PULSE_PANEL_IDS[i];
+            final String label = str(PULSE_PANEL_LABELS[i]);
+            final boolean on = cfg.pulsePanel(id);
+            p.add(label, str(on ? R.string.on : R.string.off), r -> {
+                applyLive("pulse-panels", label, j -> LauncherConfig.putPulsePanel(screensaver(j), id, !on));
+                return true;
+            });
+        }
+        return p;
+    }
+
     private AsciiMenu.Page screensaverPage() {
         LauncherConfig cfg = LauncherConfig.get(this);
-        String[] logos = {"aquarium", "aquarium-classic", "omarchy-tv", "omarchy", "cinemarchy", "original"};
+        String[] logos = {"pulse", "radiomarchy", "aquarium", "aquarium-classic", "omarchy-tv", "omarchy", "cinemarchy", "original"};
         String[] sizes = {"small", "medium", "large"};
         String lLogo = str(R.string.set_logo), lSize = str(R.string.ss_size), lClock = str(R.string.ss_clock);
         AsciiMenu.Page p = new AsciiMenu.Page(str(R.string.menu_screensaver));
         p.add(str(R.string.ss_preview), null, r -> {
-            open(new Intent(this, ScreensaverPreviewActivity.class));
+            if ("radiomarchy".equals(LauncherConfig.get(this).screensaverArt)) RadioActivity.open(this, true, true);
+            else open(new Intent(this, ScreensaverPreviewActivity.class));
             return false;
         });
         p.add(lLogo, logoLabel(cfg.screensaverArt), r -> {
             String n = next(logos, cfg.screensaverArt);
-            applyLive("screensaver", lLogo, j -> screensaver(j).put("art", n).put("mode", n.startsWith("aquarium") ? "aquarium" : "logo"));
+            applyLive("screensaver", lLogo, j -> screensaver(j).put("art", n).put("mode", "pulse".equals(n) ? "pulse" : "radiomarchy".equals(n) ? "radiomarchy" : n.startsWith("aquarium") ? "aquarium" : "logo")
+                    .put("pcText", false));   // #84: a logo chosen here wins over a screensaver.txt pushed by the PC
             return true;
         });
+        if ("pulse".equals(cfg.screensaverArt)) {   // v2.15: Pulse's scene
+            String[] scenes = {"sphere", "skyline", "orbit", "calm", "hacker", "noir", "mars", "monolith"};
+            String lScene = str(R.string.ss_pulse_scene);
+            p.add(lScene, cfg.pulseScene, r -> {
+                String n = next(scenes, cfg.pulseScene);
+                applyLive("screensaver", lScene, j -> screensaver(j).put("pulseScene", n));
+                return true;
+            });
+            String[] gfx = {"auto", "low", "medium", "high"};   // 2.15.1: how rich Pulse draws on this TV
+            String lGfx = str(R.string.ss_pulse_graphics);
+            p.add(lGfx, cfg.pulseGraphics, r -> {
+                String n = next(gfx, cfg.pulseGraphics);
+                applyLive("screensaver", lGfx, j -> screensaver(j).put("pulseGraphics", n));
+                return true;
+            });
+            String lRace = str(R.string.ss_pulse_racing);   // 2.15.1: the race weekends as one of Pulse's side panels
+            p.add(lRace, str(cfg.pulseRacing ? R.string.on : R.string.off), r -> {
+                boolean n = !cfg.pulseRacing;
+                applyLive("screensaver", lRace, j -> LauncherConfig.putPulsePanel(screensaver(j), "racing", n));
+                return true;
+            });
+            String lPanels = str(R.string.ss_pulse_panels);
+            p.add(lPanels, "›", r -> {
+                push(pulsePanelsPage());
+                return false;
+            });
+        }
+        if (cfg.hasSsBefore) {   // v2.15: undo the one-time switch to Pulse
+            String lPrev = str(R.string.ss_restore_previous);
+            p.add(lPrev, "›", r -> {
+                applyLive("screensaver", lPrev, j -> LauncherConfig.restoreBeforePulse(j));
+                return true;
+            });
+        }
+        if (!cfg.screensaverText.isEmpty()) {   // #84: only when the PC really pushed a text
+            String lFromPc = str(R.string.ss_from_pc);
+            p.add(lFromPc, str(cfg.screensaverFromPc ? R.string.on : R.string.off), r -> {
+                boolean n = !cfg.screensaverFromPc;
+                applyLive("screensaver", lFromPc, j -> screensaver(j).put("pcText", n));
+                return true;
+            });
+        }
         p.add(lSize, sizeLabel(cfg.screensaverSize), r -> {
             String n = next(sizes, cfg.screensaverSize);
             applyLive("screensaver", lSize, j -> screensaver(j).put("size", n));
@@ -3086,6 +3520,41 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         p.add(lClock, str(cfg.screensaverClock ? R.string.on : R.string.off), r -> {
             boolean n = !cfg.screensaverClock;
             applyLive("screensaver", lClock, j -> screensaver(j).put("clock", n));
+            return true;
+        });
+        // v2.14 Living screensaver: weather, GitHub, PC notifications and X in ASCII boxes.
+        String lLiving = str(R.string.living), lNotes = str(R.string.living_notes), lX = str(R.string.living_x);
+        p.add(lLiving, str(cfg.living ? R.string.on : R.string.off), r -> {
+            boolean n = !cfg.living;
+            applyLive("screensaver", lLiving, j -> living(j).put("enabled", n));
+            OmarchyLink.livingPrefs();
+            return true;
+        });
+        p.add("  " + lNotes, str(cfg.livingNotes ? R.string.on : R.string.off), r -> {
+            boolean n = !cfg.livingNotes;
+            applyLive("screensaver", "  " + lNotes, j -> living(j).put("notes", n));
+            if (n) Toast.makeText(this, R.string.living_notes_note, Toast.LENGTH_LONG).show();
+            OmarchyLink.livingPrefs();
+            return true;
+        });
+        String[] xModes = {"off", "notify", "api"};
+        p.add("  " + lX, livingXLabel(cfg.livingX), r -> {
+            String n = next(xModes, cfg.livingX);
+            applyLive("screensaver", "  " + lX, j -> living(j).put("x", n));
+            if ("api".equals(n)) Toast.makeText(this, R.string.living_x_api_note, Toast.LENGTH_LONG).show();
+            OmarchyLink.livingPrefs();
+            return true;
+        });
+        p.add("  Omastorm radar", str(cfg.livingRadar ? R.string.on : R.string.off), r -> {
+            boolean n = !cfg.livingRadar;
+            applyLive("screensaver", "  Omastorm radar", j -> living(j).put("radar", n));
+            OmarchyLink.livingPrefs();
+            return true;
+        });
+        p.add("  GitHub", str(cfg.livingGithub ? R.string.on : R.string.off), r -> {
+            boolean n = !cfg.livingGithub;
+            applyLive("screensaver", "  GitHub", j -> living(j).put("github", n));
+            OmarchyLink.livingPrefs();
             return true;
         });
         String lSound = "Aquarium ST3 Synth Audio";
@@ -3197,8 +3666,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                 lOff = str(R.string.ai_offline_row);
         // v2.10: each home widget can be switched off ("No" really hides it); the clock widget is gone (bar only).
         String[][] hw = {{"term", str(R.string.v210_w_term)}, {"weather", str(R.string.v210_w_weather)}, {"pc", str(R.string.v210_w_pc)},
-                {"ai", str(R.string.v210_w_ai)}, {"deploys", str(R.string.v210_w_deploys)}, {"t3", str(R.string.t3_widget)}};
-        boolean[] hwOn = {cfg.wTerm, cfg.wWeather, cfg.wPc, cfg.wAi, cfg.wDeploys, cfg.wT3};
+                {"ai", str(R.string.v210_w_ai)}, {"deploys", str(R.string.v210_w_deploys)}, {"racing", str(R.string.w_racing)},
+                {"t3", str(R.string.t3_widget)}};
+        boolean[] hwOn = {cfg.wTerm, cfg.wWeather, cfg.wPc, cfg.wAi, cfg.wDeploys, cfg.wRacing, cfg.wT3};
         for (int i = 0; i < hw.length; i++) {
             final String id = hw[i][0], label = hw[i][1];
             final boolean on = hwOn[i];
@@ -3211,6 +3681,37 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                 return true;
             });
         }
+        String lBarRace = str(R.string.w_racing_bar);
+        p.add(lBarRace, str(cfg.barRacing ? R.string.on : R.string.off), r -> {
+            boolean n = !cfg.barRacing;
+            applyLive("widgets", lBarRace, j -> {
+                org.json.JSONObject o = j.optJSONObject("racing");
+                if (o == null) j.put("racing", o = new org.json.JSONObject());
+                o.put("bar", n);
+            });
+            return true;
+        });
+        if (cfg.wRacing || cfg.barRacing) {   // v2.15: every series the racing widget can follow, one row each
+            for (String[] sr : Racing.SERIES) {
+                final String id = sr[0], label = "  🏁 " + sr[1];
+                final boolean on = cfg.racingSeries.contains(id);
+                p.add(label, str(on ? R.string.on : R.string.off), r -> {
+                    applyLive("widgets", label, j -> {
+                        org.json.JSONObject o = j.optJSONObject("racing");
+                        if (o == null) j.put("racing", o = new org.json.JSONObject());
+                        org.json.JSONArray a = new org.json.JSONArray();
+                        for (String[] x : Racing.SERIES) if (x[0].equals(id) ? !on : cfg.racingSeries.contains(x[0])) a.put(x[0]);
+                        o.put("series", a);
+                    });
+                    return true;
+                });
+            }
+        }
+        String rpHost = cfg.remotePanesUrl.isEmpty() ? null : android.net.Uri.parse(cfg.remotePanesUrl).getHost();
+        p.add(str(R.string.remote_panes), rpHost == null ? str(R.string.off) : rpHost, r -> {
+            handler.post(this::remotePanesDialog);
+            return false;
+        });
         p.add(lSc, cfg.shortcuts.isEmpty() ? "—" : str(cfg.shortcutsOn ? R.string.on : R.string.off), r -> {
             boolean n = !cfg.shortcutsOn;
             applyLive("widgets", lSc, j -> pcWidgets(j).put("shortcuts", n));
@@ -3358,10 +3859,33 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
     }
 
     private String langLabel(String l) {
-        if ("en".equals(l)) return str(R.string.lang_en);
-        if ("it".equals(l)) return str(R.string.lang_it);
-        if ("de".equals(l)) return str(R.string.lang_de);
-        return str(R.string.lang_auto);
+        if (l == null || "auto".equals(l)) return str(R.string.lang_auto);
+        switch (l) {   // each language's own name (values/strings.xml, not translated)
+            case "en": return str(R.string.lang_en);
+            case "it": return str(R.string.lang_it);
+            case "de": return str(R.string.lang_de);
+            case "fr": return str(R.string.lang_fr);
+            case "es": return str(R.string.lang_es);
+            case "pt-PT": return str(R.string.lang_pt_pt);
+            case "pt-BR": return str(R.string.lang_pt_br);
+            case "nl": return str(R.string.lang_nl);
+            case "pl": return str(R.string.lang_pl);
+            case "sv": return str(R.string.lang_sv);
+            case "da": return str(R.string.lang_da);
+            case "cs": return str(R.string.lang_cs);
+            case "ro": return str(R.string.lang_ro);
+            case "el": return str(R.string.lang_el);
+            case "ru": return str(R.string.lang_ru);
+            case "uk": return str(R.string.lang_uk);
+            case "tr": return str(R.string.lang_tr);
+            case "hu": return str(R.string.lang_hu);
+            case "fi": return str(R.string.lang_fi);
+            case "nb": return str(R.string.lang_nb);
+            case "ar": return str(R.string.lang_ar);
+            case "zh-CN": return str(R.string.lang_zh_cn);
+            case "ja": return str(R.string.lang_ja);
+            default: return l;
+        }
     }
 
     private String sizeLabel(String s) {
@@ -3384,6 +3908,23 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         p.add("Chat with the Grok Bot companion", "OK ›", r -> {
             handler.post(() -> openCompanionChat(false));
             return false;
+        });
+        // v2.20: GrokBot Office, off by default. On adds its tile to the TV's app row, the Walker and the "office" key.
+        p.add(str(R.string.office_setting), str(OfficeActivity.enabled(this) ? R.string.on : R.string.off), r -> {
+            boolean n = !OfficeActivity.enabled(this);
+            OfficeActivity.setEnabled(this, n);
+            r.setValue(str(n ? R.string.on : R.string.off));
+            return true;
+        });
+        p.add(str(R.string.office_open), "OK ›", r -> {
+            handler.post(() -> OfficeActivity.open(this));
+            return false;
+        });
+        String lAgentAlert = str(R.string.agent_alert_row);   // v2.15: off by default
+        p.add(lAgentAlert, str(gc.agentAlert ? R.string.on : R.string.off), r -> {
+            boolean n = !gc.agentAlert;
+            applyLive("grok-bot", lAgentAlert, j -> j.put("agentAlert", n));
+            return true;
         });
         String lOv = "Floating companion on the home screen";
         p.add(lOv, str(gc.companionOverlay ? R.string.on : R.string.off), r -> {
@@ -3458,6 +3999,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         });
         p.add("  Sender key", GrokbotDirect.mask(gd.getString("key", "")) + " ›", r -> {
             directDialog(true);
+            return false;
+        });
+        // v2.15 (#70): your own ntfy server for the replies, so ntfy.sh's shared daily quota can't stop them.
+        p.add("  Reply server", android.net.Uri.parse(GrokbotDirect.server(gd.getString("server", ""))).getHost() + " ›", r -> {
+            replyServerDialog(false);
+            return false;
+        });
+        p.add("  Reply server token", gd.getString("ntfy_token", "").isEmpty() ? "none ›" : GrokbotDirect.mask(gd.getString("ntfy_token", "")) + " ›", r -> {
+            replyServerDialog(true);
             return false;
         });
         p.add("  Leggi risposte ad alta voce", gd.getBoolean("speak", true) ? str(R.string.on) : str(R.string.off), r -> {
@@ -3539,9 +4089,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
     }
 
     private String logoLabel(String l) {
+        if ("pulse".equals(l)) return "Omarchy Pulse";
         if ("aquarium".equals(l)) return "Omarchy Aquarium (homage)";
         if ("aquarium-classic".equals(l)) return "Aquarium Classic";
         if ("cinemarchy".equals(l)) return "CINEMARCHY";
+        if ("radiomarchy".equals(l)) return str(R.string.radio_saver);
         return str("omarchy".equals(l) ? R.string.logo_omarchy : "original".equals(l) ? R.string.logo_original : R.string.logo_omarchy_tv);
     }
 
@@ -3692,10 +4244,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
     }
 
     private void startSaver() {
+        OmaFireLayer.onPause();
+        FractalLayer.onPause();
         saverShown = true;
         OmarchyLink.setScreensaver(true);
         try {
-            startActivity(new Intent(this, ScreensaverPreviewActivity.class));
+            // v2.20: the Radiomarchy saver is the music app's demo (in this process, so it sees the music playing)
+            if ("radiomarchy".equals(LauncherConfig.get(this).screensaverArt)) RadioActivity.open(this, true, true);
+            else startActivity(new Intent(this, ScreensaverPreviewActivity.class));
             overridePendingTransition(0, 0);
         } catch (Exception e) {
             hideSaver();
@@ -3735,8 +4291,19 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         }
     }
 
+    /** Play / pause / next on Home, even when another app has stolen the MediaSession (audio focus). */
+    private boolean radioMediaKey(KeyEvent e) {
+        RadioPlayer p = RadioPlayer.peek();
+        if (p == null || p.current() == null || !RadioPlayer.isMediaKey(e.getKeyCode())) return false;
+        if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) p.mediaKey(e.getKeyCode());
+        return true;
+    }
+
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
+        if (BootScreenView.consumeKey(e)) return true;   // boot screen: any key skips, none reaches Home
+        if (LiftoffView.consumeKey(e)) return true;      // liftoff countdown: any key hides it
+        if (radioMediaKey(e)) return true;
         if (swallowKeyUp == e.getKeyCode() && e.getAction() == KeyEvent.ACTION_UP) {
             swallowKeyUp = -1;
             return true;
@@ -3754,12 +4321,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             if (home.movingApp >= 0) return home.onKey(e);
             // Voice / search key: the Grok Bot companion by voice (v2.14 default), Walker, or the system assistant if chosen.
             if (kc == KeyEvent.KEYCODE_SEARCH || kc == KeyEvent.KEYCODE_VOICE_ASSIST || kc == KeyEvent.KEYCODE_ASSIST) {
-                if (voiceToCompanion()) {
-                    if (e.getAction() == KeyEvent.ACTION_UP) openCompanionChat(true);
-                    return true;
-                }
-                if ("launcher".equals(LauncherConfig.get(this).voiceKey)) {
-                    if (e.getAction() == KeyEvent.ACTION_UP) openWalker();
+                boolean companionKey = voiceToCompanion();
+                if (companionKey || "launcher".equals(LauncherConfig.get(this).voiceKey)) {
+                    // v2.15: held for 0.7 s it opens the Grok terminal, listening; a press does what it always did
+                    if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) micHeld = false;
+                    else if (e.getAction() == KeyEvent.ACTION_DOWN && !micHeld && e.getEventTime() - e.getDownTime() >= 700) {
+                        micHeld = true;
+                        openTerminal();
+                    } else if (e.getAction() == KeyEvent.ACTION_UP) {
+                        if (micHeld) micHeld = false;
+                        else if (companionKey) openCompanionChat(true);
+                        else openWalker();
+                    }
                     return true;
                 }
             }
@@ -4371,7 +4944,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
      * last channel watched. Falls back to any Live TV handler (TvContract.Channels content). Null when the
      * TV has neither (e.g. an emulator or a box without a tuner).
      */
-    /** Detects the installed Live TV package from config.xml (Sony, Sharp AQUOS, Philips TP Vision, Google TV, etc.). */
+    /** Detects the installed Live TV package from config.xml (Sony, Sharp AQUOS, Philips TP Vision, Google TV, Fire OS, etc.). */
     static String liveTvPackage(Context c) {
         PackageManager pm = c.getPackageManager();
         List<String> candidates = new ArrayList<>();
@@ -4381,8 +4954,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             pkg = pkg.trim();
             if (!pkg.isEmpty() && !candidates.contains(pkg)) candidates.add(pkg);
         }
-        // Prefer an installed candidate with a direct Leanback or standard launch intent.
-        for (String pkg : candidates) {
+        // Fire OS ships com.amazon.tv.livetv (the Live TV guide). It is always a candidate so a
+        // Fire Stick can open the guide instead of falling through to a dead generic intent.
+        for (String pkg : LiveTv.candidates(candidates)) {
+            // Prefer an installed candidate with a direct Leanback or standard launch intent.
             if (pm.getLeanbackLaunchIntentForPackage(pkg) != null || pm.getLaunchIntentForPackage(pkg) != null) {
                 return pkg;
             }
@@ -4405,7 +4980,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             pkg = pkg.trim();
             if (!pkg.isEmpty() && !pkgs.contains(pkg)) pkgs.add(pkg);
         }
-        for (String pkg : pkgs) {
+        for (String pkg : LiveTv.candidates(pkgs)) {
+            // Fire OS: the real launcher is permission-gated (SHOW_EPG / TUNE_CHANNEL), so it must
+            // be entered through the unguarded wrapper activity. See LiveTv.
+            String entry = LiveTv.entryActivity(pkg);
+            if (entry != null) {
+                Intent wrapped = new Intent(Intent.ACTION_MAIN).setComponent(ComponentName.unflattenFromString(entry));
+                if (wrapped.resolveActivity(pm) != null) return wrapped;
+            }
             Intent i = pm.getLeanbackLaunchIntentForPackage(pkg);
             if (i == null) i = pm.getLaunchIntentForPackage(pkg);
             if (i == null) {
@@ -4612,6 +5194,48 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                 .show();
     }
 
+    /**
+     * omarchytv.json "remotePanes".url from the TV, for a server with no PC to push panes (RemotePanes). Empty turns
+     * them off; a URL RemotePanes would refuse (http:// to a host name or a public address) is not saved.
+     */
+    private void remotePanesDialog() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        int pad = (int) (16 * density);
+        box.setPadding(pad, pad, pad, 0);
+        android.widget.EditText url = new android.widget.EditText(this);
+        String cur = LauncherConfig.get(this).remotePanesUrl;
+        url.setHint(R.string.remote_panes_hint);
+        url.setText(cur.isEmpty() ? "http://" : cur);
+        url.setSingleLine(true);
+        url.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        box.addView(url);
+        new android.app.AlertDialog.Builder(this)
+                .setTitle(R.string.remote_panes)
+                .setView(box)
+                .setPositiveButton(android.R.string.ok, (d, w) -> {
+                    String u = url.getText().toString().trim();
+                    if (u.equals("http://") || u.equals("https://")) u = "";
+                    if (!u.isEmpty() && !RemotePanes.urlAllowed(u)) {
+                        Toast.makeText(this, R.string.remote_panes_bad, Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    final String fu = u;
+                    RemotePanes.forget();
+                    applyLive("widgets", str(R.string.remote_panes), j -> {
+                        if (fu.isEmpty()) {
+                            j.remove("remotePanes");
+                            return;
+                        }
+                        org.json.JSONObject rp = j.optJSONObject("remotePanes");
+                        if (rp == null) j.put("remotePanes", rp = new org.json.JSONObject());
+                        rp.put("url", fu);
+                    });
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
     private AsciiMenu.Page assistantPage() {
         LauncherConfig cfg = LauncherConfig.get(this);
         AsciiMenu.Page p = new AsciiMenu.Page(str(R.string.ask_settings));
@@ -4660,6 +5284,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         return a;
     }
 
+    /** v2.15 the mic key was held long enough to open the Grok terminal: its release does nothing else. */
+    private boolean micHeld;
+
+    /** v2.15 the Grok terminal: OmarchyTV's Ask TUI, full screen, already listening. */
+    private void openTerminal() {
+        if (walker != null) walker.close();
+        if (menu != null && menu.isShowing()) menu.dismiss();
+        open(new Intent(this, AskActivity.class).putExtra("voice", true));
+    }
+
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         LauncherConfig cfg = LauncherConfig.get(this);
@@ -4696,8 +5330,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
     }
 
     static String speechLanguage(Context c) {
-        String lang = c.getResources().getConfiguration().getLocales().get(0).getLanguage();
-        return "it".equals(lang) ? "it-IT" : "de".equals(lang) ? "de-DE" : "en-US";
+        return LauncherConfig.speechTag(c.getResources().getConfiguration().getLocales().get(0));
     }
 
     private void typedSearch() {

@@ -474,6 +474,32 @@ public class LinkServerTest {
     }
 
     @Test
+    public void officeHireIsRefusedLocallyWithoutAPcOrForGrok() throws Exception {
+        assertEquals("bad_request", server.officeHire(new JSONObject().put("id", "h1").put("name", "X").put("provider", "grok")));
+        assertEquals("bad_request", server.officeHire(new JSONObject().put("name", "X").put("provider", "claude")));
+        assertEquals("not_connected", server.officeHire(new JSONObject().put("id", "h1").put("name", "X").put("provider", "claude")));
+        assertTrue(server.status().getJSONArray("capabilities").toString().contains("\"office\""));
+    }
+
+    @Test
+    public void officePushIsCleanedStoredAndReadBack() throws Exception {
+        pair("123456");
+        org.json.JSONArray many = new org.json.JSONArray();
+        for (int i = 0; i < 25; i++) many.put(new JSONObject().put("name", "b" + i));
+        assertEquals(400, signed("PUT", "/v1/office", new JSONObject().put("bots", many).toString()).status);
+        JSONObject body = new JSONObject().put("bots", new org.json.JSONArray()
+                .put(new JSONObject().put("name", "Trimmer").put("role", "trims tokens").put("status", "nonsense"))
+                .put(new JSONObject().put("role", "no name")))
+                .put("usage", new JSONObject().put("weekly_pct", 140));
+        assertEquals(200, signed("PUT", "/v1/office", body.toString()).status);
+        JSONObject got = new JSONObject(new String(signed("GET", "/v1/office", "").body, StandardCharsets.UTF_8));
+        assertEquals(1, got.getJSONArray("bots").length());   // the bot without a name is dropped
+        assertEquals("Trimmer", got.getJSONArray("bots").getJSONObject(0).getString("name"));
+        assertEquals("idle", got.getJSONArray("bots").getJSONObject(0).getString("status"));
+        assertFalse(got.has("usage"));   // 140% is not a real weekly usage: no card rather than a made-up number
+    }
+
+    @Test
     public void agentAskRefusesLocally() throws Exception {
         assertEquals("bad_request", server.agentAsk("r1", "claude-code:1", "   "));
         StringBuilder big = new StringBuilder();
@@ -519,6 +545,8 @@ public class LinkServerTest {
         Resp init = http("POST", "/mcp", "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}".getBytes(StandardCharsets.UTF_8), bearerH);
         assertEquals(200, init.status);
         assertEquals("omarchytv-mcp", init.json().getJSONObject("result").getJSONObject("serverInfo").getString("name"));
+        // The TV advertises its own launcher version, never a hard-coded one (it said 2.12.0 until 2.14.0-beta).
+        assertEquals("2.14.0", init.json().getJSONObject("result").getJSONObject("serverInfo").getString("version"));
 
         // 3. tools/list via Bearer
         Resp list = http("POST", "/mcp", "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}".getBytes(StandardCharsets.UTF_8), bearerH);
@@ -543,7 +571,7 @@ public class LinkServerTest {
 
         Resp get0 = signed("GET", "/v1/plugins", "");
         assertEquals(200, get0.status);
-        assertTrue(get0.json().getBoolean("spacexTv"));
+        assertFalse(get0.json().getBoolean("spacexTv"));   // 2.20: off by default
         assertTrue(get0.json().getBoolean("grokbot"));
 
         JSONObject putBody = new JSONObject()
@@ -551,7 +579,7 @@ public class LinkServerTest {
                 .put("grokbot", true)
                 .put("plugins", new org.json.JSONArray()
                         .put(new JSONObject().put("id", "com.sighmon.spacex-tv").put("name", "SpaceX TV").put("author", "sighmon").put("license", "MIT").put("enabled", false))
-                        .put(new JSONObject().put("id", "io.github.tcballard.grokbot-desktop").put("name", "Grok Bot Desktop Companion").put("author", "tcballard").put("license", "MIT").put("enabled", true)));
+                        .put(new JSONObject().put("id", "io.github.tcballard.grokbot-desktop").put("name", "Agent Desktop").put("author", "tcballard").put("license", "MIT").put("enabled", true)));
         Resp putR = signed("PUT", "/v1/plugins", putBody.toString());
         assertEquals(200, putR.status);
         assertFalse(putR.json().getBoolean("spacexTv"));

@@ -40,4 +40,26 @@ public class AppSizeTest {
         }
         assertEquals(282, HomeV29.tileW(inner, gap, 6));   // unchanged v2.9 size at the default
     }
+
+    /** Racing takes a fixed-width slot in the remaining space; the row must not overlap the 32+640 term box. */
+    @Test
+    public void racingSlotFitsBesideTheTermBox() {
+        int termRight = HomeV29.HOME_MARGIN + HomeV29.TERM_W;
+        assertEquals(672, termRight);
+        assertEquals(1192, HomeV29.widgetsWidth(false));
+        assertEquals(1200, HomeV29.widgetsWidth(true));
+        assertEquals(382, HomeV29.raceColWidth());
+        assertEquals(696, HomeV29.widgetsLeft(false));
+        assertEquals(688, HomeV29.widgetsLeft(true));
+        assertTrue("racing-off row stays right of the term box", HomeV29.widgetsLeft(false) >= termRight);
+        assertTrue("racing-on row stays right of the term box", HomeV29.widgetsLeft(true) >= termRight + HomeV29.WIDGET_GAP);
+        int sum = HomeV29.raceColWidth() + HomeV29.WIDGET_GAP + HomeV29.weatherColWidth(true) + HomeV29.STATS_GAP + HomeV29.sideColWidth(true);
+        assertEquals("racing, weather and the stats column fill the 1200 row", 1200, sum);
+        // 18 px pad each side: name + 10 px gap + "sun 22 nov 05:00" at 19 px Caskaydia (cell 11.140625)
+        assertTrue("racing fits a full GP name and session time", HomeV29.raceColWidth() - 36 >= 333);
+        assertTrue("weather still fits a city and condition line", HomeV29.weatherColWidth(true) - 36 >= 246);
+        // racing off: weather and the stats column share the 1192 row evenly
+        assertEquals(584, HomeV29.sideColWidth(false));
+        assertEquals(584, HomeV29.weatherColWidth(false));
+    }
 }

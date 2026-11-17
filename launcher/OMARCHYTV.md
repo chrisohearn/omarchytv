@@ -80,6 +80,16 @@ are shown in a row under the home widgets.
                "lines": [ { "label": "BTC", "value": "$80,148  +0.3%", "tone": "up" } ] } ] }
 ```
 
+A pane may show a picture instead of its lines (2.15, #115): `"image"` is the URL of a PNG or JPEG, under the same
+rule as `remotePanes.url` (https, or http only to a LAN address; no redirects), at most 512 KiB, e.g. a graph your
+server draws. The TV fetches it with the panes, keeps it next to them (so it survives a restart and goes stale with
+the pane's `ttl`), and shows it under the pane's title, scaled to the pane's width; a picture about 720 × 400 px fits
+well. If it can't be fetched the last one stays; if there never was one, the lines show.
+
+```json
+{ "panes": [ { "id": "power24h", "title": "power · 24h", "ttl": 600, "image": "http://192.168.1.20:2310/tv/power24h.png" } ] }
+```
+
 Rules: `https://` only, no redirects, at most 64 KiB, fetched on a background thread at most every
 `refreshSec` (300–86400, default 300: the PLUGINS.md minimum) and only while the home screen is resumed. The last good answer is
 cached in the app's files dir; a pane dims after `ttl` and hides after 2 × `ttl` (counted from its `at`,
@@ -90,6 +100,40 @@ else from the fetch), so a dead source never shows old numbers as current. No ur
 `"barWeather": true` shows the current weather as a line icon and the temperature in the bar, left of the
 status icons (same data and location as the weather widget). Combine with `"homeWidgets": {"weather": false}`
 to keep only the bar version.
+
+### Racing: F1 and MotoGP 2026
+
+`"homeWidgets": {"racing": true}` (default off; also Settings → Widgets) adds a `racing` panel as the first column of
+the top widget row, left of weather. On LG and Samsung the same widget lives in the shared web app (`racing.js`;
+Settings → Home widgets), off until you ask (`widgets.racing`). It lists the race weekends that are not over yet for the series you follow, each
+with its race day and time, plus the next (or running) session of the current weekend. Since 2.15.1 the panel starts
+with the next session of any of them and its countdown, ticking every second; the same countdown in the bar is off
+unless you ask (`"racing": {"bar": true}`; Settings → Widgets too). `"screensaver": {"racing": true}` shows the
+next sessions as a side panel of the Pulse screensaver (default: the same as the Home widget; Settings → Screensaver).
+
+```json
+"homeWidgets": { "racing": true },
+"racing": { "series": ["f1", "motogp", "wec"], "timezone": "Europe/Rome", "bar": true }
+```
+
+`racing.series` (default `["f1", "motogp"]`; Settings → Widgets has one row per series) can hold:
+
+| id | series | official source, keyless |
+|---|---|---|
+| `f1` | Formula 1 | the formula1.com page of the next meeting (formula1.com has no public season feed) |
+| `motogp`, `moto2`, `moto3` | MotoGP and its classes | `api.motogp.pulselive.com`, the API behind motogp.com (no warm-up, cancelled sessions hidden) |
+| `nascar`, `nascar2`, `truck` | NASCAR Cup, O'Reilly Auto Parts, Craftsman Truck | `cf.nascar.com`, NASCAR's own schedule feed (practice, qualifying, race) |
+| `fe` | Formula E | the fiaformulae.com calendar (its schema.org event list: the day of each E-Prix, no times) |
+| `wec` | FIA WEC | fiawec.com (each round with the start of its first practice) |
+
+With one or two series every weekend left is listed; with more, the next two (or the next one past four series) of
+each, so they all fit in the column. Times are 24 h in `racing.timezone` (any tz id, default: the TV's own time
+zone); Formula E shows just the day. `assets/racing_2026.json` is a snapshot of the F1 and MotoGP calendars, so the
+panel works offline; refresh it with `python3 tools/racing_calendar.py`. The webOS/Tizen package copies that file
+beside the page (`racing_2026.json`). Live data is fetched on a background thread
+every 6 h, hourly when a session starts within 48 h; MotoGP and NASCAR move on to next year's season by themselves
+once this one is over. IndyCar, WorldSBK and WRC aren't in the list yet: their official sites have no calendar a TV
+can read reliably.
 
 ## Screensaver
 
@@ -121,6 +165,76 @@ tools/venv/bin/python -I tools/tv.py 'settings put system screen_off_timeout 900
 
 Or pick "OmarchyTV" in Settings → Device Preferences → Screen saver. Clock: `.ClockDream`.
 Logo (`logo` in config / JSON, used by home and screensaver): `omarchy-tv` (default: Omarchy's logo.txt + a matching pixel "TV"), `omarchy` (logo.txt unchanged), `original` (OmarchyTV's own block font, no Omarchy artwork - use this, `wallpaper: procedural` and `omarchy_icon=false` for a public build without Omarchy branding).
+
+### Pulse: scenes and graphics (2.15.1)
+
+```json
+"screensaver": { "pulseScene": "mars", "pulseGraphics": "auto" }
+```
+
+- `pulseScene`: `sphere` (default), `skyline`, `orbit`, `calm`, `hacker`, `noir`, and Pulse 1.8's `mars` and `monolith`.
+  On LG and Samsung the scene frame keeps the same origin as the app (a unique origin closed the app on LG).
+  Those two start at Pulse 1.8's quality on the PC (up to 2×dpr, 60 fps) and drop on their own if frames are slow
+  (and climb back).
+- `pulseGraphics`: `auto` (default), `low`, `medium`, `high`. `auto` starts at Pulse 1.8's look (polish on, full
+  pixels) and walks a short quality ladder from measured frame time (down after three slow reports, up after six
+  fast). It does not start plain from a low-RAM flag or an old browser. `low`: the plain look, half resolution.
+  `medium`: the 1.8 look, half resolution. `high`: the 1.8 look, full resolution. An Android TV draws its
+  interface at 1080p even on a 4K panel, so "full" is 1080p there.
+- The scenes' pages (`scene-mars.html`, `scene-monolith.html`) are written by `python3 tools/pulse-tv-scenes.py
+  /path/to/omarchy-pulse-theme`. The TV copies start at Pulse 1.8's defaults, adapt backing and fps from frame
+  time, and stop if there is no 2d context; regenerating the pages writes the PC runtime again, and the 2d-context
+  guard and the adaptive ladder would need to be put back.
+
+### Pulse: planes and earthquakes (config only, Android)
+
+```json
+"screensaver": { "planesNm": 200, "earthquakes": false, "opensky": true }
+```
+
+- `planesNm`: how far the planes panel looks. `25` (default) is the planes in your sky ("overhead", shown only
+  when there is one). `50`, `100`, `150`, `200` or `250` list the nearest five with their distance
+  ("planes · 200 nm"), low and far ones included; the panel stays up, saying when there are none.
+- `earthquakes`: `false` removes the earthquakes panel and stops the USGS fetch (default `true`).
+- `opensky`: `true` adds [OpenSky](https://opensky-network.org) as a second plane feed (default `false`). It has its
+  own receivers, so where adsb.lol has few feeders it can see several times more planes. adsb.lol wins a plane both
+  see; OpenSky's are moved on along their track to now, and their type comes from adsbdb by ICAO address.
+  Anonymous: one read every 8 minutes (OpenSky allows 400 credits a day; a 200 nm box costs 2).
+- Signed in (optional): create an API client on your OpenSky account page, download its `credentials.json` and
+  push it to the TV as `opensky.json`. OpenSky is then read every minute (4,000 credits a day):
+
+  ```bash
+  adb push credentials.json /sdcard/Android/data/com.omarchytv.home/files/opensky.json
+  ```
+
+  The launcher reads the file, gets the OAuth2 token itself and adds it to OpenSky requests; the saver page is only
+  told that there is one. After "Reset credential" on OpenSky, push the new file. Delete it to go back to anonymous.
+
+## Radiomarchy (2.20): Omarchy Radio and the fractals
+
+Open it from its banner in the TV's app row, the ♫ icon in the top bar, Walker, or a key mapped to the `radio`
+action. Panes: `[1] radio` (songs · Omarchy Stories · up next · demo mode · settings), `[2]` the list, `[3]` now
+playing (the maker's credit, a 16-band spectrum, progress, ⏮ ⏯ ⏭ 🔀 🔁, lyrics, the song's page).
+
+| Key | |
+| --- | --- |
+| OK | play the row |
+| ⏯ / ⏮ ⏭ / CH± / ⏪ ⏩ | pause, previous, next, −15 s / +15 s (everywhere in the launcher) |
+| RED (D) | demo mode: ◀ ▶ another fractal, ▲ ▼ colours, OK pause, any other key back |
+| GREEN (S) · YELLOW (R) · BLUE (E) | shuffle · repeat all/one/off · explicit songs shown/hidden |
+| 1–5 | the panes |
+
+Settings (stored on the TV, not in `omarchytv.json`): explicit songs (shown by default, with an E), fractal
+colours (random by default; Omarchy theme, rainbow, fire), picture quality (auto by default; ultra, high, medium,
+low), fractal (random by default, or one pinned), demo mode after 1 minute idle (on), shuffle (on), repeat (all).
+
+Picture quality `auto` starts from what the GPU is and measures frame time every 2 s: under ~48 fps it steps down
+(ultra → high → medium → low), with room to spare for 20 s it steps back up. Only `low` lowers the resolution (to 3/4).
+The music analysis reads the decoded audio inside the player (a tee in Media3's audio sink): no microphone, no
+RECORD_AUDIO, and it is matched to the media time you hear.
+
+Screensaver: Settings → Screensaver → art → **Radiomarchy fractals** (`"screensaver": {"art": "radiomarchy"}`).
+It opens the demo mode in the launcher's own process, so it dances to the music when the radio is playing.
 
 ## Resolution
 
@@ -258,10 +372,15 @@ otherwise OK opens Live TV (Android has no public "tune to number" intent).
   Key names are Android `KeyEvent` keycode names without `KEYCODE_` (`BUTTON_12`, ...); unknown names are ignored. A press type has exactly one of `app` (package name, started like its tile), `intent` (an
   `Intent.toUri(Intent.URI_INTENT_SCHEME)` string: started as an activity, sent as a broadcast if no activity
   matches) or `action` (an OmarchyTV action id); anything else counts as unbound. Action ids: `walker` (search),
-  `voice` (search by voice), `home`, `ask`, `menu`, `screensaver`, `next-theme`, `workspace-1` … `workspace-5`.
+  `voice` (search by voice), `home`, `ask`, `menu`, `screensaver`, `next-theme`, `cinemarchy`, `arcade`, `grokbot` (the Grok Bot
+  companion), `workspace-1` … `workspace-5`. On TVs whose firmware takes the Blue key first (Philips: the TV manual,
+  [#91](https://github.com/piermark/omarchytv/issues/91)), bind Blue in a key remapper to
+  `adb shell am start -n com.omarchytv.home/.MainActivity --es com.omarchytv.home.extra.ACTION grokbot`.
   Quick presses less than about 0.35 s apart count together; a press type that isn't bound falls back to the
   highest bound count below it (double with only single bound runs single), and a lone single press runs at once
   when nothing higher is bound. A long press (about 0.5 s) runs while the key is held.
+  The same action ids work from outside the launcher (a key remapper, Tasker, adb), without exporting the
+  activities: `adb shell am start -n com.omarchytv.home/.MainActivity --es com.omarchytv.home.extra.ACTION cinemarchy`.
   Only buttons of known remotes (listed with their USB/BT ids in `app/src/main/assets/remotes.json`; today the
   SHIELD 2019 remote's Netflix button) are intercepted, and the settings page lists the buttons of the remotes
   that are connected. To add your remote see [REMOTES.md](REMOTES.md).

@@ -34,13 +34,13 @@ import java.util.UUID;
 /**
  * v2.13 Grok Bot Companion (TV) session: a chat panel opened from the floating companion (the Blue key, OK on
  * it after long-press Menu, or the home tile). Type with the on-screen or a Bluetooth/USB keyboard, or speak through
- * the system recognizer (the remote's mic on Android TV). With @tcballard's Grok Bot Desktop Companion on
+ * the system recognizer (the remote's mic on Android TV). With @tcballard's Agent Desktop on
  * a linked PC (omarchy-link) the question goes to it. A named PC companion stays selected while offline.
  * Without a configured PC companion, questions go to OmarchyTV's own Ask (the AI provider
  * chosen there: Grok Bot, Claude Code, Codex, Hermes…). "open Netflix" / "apri YouTube" opens an installed app
  * first (CompanionCommands). Links in a reply become buttons: YouTube ones play in the YouTube app, others open
  * in the WebApp, only after OK on the button. Each bot keeps its last 30 lines. Built against @tcballard's
- * Grok Bot Desktop Companion v0.1.0 (MIT, commit a2efb00); the code here is mine.
+ * Agent Desktop v0.2.0 (MIT, commit b6933e5); the code here is mine.
  */
 public class CompanionChatActivity extends Activity implements OmarchyLink.Listener {
     private static final int REQ_VOICE = 41;
@@ -149,7 +149,7 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
             restoreConversation();
         });
         row.addView(clear);
-        TextView foot = text("Built for @tcballard's Grok Bot Desktop Companion v0.1.0 (MIT) · try \"open YouTube\"", 10, t.fgDim, false);
+        TextView foot = text("Built for @tcballard's Agent Desktop v0.2.0 (MIT) · try \"open YouTube\"", 10, t.fgDim, false);
         foot.setPadding(0, dp(8), 0, 0);
         panel.addView(foot);
 
