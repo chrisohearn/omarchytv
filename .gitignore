@@ -7,6 +7,9 @@ launcher/app/build/
 launcher/local.properties
 # your own TV's dumps (serial, android_id, device names) stay local
 backup/
+# adb screencap files that land next to the code
+launcher/Screenshot_*.png
+Screenshot_*.png
 .DS_Store
 keystore/
 *.jks
@@ -31,5 +34,31 @@ webos/app/splash.png
 webos/app/saver/tte-bundle.js
 webos/app/saver/tte-js/
 webos/app/saver/screensaver-tv.txt
+webos/app/racing_2026.json
 *.ipk
 *.wgt
+
+# The campfire PC video lives only in github.com/piermark/omarchy-campfire-theme
+themes/omarchy-campfire-theme/extras/campfire-loop.mp4
+webos/iphone-remote/node_modules/
+webos/app/rooted/iphone-remote/
+
+# secrets and local dumps that must never be committed
+.env
+.env.*
+!.env.example
+*.p12
+*.pem
+*.key
+*.bks
+password*.txt
+*secret*
+*.log
+logcat*
+*.orig
+*.rej
+*.bak
+# pairing key and data written by homewatch next to the watcher
+homewatch/data/
+# a launcher config copied out of a TV
+omarchytv.json

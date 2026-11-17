@@ -4,13 +4,14 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
   "use strict";
 
   // One shared app: LG webOS and the Samsung widget share one version number.
-  var APP_VERSION = "2.13.10";   // keep in step with webos/app/appinfo.json and tizen/config.xml (checked by tests)
+  var APP_VERSION = "2.20.0";   // keep in step with webos/app/appinfo.json and tizen/config.xml (checked by tests)
 
   var DATA = window.OMARCHY_DATA || { version: APP_VERSION, themes: {}, wallpapers: {}, logo: "OMARCHY TV", notice: "" };
-  var START_TIME = Date.now() - (42 * 60 * 1000); // default 42m uptime look
+  var START_TIME = Date.now(); // real OmarchyTV uptime, no made-up offset (issue #5, point 10)
 
   var STRINGS = {
     en: {
+      menu_plugins: "Plugins", menu_apps: "Apps", menu_setup: "Setup", menu_terminal: "Terminal", menu_hint: "↑↓ select   OK open   Back close",
       tip_cinemarchy: "Cinemarchy (Media & TV)", tip_wifi: "Wi-Fi & network", tip_bt: "Bluetooth", tip_vol: "Audio", tip_inputs: "Inputs (TV / HDMI)", tip_saver: "Start screensaver",
       sys_clock: "Clock",
       box_weather: "weather", box_pc: "omarchy · pc", box_ai: "ai credits · pc", box_tv: "tv", box_app: "app", box_ws_pc: "pc", box_system: "system",
@@ -30,15 +31,117 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
       sys_logo_anim: "Animated logo", sys_text_tiles: "Text tiles (terminal style)", sys_all: "All OmarchyTV settings", sys_about: "About & licences",
       tile_move: "Move", tile_hide: "Hide", tile_cancel: "Cancel", move_hint: "◀▶▲▼ move · OK save · Back cancel",
       app_hidden: "Hidden. Show it again in All settings › Hidden apps", hidden_apps: "Hidden apps", hidden_none: "No hidden apps",
-      hidden_sub: "OK shows the app again", hidden_show: "show", hidden_show_all: "Show all hidden apps", hidden_all_shown: "All apps visible again", random_theme: "Random theme", random_wallpaper: "Random wallpaper / intro", sys_plugins: "Plugins (SpaceX TV & Grok Bot)", reset_order: "Reset app order", order_reset: "App order reset",
+      hidden_sub: "OK shows the app again", hidden_show: "show", hidden_show_all: "Show all hidden apps", hidden_all_shown: "All apps visible again", random_theme: "Random theme", pulse_notice: "New screensaver: Omarchy Pulse. Settings › Screensaver to change it or go back.", ss_pulse_scene: "Pulse scene", ss_restore_previous: "Previous screensaver", random_scope: "Random picks from", random_intros: "animated intros", random_all: "all themes", random_wallpaper: "Random wallpaper / intro", sys_plugins: "Plugins (SpaceX TV & Grok Bot)", reset_order: "Reset app order", order_reset: "App order reset",
       wx_title: "Weather", wx_auto: "Automatic (from IP)", wx_auto_fail: "Couldn't find your location, keeping the current city", wx_search: "Search city…", wx_unit: "Temperature unit",
       root_boot: "Open when the TV starts", root_home: "Home button opens OmarchyTV", root_needed: "rooted TV only",
       root_keep: "Keep loaded in the background", root_keep_na: "not on this TV",
       root_missing: "Needs a rooted TV with Homebrew Channel (unrooted: see homewatch/ in the repo)", root_failed: "Could not change it: ",
       wx_min: "min ", wx_max: "max ",
+      theme_to_pc: "Also change the PC theme", theme_not_on_pc: "Not on the PC: only the TV changed",
+      boot_screen: "Boot screen",
+      boot_mode_boot: "at start",
+      boot_mode_wake: "start and wake",
+      pc_power: "PC sleeps with the TV",
+      pc_power_note: "When the TV turns off, the PC suspends. Waking the PC with the TV needs Android TV.",
+      update_via_pc: "Update via PC",
+      update_checking: "Checking for updates…",
+      update_none: "OmarchyTV %s is the latest version",
+      update_confirm: "Install OmarchyTV %s with the PC? The app restarts.",
+      update_need_pc: "Pair the Omarchy PC and set the PC ask code first",
+      update_failed: "Update failed: %s",
+      liftoff_build: "build",
+      liftoff_update: "update",
+      liftoff_ok: "LIFTOFF",
+      liftoff_abort: "ABORT",
+      liftoff_hint: "any key: hide",
+      update_install: "Install",
+      living: "Live screensaver",
+      living_notes: "PC notifications on the screensaver",
+      living_notes_note: "Every notification from the Omarchy PC will show on the TV while the screensaver runs",
+      living_x: "X on the screensaver",
+      living_x_notify: "PC notifications",
+      living_x_api: "X API",
+      living_x_api_note: "Mentions via the X API (X charges per use): set it up on the PC with omarchy-link x setup",
+      living_weather: "weather",
+      living_notes_title: "notifications · pc",
+      living_x_title: "x · mentions",
+      living_x_not_set_up: "X API not set up: omarchy-link x setup on the PC",
+      living_x_budget: "X API monthly limit reached (xMonthlyUsd)",
+      living_x_error: "X API not reachable right now",
+      omafire_campfire: "campfire",
+      omafire_embers: "embers", wp_radiomarchy_fractals: "Radiomarchy fractals", radio_animated: "Animated fractals", radio_animated_auto: "auto", radio_animated_on: "yes", radio_animated_off: "no",
+      plugin_retro_crt: "Retro CRT",
+      crt_light: "light",
+      crt_strong: "strong",
+      liftoff_title: "liftoff",
+      liftoff_stage_download: "downloading",
+      liftoff_stage_verify: "checking",
+      liftoff_stage_sign: "signing",
+      liftoff_stage_install: "installing",
+      liftoff_stage_launch: "starting",
+      liftoff_exit: "exit %s",
+      living_waiting: "waiting for the Omarchy PC…",
+      boot_sound: "Boot sound",
+      omafire_sound: "OmaFire sound",
+      arcade_sound: "Arcade sound", arcade_pc_theme: "Arcade: RICE WARS changes the PC theme too", share_qr: "OmarchyTV QR code",
+      cine_sources: "sources",
+      cine_library: "library",
+      cine_details: "details",
+      cine_src_dhh: "@dhh37 · Omarchy",
+      cine_src_stream: "Streaming apps",
+      cine_src_live: "TV & inputs",
+      cine_src_iptv: "IPTV playlists",
+      cine_src_demo: "Open movies",
+      cine_src_queue: "Up next",
+      cine_src_tools: "Player & tools",
+      cine_keys: "▲▼ move · ◀▶ panes · OK play · red: up next · green: ★ · yellow: group · blue: 🎲 · 1-8 sources · Back",
+      cine_refresh: "OK refreshes the channel feed",
+      cine_loading: "loading…",
+      cine_new: "NEW",
+      cine_none: "No apps found on this TV",
+      cine_add_playlist: "+ Add an M3U playlist (URL)",
+      cine_playlist_hint: "only streams you have the right to watch",
+      cine_remove_hint: "red removes it",
+      cine_group: "Group: %s",
+      cine_group_hint: "OK or yellow: next group (all, ★, …)",
+      cine_live: "LIVE",
+      cine_demo_note: "Blender open movie · CC BY · demo stream",
+      cine_test_clip_note: "Made for OmarchyTV · inside the app · plays offline",
+      cine_queue_empty: "Up next is empty: press red on any video",
+      cine_queue_clear: "Clear Up next",
+      cine_embed: "Play @dhh37 inside Cinemarchy",
+      cine_saver_test: "Preview the pause screensaver",
+      cine_add_link: "+ Add a video link to Up next",
+      cine_bad_url: "That isn't an http(s) link",
+      cine_queued: "Added to Up next",
+      cine_resume: "Resumes at %s",
+      cine_play: "play",
+      cine_fav_hint: "green: ★ favourite",
+      cine_queue_hint: "red: add to Up next",
+      cine_reload: "reload",
+      cine_open: "open",
+      cine_back: "Back cancels",
+      cine_no_play: "This stream can't be played on this TV",
+      cine_player_keys: "OK pause · ◀▶ 10 s · ▲▼ prev/next · blue: VHS/ASCII · yellow: sleep · Back stop",
+      cine_fav_added: "★ Added to favourites",
+      cine_fav_removed: "Removed from favourites",
+      cine_ascii_blocked: "This stream doesn't allow ASCII mode",
+      cine_sleep: "Sleep in %s",
+      cine_sleep_off: "Sleep timer off",
+      cine_sleep_done: "Sleep timer: stopped",
+      cine_mode_normal: "Normal picture",
+      cine_roulette: "Surprise channel",
+      cine_roulette_hint: "a random channel from your playlists",
+      cine_src_pc: "Omarchy PC",
+      cine_pc_folders: "Browse the PC's folders",
+      cine_pc_opening: "Opening from the PC…",
+      cine_pc_need: "Pair the Omarchy PC first",
+      cine_up: "‹ back",
+      cine_pc_empty: "Nothing to play in this folder",
       wmo: { 0: "clear", 1: "mostly clear", 2: "partly cloudy", 3: "overcast", 45: "fog", 51: "drizzle", 61: "rain", 71: "snow", 80: "showers", 95: "thunderstorm" }
     },
     it: {
+      menu_plugins: "Plugin", menu_apps: "App", menu_setup: "Impostazioni", menu_terminal: "Terminale", menu_hint: "↑↓ seleziona   OK apri   Indietro chiudi",
       tip_cinemarchy: "Cinemarchy (Media e TV)", tip_wifi: "Wi-Fi e rete", tip_bt: "Bluetooth", tip_vol: "Audio", tip_inputs: "Ingressi (TV / HDMI)", tip_saver: "Avvia salvaschermo",
       sys_clock: "Orologio",
       box_weather: "meteo", box_pc: "omarchy · pc", box_ai: "crediti ia · pc", box_tv: "tv", box_app: "app", box_ws_pc: "pc", box_system: "sistema",
@@ -58,15 +161,117 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
       sys_logo_anim: "Logo animato", sys_text_tiles: "Tile solo testo (stile terminale)", sys_all: "Tutte le impostazioni OmarchyTV", sys_about: "Info e licenze",
       tile_move: "Sposta", tile_hide: "Nascondi", tile_cancel: "Annulla", move_hint: "◀▶▲▼ sposta · OK salva · Indietro annulla",
       app_hidden: "Nascosta. Mostrala di nuovo in Tutte le impostazioni › App nascoste", hidden_apps: "App nascoste", hidden_none: "Nessuna app nascosta",
-      hidden_sub: "OK mostra di nuovo l'app", hidden_show: "mostra", hidden_show_all: "Mostra tutte le app nascoste", hidden_all_shown: "Tutte le app sono di nuovo visibili", random_theme: "Tema casuale", random_wallpaper: "Sfondo / intro casuale", sys_plugins: "Plugin (SpaceX TV e Grok Bot)", reset_order: "Ripristina ordine app", order_reset: "Ordine app ripristinato",
+      hidden_sub: "OK mostra di nuovo l'app", hidden_show: "mostra", hidden_show_all: "Mostra tutte le app nascoste", hidden_all_shown: "Tutte le app sono di nuovo visibili", random_theme: "Tema casuale", pulse_notice: "Nuovo salvaschermo: Omarchy Pulse. Impostazioni › Salvaschermo per cambiarlo o tornare a prima.", ss_pulse_scene: "Scena di Pulse", ss_restore_previous: "Salvaschermo precedente", random_scope: "Casuale tra", random_intros: "intro animate", random_all: "tutti i temi", random_wallpaper: "Sfondo / intro casuale", sys_plugins: "Plugin (SpaceX TV e Grok Bot)", reset_order: "Ripristina ordine app", order_reset: "Ordine app ripristinato",
       wx_title: "Meteo", wx_auto: "Automatica (da IP)", wx_auto_fail: "Posizione non trovata, resta la città attuale", wx_search: "Cerca città…", wx_unit: "Unità temperatura",
       root_boot: "Apri all'avvio della TV", root_home: "Il tasto Home apre OmarchyTV", root_needed: "solo TV con root",
       root_keep: "Tieni caricata in background", root_keep_na: "non su questa TV",
       root_missing: "Serve una TV con root e Homebrew Channel (senza root: vedi homewatch/ nel repo)", root_failed: "Impossibile cambiarlo: ",
       wx_min: "min ", wx_max: "max ",
+      theme_to_pc: "Cambia anche il tema del PC", theme_not_on_pc: "Non presente sul PC: è cambiata solo la TV",
+      boot_screen: "Schermata di avvio",
+      boot_mode_boot: "all'avvio",
+      boot_mode_wake: "avvio e risveglio",
+      pc_power: "Il PC dorme con la TV",
+      pc_power_note: "Quando spegni la TV, il PC va in sospensione. Per risvegliare il PC con la TV serve Android TV.",
+      update_via_pc: "Aggiorna tramite PC",
+      update_checking: "Cerco aggiornamenti…",
+      update_none: "OmarchyTV %s è l'ultima versione",
+      update_confirm: "Installare OmarchyTV %s tramite il PC? L'app si riavvia.",
+      update_need_pc: "Prima collega il PC Omarchy e imposta il codice del PC",
+      update_failed: "Aggiornamento non riuscito: %s",
+      liftoff_build: "build",
+      liftoff_update: "aggiornamento",
+      liftoff_ok: "DECOLLO",
+      liftoff_abort: "ANNULLATO",
+      liftoff_hint: "un tasto qualsiasi: nascondi",
+      update_install: "Installa",
+      living: "Salvaschermo Live",
+      living_notes: "Notifiche del PC nel salvaschermo",
+      living_notes_note: "Tutte le notifiche del PC Omarchy appariranno sulla TV mentre è attivo il salvaschermo",
+      living_x: "X nel salvaschermo",
+      living_x_notify: "notifiche del PC",
+      living_x_api: "API di X",
+      living_x_api_note: "Menzioni tramite l'API di X (X fa pagare a consumo): configurala sul PC con omarchy-link x setup",
+      living_weather: "meteo",
+      living_notes_title: "notifiche · pc",
+      living_x_title: "x · menzioni",
+      living_x_not_set_up: "API di X non configurata: omarchy-link x setup sul PC",
+      living_x_budget: "Raggiunto il limite mensile dell'API di X (xMonthlyUsd)",
+      living_x_error: "API di X non raggiungibile ora",
+      omafire_campfire: "falò",
+      omafire_embers: "braci", wp_radiomarchy_fractals: "Frattali Radiomarchy", radio_animated: "Frattali animati", radio_animated_auto: "auto", radio_animated_on: "sì", radio_animated_off: "no",
+      plugin_retro_crt: "Retro CRT",
+      crt_light: "leggero",
+      crt_strong: "forte",
+      liftoff_title: "decollo",
+      liftoff_stage_download: "download",
+      liftoff_stage_verify: "verifica",
+      liftoff_stage_sign: "firma",
+      liftoff_stage_install: "installazione",
+      liftoff_stage_launch: "avvio",
+      liftoff_exit: "uscita %s",
+      living_waiting: "in attesa del PC Omarchy…",
+      boot_sound: "Suono all'avvio",
+      omafire_sound: "Suono di OmaFire",
+      arcade_sound: "Suoni della sala giochi", arcade_pc_theme: "Sala giochi: RICE WARS cambia tema anche al PC", share_qr: "QR code di OmarchyTV",
+      cine_sources: "sorgenti",
+      cine_library: "libreria",
+      cine_details: "dettagli",
+      cine_src_dhh: "@dhh37 · Omarchy",
+      cine_src_stream: "App di streaming",
+      cine_src_live: "TV e ingressi",
+      cine_src_iptv: "Playlist IPTV",
+      cine_src_demo: "Film aperti",
+      cine_src_queue: "Prossimi",
+      cine_src_tools: "Lettore e strumenti",
+      cine_keys: "▲▼ muovi · ◀▶ pannelli · OK guarda · rosso: prossimi · verde: ★ · giallo: gruppo · blu: 🎲 · 1-8 sorgenti · Indietro",
+      cine_refresh: "OK aggiorna il canale",
+      cine_loading: "caricamento…",
+      cine_new: "NUOVO",
+      cine_none: "Nessuna app trovata su questa TV",
+      cine_add_playlist: "+ Aggiungi una playlist M3U (URL)",
+      cine_playlist_hint: "solo flussi che hai il diritto di guardare",
+      cine_remove_hint: "il rosso la toglie",
+      cine_group: "Gruppo: %s",
+      cine_group_hint: "OK o giallo: gruppo successivo (tutti, ★, …)",
+      cine_live: "LIVE",
+      cine_demo_note: "Film aperto Blender · CC BY · flusso demo",
+      cine_test_clip_note: "Creato per OmarchyTV · dentro l'app · funziona anche offline",
+      cine_queue_empty: "Prossimi è vuoto: premi rosso su un video",
+      cine_queue_clear: "Svuota Prossimi",
+      cine_embed: "Riproduci @dhh37 dentro Cinemarchy",
+      cine_saver_test: "Anteprima del salvaschermo di pausa",
+      cine_add_link: "+ Aggiungi un link video ai Prossimi",
+      cine_bad_url: "Non è un link http(s)",
+      cine_queued: "Aggiunto ai Prossimi",
+      cine_resume: "Riprende da %s",
+      cine_play: "guarda",
+      cine_fav_hint: "verde: ★ preferito",
+      cine_queue_hint: "rosso: aggiungi ai Prossimi",
+      cine_reload: "ricarica",
+      cine_open: "apri",
+      cine_back: "Indietro annulla",
+      cine_no_play: "Questo flusso non si riproduce su questa TV",
+      cine_player_keys: "OK pausa · ◀▶ 10 s · ▲▼ prec/succ · blu: VHS/ASCII · giallo: timer · Indietro stop",
+      cine_fav_added: "★ Aggiunto ai preferiti",
+      cine_fav_removed: "Tolto dai preferiti",
+      cine_ascii_blocked: "Questo flusso non permette la modalità ASCII",
+      cine_sleep: "Spegnimento tra %s",
+      cine_sleep_off: "Timer spento",
+      cine_sleep_done: "Timer: riproduzione fermata",
+      cine_mode_normal: "Immagine normale",
+      cine_roulette: "Canale a sorpresa",
+      cine_roulette_hint: "un canale a caso dalle tue playlist",
+      cine_src_pc: "PC Omarchy",
+      cine_pc_folders: "Sfoglia le cartelle del PC",
+      cine_pc_opening: "Apro dal PC…",
+      cine_pc_need: "Abbina prima il PC Omarchy",
+      cine_up: "‹ indietro",
+      cine_pc_empty: "Niente da riprodurre in questa cartella",
       wmo: { 0: "sereno", 1: "poco nuvoloso", 2: "parz. nuvoloso", 3: "coperto", 45: "nebbia", 51: "pioviggine", 61: "pioggia", 71: "neve", 80: "rovesci", 95: "temporale" }
     },
     de: {
+      menu_plugins: "Plugins", menu_apps: "Apps", menu_setup: "Einrichtung", menu_terminal: "Terminal", menu_hint: "↑↓ auswählen   OK öffnen   Zurück schließen",
       tip_cinemarchy: "Cinemarchy (Medien & TV)", tip_wifi: "WLAN & Netzwerk", tip_bt: "Bluetooth", tip_vol: "Audio", tip_inputs: "Eingänge (TV / HDMI)", tip_saver: "Bildschirmschoner starten",
       sys_clock: "Uhr",
       box_weather: "wetter", box_pc: "omarchy · pc", box_ai: "ki-guthaben · pc", box_tv: "tv", box_app: "app", box_ws_pc: "pc", box_system: "system",
@@ -86,23 +291,130 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
       sys_logo_anim: "Animiertes Logo", sys_text_tiles: "Text-Kacheln (Terminal-Stil)", sys_all: "Alle OmarchyTV-Einstellungen", sys_about: "Info & Lizenzen",
       tile_move: "Verschieben", tile_hide: "Ausblenden", tile_cancel: "Abbrechen", move_hint: "◀▶▲▼ verschieben · OK speichern · Zurück abbrechen",
       app_hidden: "Ausgeblendet. Wieder einblenden unter Alle Einstellungen › Ausgeblendete Apps", hidden_apps: "Ausgeblendete Apps", hidden_none: "Keine ausgeblendeten Apps",
-      hidden_sub: "OK blendet die App wieder ein", hidden_show: "einblenden", hidden_show_all: "Alle ausgeblendeten Apps einblenden", hidden_all_shown: "Alle Apps wieder sichtbar", random_theme: "Zufälliges Thema", random_wallpaper: "Zufälliges Hintergrundbild / Intro", sys_plugins: "Plugins (SpaceX TV & Grok Bot)", reset_order: "App-Reihenfolge zurücksetzen", order_reset: "App-Reihenfolge zurückgesetzt",
+      hidden_sub: "OK blendet die App wieder ein", hidden_show: "einblenden", hidden_show_all: "Alle ausgeblendeten Apps einblenden", hidden_all_shown: "Alle Apps wieder sichtbar", random_theme: "Zufälliges Thema", pulse_notice: "Neuer Bildschirmschoner: Omarchy Pulse. Einstellungen › Bildschirmschoner zum Ändern oder Zurückgehen.", ss_pulse_scene: "Pulse-Szene", ss_restore_previous: "Vorheriger Bildschirmschoner", random_scope: "Zufällig aus", random_intros: "animierten Intros", random_all: "allen Themes", random_wallpaper: "Zufälliges Hintergrundbild / Intro", sys_plugins: "Plugins (SpaceX TV & Grok Bot)", reset_order: "App-Reihenfolge zurücksetzen", order_reset: "App-Reihenfolge zurückgesetzt",
       wx_title: "Wetter", wx_auto: "Automatisch (über IP)", wx_auto_fail: "Standort nicht gefunden, die aktuelle Stadt bleibt", wx_search: "Stadt suchen…", wx_unit: "Temperatureinheit",
       root_boot: "Beim Einschalten öffnen", root_home: "Home-Taste öffnet OmarchyTV", root_needed: "nur gerootete TVs",
       root_keep: "Im Hintergrund geladen lassen", root_keep_na: "nicht auf diesem TV",
       root_missing: "Benötigt einen gerooteten TV mit Homebrew Channel (ohne Root: siehe homewatch/ im Repo)", root_failed: "Konnte nicht geändert werden: ",
       wx_min: "Min ", wx_max: "Max ",
+      theme_to_pc: "Auch das PC-Theme ändern", theme_not_on_pc: "Nicht auf dem PC: nur der Fernseher wurde geändert",
+      boot_screen: "Startbildschirm",
+      boot_mode_boot: "beim Start",
+      boot_mode_wake: "Start und Aufwachen",
+      pc_power: "PC schläft mit dem TV",
+      pc_power_note: "Wenn der TV ausgeht, geht der PC in den Ruhezustand. Den PC mit dem TV aufwecken geht nur mit Android TV.",
+      update_via_pc: "Über den PC aktualisieren",
+      update_checking: "Suche nach Updates…",
+      update_none: "OmarchyTV %s ist die neueste Version",
+      update_confirm: "OmarchyTV %s über den PC installieren? Die App startet neu.",
+      update_need_pc: "Zuerst den Omarchy-PC koppeln und den PC-Code eingeben",
+      update_failed: "Update fehlgeschlagen: %s",
+      liftoff_build: "Build",
+      liftoff_update: "Update",
+      liftoff_ok: "ABHEBEN",
+      liftoff_abort: "ABBRUCH",
+      liftoff_hint: "beliebige Taste: ausblenden",
+      update_install: "Installieren",
+      living: "Live-Bildschirmschoner",
+      living_notes: "PC-Benachrichtigungen im Bildschirmschoner",
+      living_notes_note: "Alle Benachrichtigungen des Omarchy-PCs erscheinen auf dem TV, solange der Bildschirmschoner läuft",
+      living_x: "X im Bildschirmschoner",
+      living_x_notify: "PC-Benachrichtigungen",
+      living_x_api: "X-API",
+      living_x_api_note: "Erwähnungen über die X-API (X berechnet pro Nutzung): auf dem PC mit omarchy-link x setup einrichten",
+      living_weather: "Wetter",
+      living_notes_title: "Benachrichtigungen · PC",
+      living_x_title: "x · Erwähnungen",
+      living_x_not_set_up: "X-API nicht eingerichtet: omarchy-link x setup auf dem PC",
+      living_x_budget: "Monatslimit der X-API erreicht (xMonthlyUsd)",
+      living_x_error: "X-API gerade nicht erreichbar",
+      omafire_campfire: "Lagerfeuer",
+      omafire_embers: "Glut", wp_radiomarchy_fractals: "Radiomarchy-Fraktale", radio_animated: "Animierte Fraktale", radio_animated_auto: "auto", radio_animated_on: "ja", radio_animated_off: "nein",
+      plugin_retro_crt: "Retro CRT",
+      crt_light: "leicht",
+      crt_strong: "stark",
+      liftoff_title: "Start",
+      liftoff_stage_download: "Download",
+      liftoff_stage_verify: "Prüfung",
+      liftoff_stage_sign: "Signierung",
+      liftoff_stage_install: "Installation",
+      liftoff_stage_launch: "Start der App",
+      liftoff_exit: "Exit %s",
+      living_waiting: "warte auf den Omarchy-PC…",
+      boot_sound: "Startton",
+      omafire_sound: "OmaFire-Ton",
+      arcade_sound: "Spielhallen-Sound", arcade_pc_theme: "Spielhalle: RICE WARS ändert auch das PC-Theme", share_qr: "OmarchyTV-QR-Code",
+      cine_sources: "Quellen",
+      cine_library: "Mediathek",
+      cine_details: "Details",
+      cine_src_dhh: "@dhh37 · Omarchy",
+      cine_src_stream: "Streaming-Apps",
+      cine_src_live: "TV & Eingänge",
+      cine_src_iptv: "IPTV-Playlists",
+      cine_src_demo: "Offene Filme",
+      cine_src_queue: "Als Nächstes",
+      cine_src_tools: "Player & Werkzeuge",
+      cine_keys: "▲▼ bewegen · ◀▶ Bereiche · OK abspielen · Rot: als Nächstes · Grün: ★ · Gelb: Gruppe · Blau: 🎲 · 1-8 Quellen · Zurück",
+      cine_refresh: "OK aktualisiert den Kanal",
+      cine_loading: "lädt…",
+      cine_new: "NEU",
+      cine_none: "Keine Apps auf diesem TV gefunden",
+      cine_add_playlist: "+ M3U-Playlist hinzufügen (URL)",
+      cine_playlist_hint: "nur Streams, die du sehen darfst",
+      cine_remove_hint: "Rot entfernt sie",
+      cine_group: "Gruppe: %s",
+      cine_group_hint: "OK oder Gelb: nächste Gruppe (alle, ★, …)",
+      cine_live: "LIVE",
+      cine_demo_note: "Blender Open Movie · CC BY · Demo-Stream",
+      cine_test_clip_note: "Für OmarchyTV gemacht · in der App · läuft auch offline",
+      cine_queue_empty: "Als Nächstes ist leer: Rot auf einem Video drücken",
+      cine_queue_clear: "Als Nächstes leeren",
+      cine_embed: "@dhh37 in Cinemarchy abspielen",
+      cine_saver_test: "Vorschau des Pausen-Bildschirmschoners",
+      cine_add_link: "+ Videolink zu Als Nächstes hinzufügen",
+      cine_bad_url: "Das ist kein http(s)-Link",
+      cine_queued: "Zu Als Nächstes hinzugefügt",
+      cine_resume: "Weiter bei %s",
+      cine_play: "abspielen",
+      cine_fav_hint: "Grün: ★ Favorit",
+      cine_queue_hint: "Rot: zu Als Nächstes",
+      cine_reload: "neu laden",
+      cine_open: "öffnen",
+      cine_back: "Zurück bricht ab",
+      cine_no_play: "Dieser Stream läuft auf diesem TV nicht",
+      cine_player_keys: "OK Pause · ◀▶ 10 s · ▲▼ zurück/weiter · Blau: VHS/ASCII · Gelb: Timer · Zurück Stopp",
+      cine_fav_added: "★ Zu Favoriten hinzugefügt",
+      cine_fav_removed: "Aus Favoriten entfernt",
+      cine_ascii_blocked: "Dieser Stream erlaubt keinen ASCII-Modus",
+      cine_sleep: "Ausschalten in %s",
+      cine_sleep_off: "Timer aus",
+      cine_sleep_done: "Timer: angehalten",
+      cine_mode_normal: "Normales Bild",
+      cine_roulette: "Überraschungskanal",
+      cine_roulette_hint: "ein zufälliger Kanal aus deinen Playlists",
+      cine_src_pc: "Omarchy-PC",
+      cine_pc_folders: "Ordner des PCs durchsuchen",
+      cine_pc_opening: "Wird vom PC geöffnet…",
+      cine_pc_need: "Koppele zuerst den Omarchy-PC",
+      cine_up: "‹ zurück",
+      cine_pc_empty: "Nichts Abspielbares in diesem Ordner",
       wmo: { 0: "klar", 1: "überwiegend klar", 2: "teilweise bewölkt", 3: "bedeckt", 45: "Nebel", 51: "Nieselregen", 61: "Regen", 71: "Schnee", 80: "Schauer", 95: "Gewitter" }
     }
   };
+  // fr, es, pt-PT, pt-BR, nl, pl, sv, da, cs, ro, el, ru: i18n.js (generated with the Android strings), lang.js rules.
+  var I18N = window.OMARCHY_I18N || {};
+  var LANG = window.OmarchyLang;
+  for (var lc in I18N) if (Object.prototype.hasOwnProperty.call(I18N, lc)) STRINGS[lc] = I18N[lc].strings;
 
   var DEFAULT_CFG = {
     theme: "last-horizon",
     randomTheme: true,
-    randomWallpaper: true,
-    pluginSpacexTv: true,
+    randomScope: "intros",   // v2.15 (#71): "all" = every bundled theme
+    randomWallpaper: false, // 2.20: default wallpaper is Radiomarchy fractals; do not rotate it away
+    pluginSpacexTv: false,   // 2.20: off until turned on in Settings
     embedPlayer: true,     // Cinemarchy: YouTube plays inside (official embed) by default; an explicit false stays off
     pluginGrokbot: true,   // the Grok Bot companion: on by default, the default assistant
+    officeEnabled: false, officeProvider: "",  // v2.20 GrokBot Office (office.js): optional, off by default
     grokbotMessage: "",
     companionShape: "",    // "" follows the PC bot; else one of Tom's 14 shapes
     companionColor: "",    // "" follows the PC bot; else one of his 11 colours
@@ -116,7 +428,8 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     opacity: 0.75,
     wallpaperDim: 0,
     wallpaperIdx: 0,
-    wallpaper: "",        // "" follows the theme, "plain" = theme colours, else a path from DATA.wallpapers
+    wallpaper: "radiomarchy:fractals",  // 2.20 default Home animated background; OmaFire and stills stay selectable
+    radiomarchyAnimated: "auto",  // auto / on / off — same key as Radiomarchy prefs
     proceduralBg: false,
     tempUnit: "C",
     weatherCity: "Alessandria",
@@ -127,24 +440,44 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     tvEnabled: true,
     textScale: 1,         // launcher text size: 0.9 / 1 (default) / 1.15 / 1.3, CSS var --ts
     saverIdleMin: 2.5,
-    saverMode: "aquarium",
+    saverMode: "pulse",   // v2.15: Omarchy Pulse is the default screensaver
     saverSpeed: "normal",
-    saverArt: "aquarium",
+    saverArt: "pulse",
+    pulseScene: "sphere",
     saverSound: true,
     saverLogoScale: 0.65,
     saverShowClock: false,
     wallpaperIntro: true,
     wallpaperLoop: false,   // v2.14 "Always-animated wallpaper": loop the intro while Home is on screen
+    living: false,          // v2.14 Living screensaver: weather, GitHub, PC notifications, X in ASCII boxes (living.js)
+    livingNotes: false,     // ...with every notification from the Omarchy PC (POST /v1/living)
+    livingX: "off",         // ..."off" | "notify" (X notifications shown on the PC, free) | "api" (X API on the PC, paid)
+    livingGithub: true,
+    livingRadar: false,     // ...Omastorm's radar in the weather box (a snapshot of the PC's Omastorm window every 90 s)
+    bootSound: true,        // v2.14 boot screen sound (synthesised: CRT power-on, POST beep, disk, keys, wordmark)
+    omafireSound: false,    // v2.14 OmaFire wallpaper sound (Wes Grimes' fire loops, log/stoke, night ambience)
+    arcadeSound: true,      // v2.14 OmarchyTV Arcade sound effects (synthesised; a game is opened on purpose)
+    shareQr: "live",        // v2.14 QR code of OmarchyTV: "off", "live" (small, in the Live screensaver), "boot" (boot screen too)
+    arcadePcTheme: false,   // v2.14 RICE WARS re-themes the Omarchy PC per cleared level (its own theme comes back on exit)
+    pluginRetroCrt: "off",  // v2.14 Retro CRT plugin: "off" | "light" | "strong" (scanlines, mask, vignette, theme bezel)
+    pcPower: false,         // v2.14 LG: the PC suspends when the TV turns off (POST /v1/power; needs TV control approved)
+    themeToPc: false,       // v2.14 reverse theme sync: a theme picked here also switches the PC (POST /v1/theme/set)
+    bootScreen: "boot",     // v2.14 boot screen (boot.js): "boot" at app start, "wake" also after standby, "off"
+    bootFx: true,           // v2.14 boot screen scanlines and glow
     antiBurnIn: true,
     offIdleMin: 0,
     offMode: "screen",
     promptUser: "user",
     promptHost: "omarchytv",
     pcHost: "",
+    pcRecent: [],         // up to 3 PCs that answered, newest first: { host, name }; offered in "Pair Omarchy Linux PC"
     pcSimulated: false,
     aiCredits: "percent",
     clockFormat: "auto",   // "auto" (12 h in English, 24 h otherwise), "12" or "24"
-    widgets: { term: true, weather: true, pc: true, ai: true, deploy: false },
+    widgets: { term: true, weather: true, pc: true, ai: true, deploy: false, devmode: false, racing: false },
+    racingBar: false,     // 2.15.1: countdown in the bar only if asked (Grant Charge, #123)
+    racingTz: "",         // empty = the TV's own time zone
+    devModeUntil: 0,   // 2.15 (#131): when the Developer Mode session runs out, as last confirmed (epoch ms)
     tvApps: true,         // LG webOS: read the apps installed on the TV over SSAP (tvapps.js), DEFAULT_APPS stay the fallback
     hiddenApps: [],
     appOrder: []   // app ids in the user's order; apps not listed keep their DEFAULT_APPS position after them
@@ -155,16 +488,67 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     var saved = localStorage.getItem("omarchytv_cfg_2110");
     if (saved) cfg = Object.assign({}, DEFAULT_CFG, JSON.parse(saved));
   } catch (e) {}
+  try {
+    var radioPrefs = JSON.parse(localStorage.getItem("omarchytv.radio.v1") || "null");
+    if (radioPrefs && radioPrefs.animated) cfg.radiomarchyAnimated = radioPrefs.animated;
+  } catch (e) {}
 
   function saveCfg() {
     try { localStorage.setItem("omarchytv_cfg_2110", JSON.stringify(cfg)); } catch (e) {}
+    try {
+      var raw = localStorage.getItem("omarchytv.radio.v1");
+      var rp = raw ? JSON.parse(raw) : {};
+      rp.animated = cfg.radiomarchyAnimated || "auto";
+      localStorage.setItem("omarchytv.radio.v1", JSON.stringify(rp));
+    } catch (e) {}
+  }
+  // v2.15: Pulse becomes everyone's screensaver, once; the previous one is kept for "Previous screensaver" (as on Android).
+  if (!cfg.pulseDefault215) {
+    var pulseWas = {};
+    try { pulseWas = JSON.parse(localStorage.getItem("omarchytv_cfg_2110") || "{}") || {}; } catch (e) {}
+    var pulseSw = { saverMode: "pulse", saverArt: "pulse", living: false, pulseDefault215: true };
+    if (!(cfg.saverMode === "pulse" && !cfg.living)) {
+      pulseSw.ssBefore215 = { saverMode: pulseWas.saverMode || "aquarium", saverArt: pulseWas.saverArt || "aquarium", living: !!cfg.living };
+      pulseSw.pulseNotice = true;
+    }
+    Object.keys(pulseSw).forEach(function (k) { cfg[k] = pulseWas[k] = pulseSw[k]; });
+    // only these keys are written: the rest of the saved settings stays exactly as it was
+    try { localStorage.setItem("omarchytv_cfg_2110", JSON.stringify(pulseWas)); } catch (e) {}
   }
 
+  // v2.20: default Home wallpaper is Radiomarchy fractals, once. An explicit saved wallpaper is left alone.
+  (function fractalWallpaperDefault() {
+    if (cfg.fractalWp220) return;
+    var had = {};
+    try { had = JSON.parse(localStorage.getItem("omarchytv_cfg_2110") || "null") || {}; } catch (e) { had = {}; }
+    var randomOff = had.randomWallpaper === false;
+    var wp = Object.prototype.hasOwnProperty.call(had, "wallpaper") ? String(had.wallpaper || "") : "";
+    var explicitWp = wp !== "" && wp !== "omarchy" && wp !== "radiomarchy:fractals";
+    cfg.fractalWp220 = true;
+    if (!(randomOff || explicitWp)) {
+      cfg.wallpaper = "radiomarchy:fractals";
+      cfg.randomWallpaper = false;
+    }
+    try {
+      var persist = JSON.parse(localStorage.getItem("omarchytv_cfg_2110") || "null") || {};
+      persist.fractalWp220 = true;
+      if (!(randomOff || explicitWp)) {
+        persist.wallpaper = "radiomarchy:fractals";
+        persist.randomWallpaper = false;
+      }
+      localStorage.setItem("omarchytv_cfg_2110", JSON.stringify(persist));
+    } catch (e) {}
+  })();
+
   function getLang() {
+    var has = function (l) { return !!STRINGS[l]; };
+    if (LANG) return LANG.resolve(cfg.lang, navigator.language, has);
     if (cfg.lang && STRINGS[cfg.lang]) return cfg.lang;
     var nav = (navigator.language || "en").slice(0, 2).toLowerCase();
     return STRINGS[nav] ? nav : "en";
   }
+  function speechLang() { return LANG ? LANG.speechTag(getLang()) : "en-US"; }
+  function askLang() { return LANG ? LANG.askTag(getLang()) : "en"; }
 
   function tr(key) {
     var l = getLang();
@@ -265,7 +649,7 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     var cur = TV_INPUTS[state.ws2Idx], ids = inputs.map(function (p) { return p.id; });
     TV_INPUTS = inputs;
     state.ws2Idx = cur && ids.indexOf(cur.id) >= 0 ? ids.indexOf(cur.id) : Math.max(0, Math.min(state.ws2Idx, inputs.length - 1));
-    if (state.modalOpen && state.cineTab === 2) openCinemarchyModal(2, state.modalIdx);
+    if (cineUi) cineUi.refresh();   // Cinemarchy's TV & inputs follow the TV
     renderAll();
   }
   if (window.OMARCHY_PLATFORM === "tizen") {
@@ -354,8 +738,8 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     r.setProperty("--t-fg-bright", t.fgBright);
     r.setProperty("--t-fg-dim", t.fgDim);
     r.setProperty("--t-muted", t.muted);
-    r.setProperty("--t-accent", t.accent);
-    r.setProperty("--t-accent2", t.accent2);
+    r.setProperty("--t-accent", (fractalAccents && fractalAccents[0]) || t.accent);
+    r.setProperty("--t-accent2", (fractalAccents && fractalAccents[1]) || t.accent2);
     r.setProperty("--t-green", t.green);
     r.setProperty("--t-yellow", t.yellow);
     r.setProperty("--t-red", t.red);
@@ -366,17 +750,30 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
 
     var wl = document.getElementById("wallpaper-layer");
     var wv = document.getElementById("wallpaper-video");
+    // 2.15 (#47, measured by @tozes): on a 1080p panel (devicePixelRatio 1), or with "Light wallpapers" on, the
+    // 1920x1080 copy (wallpapers-1080/, made by tools/wallpapers-1080.py): it decodes ~4x faster; the 4K file
+    // only pays off on a UHD panel. Wallpapers already 1080p have no copy and stay as they are.
+    function wpFile(p) {
+      var light = cfg.lightWallpapers === true || (cfg.lightWallpapers !== false && (window.devicePixelRatio || 1) <= 1);
+      var rel = String(p || "").replace(/^wallpapers\//, "");
+      return light && window.OMARCHY_WP1080 && window.OMARCHY_WP1080.indexOf(rel) >= 0 ? "wallpapers-1080/" + rel : p;
+    }
     var wlist = DATA.wallpapers[cfg.theme] || [];
     var picked = cfg.wallpaper && cfg.wallpaper !== "plain" && allWallpapers().indexOf(cfg.wallpaper) >= 0 ? cfg.wallpaper : "";
     var activeWp = "";
-    if (picked) {
+    omafireWall(wl);
+    fractalWall(wl);
+    applyCrt();
+    if (omafireModeNow()) {
+      wl.style.backgroundImage = "none";   // v2.14 OmaFire draws into the layer itself
+    } else if (picked) {
       activeWp = picked;
-      wl.style.backgroundImage = "url('" + picked + "')";
+      wl.style.backgroundImage = "url('" + wpFile(picked) + "')";
     } else if (cfg.proceduralBg || cfg.wallpaper === "plain" || !wlist.length) {
       wl.style.backgroundImage = "radial-gradient(circle at 75% 20%, " + hexToRgba(t.accent, 0.22) + " 0%, " + t.bg + " 70%)";
     } else {
       activeWp = wlist[cfg.wallpaperIdx % wlist.length];
-      wl.style.backgroundImage = "url('" + activeWp + "')";
+      wl.style.backgroundImage = "url('" + wpFile(activeWp) + "')";
     }
     if (wv) {
       var intro = cfg.wallpaperIntro && activeWp && DATA.wallpaperIntros && DATA.wallpaperIntros[activeWp];
@@ -410,7 +807,18 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     var H = window.OmarchyHooks, sc = window.screen || {};
     var s = H ? H.stageScale(window.innerWidth, window.innerHeight, window.OMARCHY_FIT_SCREEN === true, sc.width, sc.height, window.devicePixelRatio)
       : Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
-    st.style.transform = "scale(" + s + ")";
+    var crt = typeof crtMode === "function" && crtMode() !== "off";
+    if (!crt) { st.style.transform = "scale(" + s + ")"; return; }
+    // Retro CRT: the 1920x1080 stage, smaller and centred a little high; the overlay covers exactly that area.
+    // v2.15: 94% (was 88%), so the screen fills more of the real TV; the same size as on Android (CrtOverlay.K).
+    var k = s * 0.94, w = 1920 * k, h = 1080 * k, x = (window.innerWidth - w) / 2, y = (window.innerHeight - h) / 2 - window.innerHeight * 0.008;
+    st.style.transform = "translate(" + x + "px," + y + "px) scale(" + k + ")";
+    var el = document.getElementById("crt-overlay"), b = document.getElementById("crt-badge");
+    if (el) { el.style.left = x + "px"; el.style.top = y + "px"; el.style.width = w + "px"; el.style.height = h + "px"; }
+    // The boot screen plays inside the set too (as on Android, where it is part of the scaled Home).
+    var bt = document.getElementById("otv-boot");
+    if (bt) { bt.style.left = x + "px"; bt.style.top = y + "px"; bt.style.width = w + "px"; bt.style.height = h + "px"; bt.style.right = "auto"; bt.style.bottom = "auto"; }
+    if (b) b.style.top = (y + h + (window.innerHeight - y - h) * 0.32) + "px";
   }
   window.addEventListener("resize", fitStage);
   // Some older engines (webOS 4.0) report the final window size only after load, without a resize event (#72).
@@ -425,13 +833,16 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
       en: ["sun","mon","tue","wed","thu","fri","sat"],
       it: ["dom","lun","mar","mer","gio","ven","sab"],
       de: ["so","mo","di","mi","do","fr","sa"]
-    }[lang] || ["sun","mon","tue","wed","thu","fri","sat"];
+    }[lang] || (I18N[lang] && I18N[lang].days) || ["sun","mon","tue","wed","thu","fri","sat"];
     var months = {
       en: ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"],
       it: ["gen","feb","mar","apr","mag","giu","lug","ago","set","ott","nov","dic"],
       de: ["jan","feb","mär","apr","mai","jun","jul","aug","sep","okt","nov","dez"]
-    }[lang] || ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
-    document.getElementById("bar-clock").textContent = days[d.getDay()] + " " + d.getDate() + " " + months[d.getMonth()] + "  " + clockText(d);
+    }[lang] || (I18N[lang] && I18N[lang].months) || ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
+    var date = lang === "zh-CN" || lang === "ja"   // 11月2日 周一 / 11月2日(月)
+      ? months[d.getMonth()] + d.getDate() + "日 " + days[d.getDay()]
+      : days[d.getDay()] + " " + d.getDate() + " " + months[d.getMonth()];
+    document.getElementById("bar-clock").textContent = date + "  " + clockText(d);
   }
 
   // 12 or 24 hour time for the bar and the screensaver clock (cfg.clockFormat, "auto" follows the language).
@@ -526,7 +937,7 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     var info = document.getElementById("term-info");
     info.innerHTML =
       '<span style="color:' + t.accent + '">' + tr("term_theme") + '</span><span style="color:' + t.fg + '">' + cfg.theme + '</span>\n' +
-      '<span style="color:' + t.accent + '">' + tr("term_net") + '</span><span style="color:' + t.fg + '">Wi-Fi</span>\n' +
+      '<span style="color:' + t.accent + '">' + tr("term_net") + '</span><span style="color:' + t.fg + '">' + (navigator.onLine === false ? "offline" : "online") + '</span>\n' +
       '<span style="color:' + t.accent + '">' + tr("term_up") + '</span><span style="color:' + t.fg + '">' + upStr + '</span>' +
       '<span style="color:' + t.fgDim + '"> · ' + APP_VERSION + '</span>';
   }
@@ -540,7 +951,8 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
 
   function formatAiPane(s) {
     if (!Array.isArray(s.ai)) {
-      return "Claude   $" + (s.claude || "18.40") + " left\nOpenAI   $" + (s.openai || "42.10") + " left\nxAI Grok $" + (s.xai || "95.00") + " left";
+      // No made-up amounts when the PC doesn't send them (issue #5, point 10).
+      return "Claude   " + (s.claude ? "$" + s.claude + " left" : "—") + "\nOpenAI   " + (s.openai ? "$" + s.openai + " left" : "—") + "\nxAI Grok " + (s.xai ? "$" + s.xai + " left" : "—");
     }
     var mode = cfg.aiCredits === "dollars" ? "dollars" : "percent";
     var rows = s.ai;
@@ -574,10 +986,23 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     document.getElementById("legend-ai").textContent = tr("box_ai");
 
     document.getElementById("term-box").style.display = cfg.widgets.term ? "block" : "none";
+    var raceOn = !!cfg.widgets.racing;
+    var raceBox = document.getElementById("race-box");
+    if (raceBox) raceBox.style.display = raceOn ? "block" : "none";
+    var wrap = document.getElementById("widgets-wrap");
+    if (wrap) wrap.classList.toggle("with-racing", raceOn);
     document.getElementById("wx-box").style.display = cfg.widgets.weather ? "block" : "none";
+    document.getElementById("wx-box").style.marginLeft = raceOn ? "16px" : "0";
     document.getElementById("pc-box").style.display = cfg.widgets.pc ? "block" : "none";
     document.getElementById("ai-box").style.display = cfg.widgets.ai ? "block" : "none";
     document.getElementById("deploy-box").style.display = cfg.widgets.deploy ? "block" : "none";
+    var dmOn = !!cfg.widgets.devmode && window.OMARCHY_PLATFORM !== "tizen" && window.OmarchyDevMode;
+    document.getElementById("devmode-box").style.display = dmOn ? "block" : "none";
+    if (dmOn) {
+      var dm = window.OmarchyDevMode.left(cfg.devModeUntil || 0, Date.now()), dmb = document.getElementById("devmode-body");
+      dmb.textContent = dm.text;
+      dmb.style.color = dm.level === "crit" || dm.level === "over" ? "var(--t-red)" : dm.level === "warn" ? "var(--t-yellow)" : "var(--t-fg)";
+    }
 
     var wx = state.weather;
     var wmoMap = tr("wmo") || {};
@@ -606,6 +1031,18 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
       aiBody.textContent = tr("pc_not_connected");
       if (ws4Live) ws4Live.textContent = "";
     }
+    updateRacing();
+  }
+
+  // Remember a PC that answered, so pairing again is one OK press instead of typing with the remote.
+  // Only addresses that answered get in, so a typo never lands in the list.
+  function rememberPc(host, name) {
+    host = String(host || "").replace(/\/+$/, "");
+    if (!host) return;
+    var list = cfg.pcRecent || [];
+    if (list[0] && list[0].host === host && list[0].name === (name || "")) return;   // polled every few seconds: save only on change
+    cfg.pcRecent = [{ host: host, name: name || "" }].concat(list.filter(function (p) { return p && p.host !== host; })).slice(0, 3);
+    saveCfg();
   }
 
   function pollPcStatus() {
@@ -623,6 +1060,8 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     var url = base.replace(/\/+$/, "") + "/v1/status";
     return fetch(url).then(function (r) { return r.json(); }).then(function (j) {
       state.pcStatus = j;
+      liftoffState(j && j.liftoff);
+      if (j) rememberPc(cfg.pcHost, j.host);
       if (j && j.theme && DATA.themes[j.theme] && cfg.syncPcTheme) {
         cfg.theme = j.theme;
         applyTheme();
@@ -825,15 +1264,15 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
 
     var tip = document.getElementById("bar-tip");
     if (state.zone === "bar" && state.barIdx >= 6) {
-      var tipKeys = ["tip_cinemarchy", "tip_wifi", "tip_bt", "tip_vol", "tip_inputs", "tip_saver"];
-      tip.textContent = tr(tipKeys[state.barIdx - 6] || "tip_saver");
+      var tipKeys = ["tip_cinemarchy", "", "tip_wifi", "tip_bt", "tip_vol", "tip_inputs", "tip_saver"];
+      tip.textContent = state.barIdx === 7 ? "OmarchyTV Arcade" : tr(tipKeys[state.barIdx - 6] || "tip_saver");   // a product name, the same in every language
       tip.style.display = "block";
     } else {
       tip.style.display = "none";
     }
 
     // Widget focus borders on WS1
-    var wBoxes = [document.getElementById("term-box"), document.getElementById("wx-box"), document.getElementById("pc-box"), document.getElementById("ai-box")];
+    var wBoxes = [document.getElementById("term-box"), document.getElementById("race-box"), document.getElementById("wx-box"), document.getElementById("pc-box"), document.getElementById("ai-box")];
     wBoxes.forEach(function (el, idx) {
       if (!el) return;
       el.classList.toggle("focused", state.ws === 0 && state.zone === "widgets" && state.widgetIdx === idx);
@@ -904,7 +1343,9 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     var transPct = Math.round((1 - cfg.opacity) * 100) + "%";
     var idleStr = cfg.saverIdleMin === 0 ? "never" : (cfg.saverIdleMin + " min");
     return [
+      window.OmarchyRemote && OmarchyRemote.supported() ? { label: "Remotes", val: "›", act: function () { OmarchyRemote.settings(); } } : null,
       { label: "🎬 Cinemarchy (Media, Streaming, Live TV & Snippets)", val: "C ›", act: function () { openCinemarchyModal(0); } },
+      { label: "🕹 OmarchyTV Arcade", val: "›", act: openArcade },
       { label: "🧩 " + tr("sys_plugins"), val: ((cfg.pluginSpacexTv ? 1 : 0) + (cfg.pluginGrokbot ? 1 : 0)) + " enabled ›", act: openPluginsModal },
       { label: tr("sys_webos"), val: "›", act: function () { launchApp({ name: "LG Settings", appId: "com.palm.app.settings" }); } },
       { label: tr("sys_themes"), val: cfg.theme, act: openThemesModal },
@@ -932,7 +1373,7 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
       { label: tr("sys_text_tiles"), val: cfg.textTiles ? "on" : "off", act: function () { cfg.textTiles = !cfg.textTiles; saveCfg(); renderAll(); } },
       { label: tr("sys_all"), val: "›", act: openAllSettingsModal },
       { label: tr("sys_about"), val: APP_VERSION + " ›", act: openAboutModal }
-    ];
+    ].filter(function (row) { return !!row; });
   }
 
   function openModal(title, sub, items, withInput, onInput, opts) {
@@ -942,6 +1383,9 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     state.modalIdx = opts.focusIdx > 0 && opts.focusIdx < state.modalItems.length ? opts.focusIdx : 0;
     state.modalDigit = null;
     document.getElementById("modal-title").textContent = title;
+    // Keep ordinary menus narrow; input and prose-heavy dialogs retain their reading width.
+    document.getElementById("modal-box").className = "box" + (withInput || (sub && sub.length > 160) ? " wide" : "");
+    document.getElementById("modal-hint").textContent = tr("menu_hint");
     var subEl = document.getElementById("modal-sub");
     subEl.textContent = sub || "";
     subEl.style.display = sub ? "block" : "none";
@@ -993,13 +1437,37 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     renderAll();
   }
 
+  function menuIcon(icon) {
+    // Inline paths avoid missing Nerd Font glyphs on older TV firmware.
+    var paths = {
+      "󰕼": "M3 5h18v14H3z M7 5v14 M17 5v14 M3 10h4 M17 10h4 M3 14h4 M17 14h4",
+      "": "M8 3h8v5h5v8h-5v5H8v-5H3V8h5z",
+      "󰀻": "M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z",
+      "󰸌": "M12 3a9 9 0 1 0 0 18h2a2 2 0 0 0 0-4h-1a2 2 0 0 1 0-4h3a5 5 0 0 0 0-10z M7 9h1 M11 6h1 M16 7h1 M6 14h1",
+      "": "M3 4h18v16H3z M3 17l6-6 4 4 3-3 5 5 M15 8h1",
+      "󰖐": "M7 18a5 5 0 1 1 1-10 6 6 0 0 1 11 3 4 4 0 0 1-1 7z",
+      "󱄄": "M3 4h18v13H3z M8 21h8 M12 17v4 M8 8l8 5 M16 8l-8 5",
+      "": "M4 6h16 M4 12h16 M4 18h16 M8 3v6 M16 9v6 M10 15v6",
+      "": "M3 4h18v16H3z M7 9l3 3-3 3 M13 15h4",
+      "󰚩": "M5 7h14v13H5z M12 3v4 M2 11v5 M22 11v5 M8 11h1 M15 11h1 M8 16h8",
+      "󰖟": "M3 12h18 M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M12 3c-5 5-5 13 0 18 M12 3c5 5 5 13 0 18",
+      "󰾆": "M4 19V9 M9 19V5 M14 19v-7 M19 19V3",
+      "♫": "M9 18V5l12-2v13 M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0z M21 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z",
+      "🎮": "M7 8h10a5 5 0 0 1 4.6 6.9l-1 2.6A2.5 2.5 0 0 1 16 18l-1.2-1.5H9.2L8 18a2.5 2.5 0 0 1-4.6-.5l-1-2.6A5 5 0 0 1 7 8z M8 11v3 M6.5 12.5h3 M15 11.5h.01 M17 13.5h.01"
+    };
+    return paths[icon] ? '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="' + paths[icon] + '"></path></svg>' : escHtml(icon);
+  }
+
   function renderModalList() {
     var list = document.getElementById("modal-list");
     list.innerHTML = "";
     state.modalItems.forEach(function (it, idx) {
       var d = document.createElement("div");
       d.className = "modal-item" + (idx === state.modalIdx ? " focused" : "");
-      d.innerHTML = '<span>' + it.label + '</span><span class="mi-right">' + (it.right || "") + '</span>';
+      d.setAttribute("role", "option");
+      d.setAttribute("aria-selected", idx === state.modalIdx ? "true" : "false");
+      d.innerHTML = (it.icon ? '<span class="mi-icon" aria-hidden="true">' + menuIcon(it.icon) + '</span>' : '') +
+        '<span class="mi-label">' + it.label + '</span><span class="mi-right">' + (it.right || "") + '</span>';
       d.onclick = function () { state.modalIdx = idx; if (it.act) it.act(); };
       list.appendChild(d);
       if (idx === state.modalIdx && d.scrollIntoView) d.scrollIntoView({ block: "nearest" });
@@ -1011,13 +1479,33 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     { theme: "cumulus", idx: 0, wp: "wallpapers/cumulus/01-cloud-town-path.webp" },
     { theme: "cumulus", idx: 1, wp: "wallpapers/cumulus/02-cottage.webp" },
     { theme: "cumulus", idx: 2, wp: "wallpapers/cumulus/03-airship.webp" },
-    { theme: "cumulus", idx: 3, wp: "wallpapers/cumulus/04-lighthouse.webp" }
+    { theme: "cumulus", idx: 3, wp: "wallpapers/cumulus/04-lighthouse.webp" },
+    // v2.14: OmaFire (Wes Grimes) in the random pool; with a random theme too, any of the intros' themes
+    { fire: "omafire:campfire" },
+    { fire: "omafire:embers" }
   ];
 
   function rotateRandomIfEnabled() {
     if (!cfg.randomTheme && !cfg.randomWallpaper) return false;
+    // v2.15 (#71): "all" = any bundled theme, with one of its own backgrounds (the fires 1 time in 8), as on Android
+    if (cfg.randomTheme && cfg.randomScope === "all" && !(cfg.randomWallpaper && Math.random() < 0.125)) {
+      var all = Object.keys(DATA.themes).filter(function (n) { return n !== cfg.theme; });
+      if (all.length) {
+        cfg.theme = all[Math.floor(Math.random() * all.length)];
+        if (cfg.randomWallpaper) { cfg.wallpaper = ""; cfg.wallpaperIdx = Math.floor(Math.random() * 12); }
+        saveCfg(); applyTheme(); renderAll();
+        return true;
+      }
+    }
     var pick = ANIMATED_INTROS[Math.floor(Math.random() * ANIMATED_INTROS.length)];
-    if (cfg.randomTheme && cfg.randomWallpaper) {
+    if (pick.fire && cfg.randomWallpaper) {
+      if (pick.fire === cfg.wallpaper) pick = { fire: pick.fire === "omafire:campfire" ? "omafire:embers" : "omafire:campfire" };
+      if (cfg.randomTheme) cfg.theme = "campfire";   // the fire comes with its own theme
+      cfg.wallpaper = pick.fire;
+      cfg.wallpaperIdx = 0;
+    } else if (pick.fire) {   // random theme only: the fires are wallpapers, so just the theme changes
+      cfg.theme = cfg.theme === "last-horizon" ? "cumulus" : "last-horizon";
+    } else if (cfg.randomTheme && cfg.randomWallpaper) {
       cfg.theme = pick.theme;
       cfg.wallpaper = "";
       cfg.wallpaperIdx = pick.idx;
@@ -1044,8 +1532,14 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
       { label: tr("random_theme"), right: cfg.randomTheme ? "on" : "off", act: function () {
         cfg.randomTheme = !cfg.randomTheme; saveCfg(); openThemesModal(true);
       } },
+      { label: tr("random_scope"), right: tr(cfg.randomScope === "all" ? "random_all" : "random_intros"), act: function () {
+        cfg.randomScope = cfg.randomScope === "all" ? "intros" : "all"; saveCfg(); openThemesModal(true);
+      } },
       { label: tr("random_wallpaper"), right: cfg.randomWallpaper ? "on" : "off", act: function () {
         cfg.randomWallpaper = !cfg.randomWallpaper; saveCfg(); openThemesModal(true);
+      } },
+      { label: tr("theme_to_pc"), right: cfg.themeToPc ? "on" : "off", act: function () {
+        cfg.themeToPc = !cfg.themeToPc; saveCfg(); openThemesModal(true);
       } }
     ].concat(names.map(function (n) {
       return {
@@ -1056,13 +1550,188 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
           cfg.randomTheme = false;
           cfg.wallpaperIdx = 0;
           saveCfg(); applyTheme(); renderAll(); closeModal();
+          themeToPc(n);
         }
       };
     }));
     var curIdx = names.indexOf(cfg.theme);
     openModal(tr("sys_themes") + " (" + names.length + ")", "Select a theme (MIT omarchy.webp + Liftoff Sunset)", items);
     if (keepFocus) { state.modalIdx = Math.min(focus, items.length - 1); renderModalList(); }
-    else if (curIdx >= 0) { state.modalIdx = curIdx + 2; renderModalList(); }
+    else if (curIdx >= 0) { state.modalIdx = curIdx + 3; renderModalList(); }
+  }
+
+  // v2.14 reverse theme sync: with "Also change the PC theme" on and a real PC paired, the theme just picked here
+  // goes to the PC bridge (omarchy-tv webos-serve), which runs omarchy-theme-set when it has that theme. The PC's
+  // status then reports the same theme, so nothing loops. A theme the PC doesn't have changes only the TV.
+  // ---- v2.14 PC requests with the ask code (update via PC, power) ----
+  function pcPost(path, body, keepalive) {
+    var o = { method: "POST", headers: { "X-Omarchy-Token": cfg.grokbotCode || "", "Content-Type": "text/plain" }, body: JSON.stringify(body) };
+    if (keepalive) o.keepalive = true;
+    return fetch(pcBase() + path, o).then(function (r) {
+      return r.json().then(function (j) { return { status: r.status, j: j || {} }; }, function () { return { status: r.status, j: {} }; });
+    });
+  }
+  function pcReady() { return !!(cfg.pcHost && !cfg.pcSimulated && cfg.grokbotCode); }
+  function updateFailed(r) {
+    showToast(tr("update_failed").replace("%s", (r && r.j && (r.j.message || r.j.error)) || (r && r.status ? "HTTP " + r.status : "offline")));
+  }
+
+  // "Update via PC": the PC downloads the newest official release for this TV, checks it and installs it
+  // (LG: ares-install; Samsung: signed with the user's own certificate profile). The countdown comes from /v1/status.
+  function updateViaPc() {
+    if (!pcReady()) { showToast(tr("update_need_pc")); return; }
+    var plat = window.OMARCHY_PLATFORM === "tizen" ? "tizen" : "webos";
+    showToast(tr("update_checking"));
+    pcPost("/v1/update/tv", { action: "check", platform: plat, version: APP_VERSION }).then(function (r) {
+      if (r.status !== 200) { updateFailed(r); return; }
+      if (!r.j.latest) { showToast(tr("update_none").replace("%s", APP_VERSION)); return; }
+      var v = String(r.j.latest);
+      openModal(tr("update_via_pc"), tr("update_confirm").replace("%s", v), [
+        { label: tr("update_install"), right: v, act: function () {
+          closeModal();
+          pcPost("/v1/update/tv", { action: "install", platform: plat, version: APP_VERSION, want: v }).then(function (r2) {
+            if (r2.status !== 200 && r2.status !== 409) { updateFailed(r2); return; }
+            if (r2.j.result === "uptodate") showToast(tr("update_none").replace("%s", APP_VERSION));
+            pollPcStatus();
+          }, function () { updateFailed(null); });
+        } },
+        { label: tr("tile_cancel"), right: "", act: closeModal }
+      ]);
+    }, function () { updateFailed(null); });
+  }
+
+  // ---- v2.14 PC sleeps with the TV (LG only: a web app can't send Wake-on-LAN, so waking needs Android TV) ----
+  var powerSent = "";
+  function pcPowerSend(st) {
+    if (!cfg.pcPower || !pcReady() || powerSent === st) return;
+    powerSent = st;
+    try { pcPost("/v1/power", { state: st }, true).then(null, function () {}); } catch (e) {}
+  }
+  document.addEventListener("visibilitychange", function () {
+    if (!cfg.pcPower || !isWebos()) return;
+    if (!document.hidden) { if (powerSent === "standby") pcPowerSend("on"); return; }
+    if (!tvControlApproved()) return;
+    // Hidden also means "another app is in front": only a TV that is really going off counts.
+    ssapRequest("ssap://com.webos.service.tvpower/power/getPowerState", function (ok, info, data) {
+      var st = ok && data && data.state;
+      if (st && st !== "Active") pcPowerSend("standby");
+    });
+  });
+
+  // ---- v2.14 Liftoff: a build or an update on the big screen (liftoff.js) ----
+  var LIFT = window.OmarchyLiftoff || null;
+  var lift = { s: null, at: 0, endedAt: 0, el: null, dismissed: "", endShown: "", seen: "", alarmed: "", timer: null };
+  function liftoffState(s) {
+    if (!LIFT || !s || ["running", "ok", "failed"].indexOf(s.state) < 0) return;
+    var id = String(s.id || ""), st = s.state, news = st !== "running";
+    if (st === "failed" && id !== lift.alarmed) { lift.alarmed = id; LIFT.alarm(); }
+    if (id === lift.dismissed && !news) return;
+    if (news && id + st === lift.endShown) return;
+    if (!lift.s && st === "ok" && id !== lift.seen) return;
+    lift.seen = id;
+    if (news) { lift.endShown = id + st; lift.endedAt = Date.now(); }
+    lift.s = s; lift.at = Date.now();
+    liftoffShow();
+  }
+  function liftoffEl() {
+    if (lift.el) return lift.el;
+    var d = document.createElement("div");
+    d.id = "liftoff";
+    d.innerHTML = '<div class="box"><div class="title"></div><pre class="rocket"></pre><div class="right"><div class="clock"></div>' +
+      '<div class="stage"></div><div class="bar"></div><div class="plus"></div></div><pre class="tail"></pre><div class="hint"></div></div>';
+    document.body.appendChild(d);
+    lift.el = d;
+    return d;
+  }
+  function liftoffShow() {
+    var d = liftoffEl();
+    d.style.display = "block";
+    liftoffRender();
+    if (!lift.timer) lift.timer = setInterval(liftoffRender, 200);
+  }
+  function liftoffHide() {
+    if (lift.timer) { clearInterval(lift.timer); lift.timer = null; }
+    if (lift.el) { lift.el.style.display = "none"; lift.el.className = ""; }
+    lift.s = null;
+  }
+  function liftoffRender() {
+    var s = lift.s, d = lift.el;
+    if (!s || !d) return;
+    var now = Date.now(), since = Math.floor((now - lift.at) / 1000), st = s.state;
+    if (st === "ok" && now - lift.endedAt > 5000) { liftoffHide(); return; }
+    if (st === "failed" && now - lift.endedAt > 120000) { liftoffHide(); return; }
+    var blink = Math.floor(now / 400) % 2 === 0;
+    d.className = st + (st === "failed" && blink ? " blink" : "");
+    function q(c) { return d.querySelector("." + c); }
+    q("title").textContent = tr("liftoff_title") + " \u00b7 " + tr(s.kind === "update" ? "liftoff_update" : "liftoff_build") + " \u00b7 " + (s.name || "");
+    var flame = st === "failed" ? [] : st === "ok" ? [LIFT.FLAME[1][Math.floor(now / 120) % 2], LIFT.FLAME[1][(Math.floor(now / 120) + 1) % 2]]
+      : [LIFT.FLAME[0][Math.floor(now / 120) % 2]];
+    var r = q("rocket");
+    r.textContent = LIFT.ROCKET.join("\n") + "\n";
+    var fl = document.createElement("span"); fl.className = "flame"; fl.textContent = flame.join("\n");
+    r.appendChild(fl);
+    var clock = q("clock");
+    clock.textContent = st === "ok" ? tr("liftoff_ok") : st === "failed" ? tr("liftoff_abort") : LIFT.clock(s, since);
+    clock.className = "clock" + (LIFT.finalCount(s, since) && !blink ? " dim" : "");
+    var stage = s.stage || "", sk = "liftoff_stage_" + stage;   // the update's stages in the TV's language
+    if (STRINGS.en[sk]) stage = tr(sk);
+    if (st === "failed" && typeof s.code === "number") stage = (stage ? stage + " \u00b7 " : "") + tr("liftoff_exit").replace("%s", s.code);
+    q("stage").textContent = stage;
+    q("bar").textContent = st === "failed" ? "" : LIFT.bar(LIFT.progress(s, since), 24);
+    q("plus").textContent = st === "running" ? "T+" + LIFT.mmss(LIFT.elapsed(s, since)) : "";
+    q("tail").textContent = st === "failed" && s.tail ? s.tail.join("\n") : "";
+    q("hint").textContent = tr("liftoff_hint");
+  }
+  // Any key hides it (and never reaches Home); a new state shows it again.
+  window.addEventListener("keydown", function (e) {
+    if (!lift.el || lift.el.style.display !== "block") return;
+    if (lift.s) lift.dismissed = String(lift.s.id || "");
+    liftoffHide();
+    e.preventDefault(); e.stopPropagation();
+    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+  }, true);
+  // ---- v2.14 OmarchyTV Arcade (games/*.js): inside #stage, so with Retro CRT on it plays inside the set ----
+  var arcadeUi = null;
+  function openArcade() {
+    if (arcadeUi || !window.OmarchyArcade) return;
+    if (state.modalOpen) closeModal();
+    var host = document.getElementById("stage") || document.body;
+    arcadeUi = window.OmarchyArcade.open(host, {
+      lang: getLang(), theme: DATA.themes[cfg.theme], themeName: cfg.theme, themes: DATA.themes,
+      sound: cfg.arcadeSound !== false, pcTheme: !!cfg.arcadePcTheme && pcReady(),
+      onPcTheme: function (name) { arcadePcTheme(name || cfg.theme); },
+      onExit: function () { arcadeUi = null; renderAll(); }
+    });
+  }
+  function arcadePcTheme(name) {   // like themeToPc, but only for the game (its own setting); the PC's theme comes back on exit
+    if (!pcReady()) return;
+    fetch(pcBase() + "/v1/theme/set", { method: "POST", headers: { "X-Omarchy-Token": cfg.grokbotCode || "", "Content-Type": "text/plain" },
+      body: JSON.stringify({ name: name }) }).then(function () {}, function () {});
+  }
+  window.OMARCHY_OPEN_ARCADE = openArcade;
+  // While the arcade is open every key goes to the game: arrows, OK and Back only, so nothing leaves the launcher.
+  window.addEventListener("keydown", function (e) {
+    if (!arcadeUi) return;
+    if (lift.el && lift.el.style.display === "block") return;   // a failed build's alarm still shows on top
+    var n = window.OmarchyArcade.keyName(e);
+    if (n) arcadeUi.key(n);
+    e.preventDefault(); e.stopPropagation();
+    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+  }, true);
+
+  // While a liftoff runs, ask the PC every second instead of every 5 s.
+  setInterval(function () {
+    if (!lift.s || lift.s.state !== "running" || document.hidden || pcPollPending) return;
+    pcPollPending = true;
+    pollPcStatus().then(function () { pcPollPending = false; }, function () { pcPollPending = false; });
+  }, 1000);
+
+  function themeToPc(name) {
+    if (!cfg.themeToPc || !cfg.pcHost || cfg.pcSimulated) return;
+    fetch(pcBase() + "/v1/theme/set", { method: "POST", headers: { "X-Omarchy-Token": cfg.grokbotCode || "", "Content-Type": "text/plain" },
+      body: JSON.stringify({ name: name }) }).then(function (r) {
+      return r.json().then(function (j) { if (j && j.result === "unknown") showToast(tr("theme_not_on_pc")); });
+    }, function () {});
   }
 
   function openWeatherModal() {
@@ -1078,21 +1747,45 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
           saveCfg(); fetchWeather(); renderAll();
         });
       } },
-      { label: tr("wx_search"), right: cfg.weatherCity, act: function () {
-        openModal(tr("wx_search"), "Type city name (e.g. Milan, Rome, Berlin, New York):", [
-          { label: "Milano, IT", right: "45.46, 9.19", act: function () { setCity("Milano", 45.464, 9.190); } },
-          { label: "Alessandria, IT", right: "44.91, 8.61", act: function () { setCity("Alessandria", 44.913, 8.615); } },
-          { label: "Roma, IT", right: "41.89, 12.48", act: function () { setCity("Roma", 41.893, 12.483); } },
-          { label: "Berlin, DE", right: "52.52, 13.40", act: function () { setCity("Berlin", 52.520, 13.405); } },
-          { label: "San Francisco, US", right: "37.77, -122.42", act: function () { setCity("San Francisco", 37.775, -122.419); } }
-        ], "City name…");
-      } },
+      { label: tr("wx_search"), right: cfg.weatherCity, act: openCitySearch },
       { label: tr("wx_unit"), right: "°" + cfg.tempUnit, act: function () {
         cfg.tempUnit = cfg.tempUnit === "C" ? "F" : "C";
         saveCfg(); renderAll(); openWeatherModal();
       } }
     ];
     openModal(tr("wx_title"), "", items);
+  }
+
+  // City search (issue #88): typed text goes to Open-Meteo geocoding like Android; curated presets stay as fallback.
+  var DEFAULT_CITIES = [
+    { name: "Milano", label: "Milano, IT", lat: 45.464, lon: 9.190 }, { name: "Alessandria", label: "Alessandria, IT", lat: 44.913, lon: 8.615 },
+    { name: "Roma", label: "Roma, IT", lat: 41.893, lon: 12.483 }, { name: "Berlin", label: "Berlin, DE", lat: 52.520, lon: 13.405 },
+    { name: "San Francisco", label: "San Francisco, US", lat: 37.775, lon: -122.419 }
+  ];
+  function openCitySearch() {
+    var G = window.OmarchyGeo, presets = (window.OMARCHY_DATA && OMARCHY_DATA.weatherCities) || DEFAULT_CITIES;
+    var timer = null, seq = 0;
+    function cityItem(c) { return { label: c.label, right: c.lat.toFixed(2) + ", " + c.lon.toFixed(2), act: function () { setCity(c.name, c.lat, c.lon); } }; }
+    function show(found, q) {
+      var list = found.map(cityItem), pre = G ? G.filterPresets(presets, q) : presets;
+      if (!pre.length && !found.length) pre = presets;
+      state.modalItems = list.concat(pre.map(cityItem));
+      if (state.modalIdx >= state.modalItems.length) state.modalIdx = 0;
+      renderModalList();
+    }
+    function search(q) {
+      q = (q || "").trim();
+      clearTimeout(timer);
+      show([], q);
+      if (q.length < 2 || !G || !G.searchUrl) return;
+      var my = ++seq;
+      timer = setTimeout(function () {
+        fetch(G.searchUrl(q, getLang())).then(function (r) { return r.json(); }).then(function (j) {
+          if (my === seq && state.modalOpen) show(G.parseSearch(j), q);
+        }).catch(function () {});   // offline / blocked: presets stay
+      }, 600);
+    }
+    openModal(tr("wx_search"), "Type a city name (e.g. Milan, Lisbon, Tokyo):", presets.map(cityItem), "City name…", search);
   }
 
   function setCity(name, lat, lon) {
@@ -1102,28 +1795,61 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
   }
 
   function openWidgetsModal() {
-    function tog(k) { cfg.widgets[k] = !cfg.widgets[k]; saveCfg(); renderAll(); openWidgetsModal(); }
+    function tog(k) { cfg.widgets[k] = !cfg.widgets[k]; saveCfg(); if (k === "racing") racingKick(); renderAll(); openWidgetsModal(); }
+    function racingSeriesRows() {
+      var R = window.OmarchyRacing, list = R ? R.SERIES : [["f1", "F1"], ["motogp", "MotoGP"]], on = racingSeries(), rows = [], i;
+      for (i = 0; i < list.length; i++) (function (id, name) {
+        var isOn = on.indexOf(id) >= 0;
+        rows.push({ label: "  " + name, right: isOn ? "on" : "off", act: function () {
+          var cur = racingSeries().slice(), j = cur.indexOf(id);
+          if (j >= 0) cur.splice(j, 1); else cur.push(id);
+          cfg.racingSeries = list.map(function (x) { return x[0]; }).filter(function (x) { return cur.indexOf(x) >= 0; });
+          saveCfg(); racingKick(); renderAll(); openWidgetsModal();
+        } });
+      })(list[i][0], list[i][1]);
+      return rows;
+    }
     openModal(tr("sys_widgets"), "", [
       { label: "terminal · logo", right: cfg.widgets.term ? "on" : "off", act: function () { tog("term"); } },
       { label: "weather", right: cfg.widgets.weather ? "on" : "off", act: function () { tog("weather"); } },
       { label: "omarchy · pc", right: cfg.widgets.pc ? "on" : "off", act: function () { tog("pc"); } },
       { label: "ai credits · pc", right: cfg.widgets.ai ? "on" : "off", act: function () { tog("ai"); } },
-      { label: "deploys · pc", right: cfg.widgets.deploy ? "on" : "off", act: function () { tog("deploy"); } }
-    ]);
+      { label: "deploys · pc", right: cfg.widgets.deploy ? "on" : "off", act: function () { tog("deploy"); } },
+      { label: "racing", right: cfg.widgets.racing ? "on" : "off", act: function () { tog("racing"); } },
+      { label: "racing countdown in the bar", right: cfg.racingBar ? "on" : "off", act: function () {
+        cfg.racingBar = !cfg.racingBar; saveCfg(); racingKick(); renderAll(); openWidgetsModal();
+      } }
+    ].concat(cfg.widgets.racing || cfg.racingBar ? racingSeriesRows() : []).concat(window.OMARCHY_PLATFORM === "tizen" ? [] : [   // 2.15 (#131): LG Developer Mode's 1000-hour session
+      { label: "dev mode countdown", right: cfg.widgets.devmode ? "on" : "off", act: function () { tog("devmode"); } },
+      { label: "dev mode · I just pressed EXTEND", right: cfg.devModeUntil ? window.OmarchyDevMode.left(cfg.devModeUntil, Date.now()).text.split(" · ")[0] : "›", act: function () {
+        cfg.devModeUntil = window.OmarchyDevMode.extended(Date.now()); cfg.widgets.devmode = true;
+        saveCfg(); renderAll(); showToast("Developer Mode: 1000 hours from now"); openWidgetsModal();
+      } }
+    ]));
   }
 
   function openSaverModal(keepFocus) {
     var focus = state.modalIdx;
     openModal(tr("sys_saver"), "37 tte.js TerminalTextEffects or multi-layer Omarchy Cyber-TUI Aquarium", [
       { label: "Preview screensaver now", right: "▶", act: function () { closeModal(); startScreensaver(); } },
-      { label: "Screensaver mode / art", right: cfg.saverMode === "aquarium" ? (cfg.saverArt === "aquarium-classic" ? "Aquarium Classic" : "Omarchy Aquarium (homage)") : (cfg.saverArt === "cinemarchy" ? "CINEMARCHY" : "OMARCHY TV"), act: function () {
-        // cycle: Aquarium (homage, default) -> Aquarium Classic -> OMARCHY TV -> CINEMARCHY -> Aquarium
-        if (cfg.saverMode === "aquarium" && cfg.saverArt !== "aquarium-classic") { cfg.saverArt = "aquarium-classic"; cfg.saverMode = "aquarium"; }
+      { label: "Screensaver mode / art", right: cfg.saverMode === "pulse" ? "Omarchy Pulse" : cfg.saverMode === "radiomarchy" ? "Radiomarchy fractals" : cfg.saverMode === "aquarium" ? (cfg.saverArt === "aquarium-classic" ? "Aquarium Classic" : "Omarchy Aquarium (homage)") : (cfg.saverArt === "cinemarchy" ? "CINEMARCHY" : "OMARCHY TV"), act: function () {
+        // cycle: Pulse (default, 2.15) -> Radiomarchy fractals (2.20) -> Aquarium (homage) -> Aquarium Classic -> OMARCHY TV -> CINEMARCHY -> Pulse
+        if (cfg.saverMode === "pulse") { cfg.saverArt = "radiomarchy"; cfg.saverMode = "radiomarchy"; }
+        else if (cfg.saverMode === "radiomarchy") { cfg.saverArt = "aquarium"; cfg.saverMode = "aquarium"; }
+        else if (cfg.saverMode === "aquarium" && cfg.saverArt !== "aquarium-classic") { cfg.saverArt = "aquarium-classic"; cfg.saverMode = "aquarium"; }
         else if (cfg.saverMode === "aquarium") { cfg.saverArt = "omarchy-tv"; cfg.saverMode = "logo"; }
         else if (cfg.saverArt !== "cinemarchy") { cfg.saverArt = "cinemarchy"; cfg.saverMode = "logo"; }
-        else { cfg.saverArt = "aquarium"; cfg.saverMode = "aquarium"; }
+        else { cfg.saverArt = "pulse"; cfg.saverMode = "pulse"; }
         saveCfg(); openSaverModal(true);
-      } },
+      } }].concat(cfg.saverMode === "pulse" ? [{ label: tr("ss_pulse_scene"), right: cfg.pulseScene || "sphere", act: function () {
+        var sc = ["sphere", "skyline", "orbit", "calm", "hacker", "noir", "mars", "monolith"];
+        cfg.pulseScene = sc[(sc.indexOf(cfg.pulseScene || "sphere") + 1) % sc.length]; saveCfg(); openSaverModal(true);
+      } }, { label: "racing panel on Pulse", right: pulseRacingOn() ? "on" : "off", act: function () {
+        cfg.pulseRacing = !pulseRacingOn(); setPulsePanel("racing", pulseRacingOn()); saveCfg(); racingKick(); openSaverModal(true);
+      } }, { label: "Pulse panels", right: "›", act: function () { openPulsePanelsModal(); }
+      }] : []).concat(cfg.ssBefore215 ? [{ label: tr("ss_restore_previous"), right: "›", act: function () {
+        var b = cfg.ssBefore215; cfg.saverMode = b.saverMode; cfg.saverArt = b.saverArt; cfg.living = !!b.living; delete cfg.ssBefore215; saveCfg(); openSaverModal(true);
+      } }] : []).concat([
       { label: "tte.js speed", right: cfg.saverSpeed || "normal", act: function () {
         var sp = ["normal", "slow", "fast"]; cfg.saverSpeed = sp[(sp.indexOf(cfg.saverSpeed || "normal") + 1) % 3]; saveCfg(); openSaverModal(true);
       } },
@@ -1143,6 +1869,24 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
         cfg.offIdleMin = opts[(opts.indexOf(cfg.offIdleMin) + 1) % opts.length];
         saveCfg(); openSaverModal(true);
       } },
+      { label: tr("living"), right: cfg.living ? "on" : "off", act: function () {
+        cfg.living = !cfg.living; saveCfg(); openSaverModal(true);
+      } },
+      { label: "  " + tr("living_notes"), right: cfg.livingNotes ? "on" : "off", act: function () {
+        cfg.livingNotes = !cfg.livingNotes; saveCfg(); openSaverModal(true);
+        if (cfg.livingNotes) showToast(tr("living_notes_note"));
+      } },
+      { label: "  " + tr("living_x"), right: tr(cfg.livingX === "api" ? "living_x_api" : cfg.livingX === "notify" ? "living_x_notify" : "off"), act: function () {
+        var m = ["off", "notify", "api"];
+        cfg.livingX = m[(m.indexOf(cfg.livingX) + 1) % m.length]; saveCfg(); openSaverModal(true);
+        if (cfg.livingX === "api") showToast(tr("living_x_api_note"));
+      } },
+      { label: "  GitHub", right: cfg.livingGithub !== false ? "on" : "off", act: function () {
+        cfg.livingGithub = cfg.livingGithub === false; saveCfg(); openSaverModal(true);
+      } },
+      { label: "  Omastorm radar", right: cfg.livingRadar ? "on" : "off", act: function () {
+        cfg.livingRadar = !cfg.livingRadar; saveCfg(); openSaverModal(true);
+      } },
       { label: "Turn off", right: cfg.offMode === "tv" ? "TV" : "screen only", act: function () {
         cfg.offMode = cfg.offMode === "tv" ? "screen" : "tv";
         saveCfg(); openSaverModal(true);
@@ -1154,7 +1898,7 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
           if (state.modalOpen) openSaverModal(true);
         });
       } }
-    ]);
+    ]));
     // Toggling an item re-opens the menu; keep the cursor on it instead of jumping to the top.
     if (keepFocus) { state.modalIdx = Math.min(focus, state.modalItems.length - 1); renderModalList(); }
   }
@@ -1285,9 +2029,9 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
       keepRefresh(function () { if (state.modalOpen) openAllSettingsModal(true); });
     }
     openModal(tr("sys_all"), "OmarchyTV " + APP_VERSION, [
-      { label: "Language", right: cfg.lang || "auto", act: function () {
-        var l = ["", "en", "it", "de"];
-        cfg.lang = l[(l.indexOf(cfg.lang) + 1) % l.length];
+      { label: "Language", right: cfg.lang ? (LANG ? LANG.name(cfg.lang, I18N) : cfg.lang) : "auto", act: function () {
+        if (LANG) cfg.lang = LANG.next(cfg.lang);
+        else { var l = ["", "en", "it", "de"]; cfg.lang = l[(l.indexOf(cfg.lang) + 1) % l.length]; }
         saveCfg(); updateClock(); renderAll(); openAllSettingsModal();
       } },
       { label: tr("sys_clock"), right: cfg.clockFormat === "12" || cfg.clockFormat === "24" ? cfg.clockFormat + " h" : "auto (" + (use24h() ? "24" : "12") + " h)", act: function () {
@@ -1301,6 +2045,11 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
       } },
       { label: "Always-animated wallpaper", right: cfg.wallpaperLoop ? "on" : "off", act: function () {
         cfg.wallpaperLoop = !cfg.wallpaperLoop; saveCfg(); applyTheme(); openAllSettingsModal();
+      } },
+      { label: "Light wallpapers (1080p)", right: cfg.lightWallpapers === true ? "on" : cfg.lightWallpapers === false ? "off" : "auto", act: function () {
+        // 2.15 (#47): auto = on a 1080p panel only; on = always (faster start on a UHD set); off = always 4K
+        cfg.lightWallpapers = cfg.lightWallpapers === undefined || cfg.lightWallpapers === null ? true : cfg.lightWallpapers === true ? false : null;
+        saveCfg(); applyTheme(); openAllSettingsModal();
       } },
       { label: "Wallpaper dimming", right: Math.round((cfg.wallpaperDim || 0) * 100) + "%", act: function () {
         var d = [0, 0.25, 0.5];
@@ -1324,6 +2073,36 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
       { label: "Temperature unit", right: "°" + cfg.tempUnit, act: function () {
         cfg.tempUnit = cfg.tempUnit === "C" ? "F" : "C"; saveCfg(); renderAll(); openAllSettingsModal(true);
       } },
+      { label: tr("boot_screen"), right: tr(cfg.bootScreen === "wake" ? "boot_mode_wake" : cfg.bootScreen === "off" ? "off" : "boot_mode_boot"), act: function () {
+        var m = ["boot", "wake", "off"];
+        cfg.bootScreen = m[(m.indexOf(cfg.bootScreen || "boot") + 1) % m.length]; saveCfg(); openAllSettingsModal(true);
+      } },
+      { label: "  " + tr("boot_sound"), right: cfg.bootSound !== false ? "on" : "off", act: function () {
+        cfg.bootSound = cfg.bootSound === false; saveCfg(); openAllSettingsModal(true);
+      } },
+      { label: tr("theme_to_pc"), right: cfg.themeToPc ? "on" : "off", act: function () {
+        cfg.themeToPc = !cfg.themeToPc; saveCfg(); openAllSettingsModal(true);
+      } },
+      { label: tr("share_qr"), right: cfg.shareQr === "boot" ? "boot + Live" : cfg.shareQr === "off" ? "off" : "Live", act: function () {
+        var m = ["live", "boot", "off"];
+        cfg.shareQr = m[(m.indexOf(cfg.shareQr || "live") + 1) % m.length]; saveCfg(); openAllSettingsModal(true);
+      } },
+      { label: "🕹 " + tr("arcade_sound"), right: cfg.arcadeSound !== false ? "on" : "off", act: function () {
+        cfg.arcadeSound = cfg.arcadeSound === false; saveCfg(); openAllSettingsModal(true);
+      } },
+      { label: "🕹 " + tr("arcade_pc_theme"), right: cfg.arcadePcTheme ? "on" : "off", act: function () {
+        cfg.arcadePcTheme = !cfg.arcadePcTheme; saveCfg(); openAllSettingsModal(true);
+      } }
+    ]).concat(isWebos() ? [
+      { label: tr("pc_power"), right: cfg.pcPower ? "on" : "off", act: function () {
+        cfg.pcPower = !cfg.pcPower; saveCfg(); openAllSettingsModal(true);
+        if (cfg.pcPower) {
+          showToast(tr("pc_power_note"));
+          ssapRequest("ssap://com.webos.service.tvpower/power/getPowerState", function () {});   // asks for TV control once
+        }
+      } }
+    ] : []).concat([
+      { label: tr("update_via_pc"), right: APP_VERSION + " ›", act: updateViaPc },
       rootRow("boot", tr("root_boot")),
       rootRow("home", tr("root_home")),
       keepRow()
@@ -1433,6 +2212,177 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
 
   // Wallpaper picker: follow the theme (default), plain theme colours, or any theme's background.
   // Picking applies at once and keeps the menu open on that row, so you can compare a few.
+  // ---- v2.14 Retro CRT plugin: the home shrinks into a CRT set (bezel, theme-coloured rim, LED, scanlines) ----
+  function crtMode() { return cfg.pluginRetroCrt === "light" || cfg.pluginRetroCrt === "strong" ? cfg.pluginRetroCrt : "off"; }
+  function applyCrt() {
+    var el = document.getElementById("crt-overlay"), badge = document.getElementById("crt-badge");
+    if (!el) { el = document.createElement("div"); el.id = "crt-overlay"; document.body.appendChild(el); }
+    if (!badge) { badge = document.createElement("div"); badge.id = "crt-badge"; badge.innerHTML = "OMARCHY TV<i></i>"; document.body.appendChild(badge); }
+    var m = crtMode();
+    el.className = m === "off" ? "" : "on" + (m === "strong" ? " strong" : "");
+    badge.className = m === "off" ? "" : "on";
+    document.body.className = document.body.className.replace(/\s*crt-strong/g, "") + (m === "strong" ? " crt-strong" : "");
+    fitStage();
+  }
+
+  // ---- v2.14 OmaFire animated wallpapers (vendor/omafire: Wes Grimes' campsite, MIT) ----
+  var omafireUi = null, omafireMode = "";
+  /** The OmaFire mode to show: an OmaFire wallpaper, or the campfire theme with the wallpaper following the theme. */
+  function omafireModeNow() {
+    var m = /^omafire:(campfire|embers)$/.exec(cfg.wallpaper || "");
+    if (m) return m[1];
+    return cfg.theme === "campfire" && !cfg.wallpaper && !cfg.proceduralBg ? "campfire" : "";
+  }
+  function omafireWall(layer) {
+    var mode = omafireModeNow(), m = mode ? [mode, mode] : null;
+    if (!m || !window.OmaFireWall) {
+      if (omafireUi) { omafireUi.destroy(); omafireUi = null; omafireMode = ""; }
+      return;
+    }
+    if (omafireUi && omafireMode === m[1]) { omafireUi.setSound(!!cfg.omafireSound); return; }
+    if (omafireUi) omafireUi.destroy();
+    layer.style.position = layer.style.position || "absolute";
+    omafireUi = window.OmaFireWall.mount(layer, { mode: m[1], sound: !!cfg.omafireSound, art: window.OMAFIRE_ART });
+    omafireMode = m[1];
+  }
+
+  // v2.20 default Home wallpaper: a slideshow of still Radiomarchy fractals (<img> crossfade, no canvas).
+  // OmaFire stays selectable; an explicit saved wallpaper is left alone. Pauses when Home is not visible.
+  var fractalBox = null, fractalImgs = [null, null], fractalIdx = 0, fractalFront = 0, fractalTimer = 0, fractalAccents = null;
+  function fractalSlideCatalog() {
+    return (window.OmarchyFractalSlides && window.OmarchyFractalSlides.slides && window.OmarchyFractalSlides.slides.length)
+      ? window.OmarchyFractalSlides : { intervalMs: 12000, fadeMs: 1600, slides: [] };
+  }
+  function applyFractalAccentFromPal(pal) {
+    if (!pal || !pal.length) return;
+    var flat = pal;
+    if (pal[0] && pal[0].length) {
+      flat = [];
+      for (var i = 0; i < pal.length; i++) { flat.push(pal[i][0], pal[i][1], pal[i][2]); }
+    }
+    if (flat.length < 9) return;
+    var th = currentThemeObj() || {}, bg = th.bg || "#111111";
+    var rgbCss = (window.OmarchyFractals && window.OmarchyFractals.rgbCss)
+      ? window.OmarchyFractals.rgbCss
+      : function (r, g, b) {
+        function h(v) { v = Math.max(0, Math.min(255, Math.round(v * 255))); return (v < 16 ? "0" : "") + v.toString(16); }
+        return "#" + h(r) + h(g) + h(b);
+      };
+    var contrast = (window.OmarchyFractals && window.OmarchyFractals.ensureContrast)
+      ? window.OmarchyFractals.ensureContrast
+      : function (c) { return c; };
+    var a = contrast(rgbCss(flat[0], flat[1], flat[2]), bg);
+    var a2 = contrast(rgbCss(flat[6], flat[7], flat[8]), bg);
+    if (fractalAccents && fractalAccents[0] === a && fractalAccents[1] === a2) return;
+    fractalAccents = [a, a2];
+    try {
+      var st = document.documentElement.style;
+      st.setProperty("--t-accent", a);
+      st.setProperty("--t-accent2", a2);
+    } catch (e) {}
+  }
+  function clearFractalAccent() {
+    if (!fractalAccents) return;
+    fractalAccents = null;
+    try { applyTheme(); } catch (e) {}
+  }
+  function fractalOn() { return cfg.wallpaper === "radiomarchy:fractals"; }
+  function fractalVisible() {
+    var ov = document.getElementById("saver-overlay");
+    return fractalOn() && !document.hidden && !cineUi && !radioUi && !(ov && ov.className === "active");
+  }
+  function fractalStopTimer() {
+    if (fractalTimer) { clearTimeout(fractalTimer); fractalTimer = 0; }
+  }
+  function fractalDestroy() {
+    fractalStopTimer();
+    if (fractalBox && fractalBox.parentNode) fractalBox.parentNode.removeChild(fractalBox);
+    fractalBox = null;
+    fractalImgs = [null, null];
+  }
+  function fractalTick() {
+    if (!fractalBox) return;
+    var on = fractalVisible();
+    var st = on ? "running" : "paused";
+    if (fractalImgs[0]) fractalImgs[0].style.animationPlayState = st;
+    if (fractalImgs[1]) fractalImgs[1].style.animationPlayState = st;
+    if (on) { if (!fractalTimer) fractalSchedule(); }
+    else fractalStopTimer();
+  }
+  function fractalEnsureStyle() {
+    if (document.getElementById("fractal-slides-css")) return;
+    var css = document.createElement("style");
+    css.id = "fractal-slides-css";
+    css.textContent =
+      "#fractal-slides{position:absolute;top:0;left:0;width:1920px;height:1080px;overflow:hidden;pointer-events:none;z-index:0;}"
+      + "#fractal-slides img{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;border:0;opacity:0;"
+      + "transition:opacity 1.6s ease;will-change:opacity,transform;transform-origin:center center;}"
+      + "#fractal-slides img.on{opacity:1;}"
+      + "@keyframes fractal-kb{from{transform:scale(1) translate(0,0);}to{transform:scale(1.05) translate(0.7%,-0.5%);}}"
+      + "#fractal-slides img.kb{animation:fractal-kb 13.6s linear forwards;}";
+    document.head.appendChild(css);
+  }
+  function fractalShow(i, animate) {
+    var cat = fractalSlideCatalog(), slides = cat.slides;
+    if (!slides.length || !fractalImgs[0]) return;
+    var incoming = fractalImgs[1 - fractalFront], outgoing = fractalImgs[fractalFront];
+    var slide = slides[((i % slides.length) + slides.length) % slides.length];
+    incoming.src = slide.file;
+    incoming.className = animate ? "kb" : "on kb";
+    if (animate) {
+      incoming.offsetWidth;
+      incoming.className = "on kb";
+      if (outgoing) outgoing.className = "";
+    } else if (outgoing && outgoing !== incoming) {
+      outgoing.className = "";
+    }
+    fractalFront = 1 - fractalFront;
+    fractalIdx = ((i % slides.length) + slides.length) % slides.length;
+    applyFractalAccentFromPal(slide.pal);
+  }
+  function fractalSchedule() {
+    fractalStopTimer();
+    if (!fractalVisible()) return;
+    var ms = (window.OmarchyFractalSlides && window.OmarchyFractalSlides.intervalMs) || 12000;
+    fractalTimer = setTimeout(function () {
+      fractalTimer = 0;
+      fractalShow(fractalIdx + 1, true);
+      fractalSchedule();
+    }, ms);
+  }
+  function fractalWall(layer) {
+    if (!fractalOn() || !layer || !fractalSlideCatalog().slides.length) {
+      fractalDestroy();
+      clearFractalAccent();
+      return;
+    }
+    if (fractalBox) {
+      fractalTick();
+      if (fractalVisible() && radioEng && radioEng.ensureWallpaperMusic) radioEng.ensureWallpaperMusic();
+      return;
+    }
+    fractalEnsureStyle();
+    var box = document.createElement("div");
+    box.id = "fractal-slides";
+    box.setAttribute("aria-hidden", "true");
+    var a = document.createElement("img"), b = document.createElement("img");
+    a.alt = b.alt = "";
+    a.draggable = b.draggable = false;
+    box.appendChild(a);
+    box.appendChild(b);
+    layer.style.position = layer.style.position || "absolute";
+    layer.appendChild(box);
+    fractalBox = box;
+    fractalImgs = [a, b];
+    fractalFront = 0;
+    fractalIdx = 0;
+    fractalShow(0, false);
+    if (fractalVisible()) {
+      fractalSchedule();
+      if (radioEng && radioEng.ensureWallpaperMusic) radioEng.ensureWallpaperMusic();
+    }
+  }
+
   function openWallpaperModal(keepFocus) {
     var focus = state.modalIdx;
     function pick(v) { cfg.wallpaper = v; cfg.randomWallpaper = false; saveCfg(); applyTheme(); openWallpaperModal(true); }
@@ -1441,7 +2391,18 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
         cfg.randomWallpaper = !cfg.randomWallpaper; saveCfg(); openWallpaperModal(true);
       } },
       { label: tr("wp_follow"), right: !cfg.randomWallpaper && !cfg.wallpaper ? "✓" : (!cfg.wallpaper ? "●" : ""), act: function () { pick(""); } },
-      { label: tr("wp_plain"), right: !cfg.randomWallpaper && cfg.wallpaper === "plain" ? "✓" : "", act: function () { pick("plain"); } }
+      { label: tr("wp_plain"), right: !cfg.randomWallpaper && cfg.wallpaper === "plain" ? "✓" : "", act: function () { pick("plain"); } },
+      { label: "OmaFire \u00b7 " + tr("omafire_campfire"), right: cfg.wallpaper === "omafire:campfire" ? "✓" : "", act: function () { pick("omafire:campfire"); } },
+      { label: "OmaFire \u00b7 " + tr("omafire_embers"), right: cfg.wallpaper === "omafire:embers" ? "✓" : "", act: function () { pick("omafire:embers"); } },
+      { label: tr("wp_radiomarchy_fractals"), right: cfg.wallpaper === "radiomarchy:fractals" ? "✓" : "", act: function () { pick("radiomarchy:fractals"); } },
+      { label: tr("radio_animated"), right: tr("radio_animated_" + (cfg.radiomarchyAnimated === "on" || cfg.radiomarchyAnimated === "off" ? cfg.radiomarchyAnimated : "auto")), act: function () {
+        var cur = cfg.radiomarchyAnimated === "on" ? "on" : cfg.radiomarchyAnimated === "off" ? "off" : "auto";
+        cfg.radiomarchyAnimated = cur === "auto" ? "on" : cur === "on" ? "off" : "auto";
+        saveCfg(); openWallpaperModal(true);
+      } },
+      { label: "  " + tr("omafire_sound"), right: cfg.omafireSound ? "on" : "off", act: function () {
+        cfg.omafireSound = !cfg.omafireSound; saveCfg(); applyTheme(); openWallpaperModal(true);
+      } }
     ];
     allWallpapers().forEach(function (p) {
       var parts = p.split("/");   // wallpapers/<theme>/<NN-name>.webp
@@ -1559,8 +2520,9 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     if (!wv || !L || !cfg.wallpaperLoop || wv.style.display !== "block") return;
     var play = L.shouldPlay({ loop: true, hidden: document.hidden,
       saver: document.getElementById("saver-overlay").className === "active",
-      cinemarchy: !!(state && state.modalOpen && state.cineTab >= 0) });
+      cinemarchy: !!cineUi });
     try { if (play && wv.paused) wv.play().catch(function () {}); else if (!play && !wv.paused) wv.pause(); } catch (e) {}
+    fractalTick();
   }
   setInterval(wallpaperLoopTick, 1000);
   document.addEventListener("visibilitychange", wallpaperLoopTick);
@@ -1773,71 +2735,313 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     else { closeModal(); openYoutubeApp(v.id); }
   }
 
-  function openCinemarchyModal(tabIdx, focusIdx) {
+  // Cinemarchy (cinemarchy.js): a full-screen hub in #stage (inside the Retro CRT set when that is on). The old
+  // four-tab menu is gone; every way in (C key, menus, the dock) lands here.
+  var cineUi = null;
+  function cineMix(a, b, k) {
+    function c(h, i) { return parseInt(h.substr(1 + i * 2, 2), 16) || 0; }
+    if (!/^#[0-9a-f]{6}$/i.test(a) || !/^#[0-9a-f]{6}$/i.test(b)) return a;
+    var o = "#"; for (var i = 0; i < 3; i++) { var v = Math.round(c(a, i) * (1 - k) + c(b, i) * k); o += (v < 16 ? "0" : "") + v.toString(16); }
+    return o;
+  }
+  function openCinemarchy() {
+    if (cineUi || !window.OmarchyCinemarchy) return;
+    if (state.modalOpen) closeModal();
     pushLightsTheme(currentThemeObj(), true);
-    var tab = tabIdx || 0;
-    var tabs = ["[1] @dhh37", "[2] Streaming", "[3] Live TV", "[4] Player & tools"];
-    var items = [
-      { label: "Switch tab: " + tabs.join(" · "), right: tabs[tab], act: function () { openCinemarchyModal((tab + 1) % 4); } }
-    ];
-    var D = window.OmarchyDhh;
-    if (tab === 0 && D) {
-      if (!dhhState.videos && !dhhState.loading) loadDhh(false, function () { if (state.modalOpen && state.cineTab === 0) openCinemarchyModal(0); });
-      var seen = D.lastSeen(window.localStorage);
-      var vids = dhhState.videos || D.curated();
-      items.push({ label: dhhState.loading ? "Checking the @dhh37 channel feed…" : dhhState.error ? "Offline · showing the saved list (" + escHtml(dhhState.error) + ")" : "Feed updated " + agoText(dhhState.at) + " · OK refreshes",
-        right: "↻", act: function () { loadDhh(true, function () { openCinemarchyModal(0); }); openCinemarchyModal(0); } });
-      vids.forEach(function (v) {
-        var fresh = D.isNew(v, seen, Date.now());
-        items.push({ label: (fresh ? "★ " : "▶ ") + escHtml(v.title), right: fresh ? "NEW" : (cfg.embedPlayer ? "play ›" : "youtube ›"), act: function () { playDhh(v); } });
-      });
-      items.push({ label: "Omarchy manual (omarchy.org)", right: "docs", act: function () { closeModal(); showToast("Open on your TV browser or phone: omarchy.org"); } });
-    } else if (tab === 1) {
-      ["jellyfin", "plex", "netflix", "prime", "disney", "youtube", "raiplay"].forEach(function (id) {
-        var a = DEFAULT_APPS.filter(function (x) { return x.id === id; })[0];
-        if (a) items.push({ label: escHtml(a.name), right: a.appId, act: function () { closeModal(); launchApp(a); } });
-      });
-    } else if (tab === 2) {
-      TV_INPUTS.forEach(function (inp) {
-        var label = inp.tizenInput && inp.sub.indexOf(inp.name) === 0 ? inp.sub : inp.name + " · " + inp.sub;   // Tizen sub: "HDMI 1 · Connected"
-        items.push({ label: escHtml(label), right: "watch ›", act: function () { closeModal(); launchApp(inp); } });
-      });
-    } else {
-      items.push({ label: "Play @dhh37 inside Cinemarchy (official YouTube embed)", right: cfg.embedPlayer ? "on" : "off", act: function () {
-        cfg.embedPlayer = !cfg.embedPlayer; saveCfg(); openCinemarchyModal(3);
-      } });
-      items.push({ label: "⏸ Preview the pause screensaver (10 s)", right: "test", act: function () {
-        closeModal();
-        state.pauseTitle = "Preview · OK to resume";
-        startScreensaver("‖ PAUSED · " + state.pauseTitle);
-      } });
+    var th = currentThemeObj(), D = window.OmarchyDhh;
+    if (D && !dhhState.videos && !dhhState.loading) loadDhh(false, function () { if (cineUi) cineUi.refresh(); });
+    var streamIds = ["jellyfin", "plex", "netflix", "prime", "disney", "youtube", "raiplay", "stremio"];
+    cineUi = window.OmarchyCinemarchy.open(document.getElementById("stage") || document.body, {
+      tr: tr, version: CINEMARCHY_VERSION, logoHtml: DATA.cinemarchyLogo ? blockArt(DATA.cinemarchyLogo, 1, 1, "width:auto;height:6.5vh") : "", cfg: cfg, save: saveCfg, store: window.localStorage,
+      theme: { bg: th.bg, fg: th.fg, bright: th.fgBright, dim: cineMix(th.fg, th.bg, 0.5), accent: th.accent, green: th.green, cyan: th.cyan },
+      apps: function () {   // read each time: the TV's app list and inputs can change while Cinemarchy is open
+        return streamIds.map(function (id) { return DEFAULT_APPS.filter(function (x) { return x.id === id; })[0]; }).filter(Boolean).map(function (a) {
+          return { id: a.appId || a.id, name: a.name, launch: function () { closeCinemarchy(); launchApp(a); } };
+        }).concat([{ id: "x.com", name: "X", sub: "x.com · videos", launch: function () { closeCinemarchy(); openUrlOnTv("https://x.com/home"); } }]);
+      },
+      inputs: function () {
+        return TV_INPUTS.map(function (inp) {
+          var label = inp.tizenInput && inp.sub.indexOf(inp.name) === 0 ? inp.sub : inp.name;   // Tizen sub: "HDMI 1 · Connected"
+          return { name: label, sub: label === inp.sub ? "" : inp.sub, launch: function () { closeCinemarchy(); launchApp(inp); } };
+        });
+      },
+      dhh: {
+        list: function () { return D ? dhhState.videos || D.curated() : []; },
+        isNew: function (v) { return D ? D.isNew(v, D.lastSeen(window.localStorage), Date.now()) : false; },
+        status: function () { return dhhState.loading ? "…" : dhhState.error ? "offline" : agoText(dhhState.at); },
+        load: function (force, then) { loadDhh(force, then); },
+        play: function (v) { if (D && dhhState.videos) D.markSeen(window.localStorage, dhhState.videos); closeCinemarchy(); playDhh(v); }
+      },
+      embed: { get: function () { return !!cfg.embedPlayer; }, set: function (on) { cfg.embedPlayer = !!on; saveCfg(); } },
+      saverPreview: function () { closeCinemarchy(); state.pauseTitle = "Preview · OK to resume"; startScreensaver("‖ PAUSED · " + state.pauseTitle); },
+      fetchText: function (url) { return fetch(url).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); }); },
+      pc: {   // the Omarchy PC's media folders, through its bridge (omarchy-tv webos; read-only, the ask code)
+        available: function () { return pcReady(); },
+        base: function () { return pcBase(); },
+        list: function (path) {
+          return fetch(pcBase() + "/v1/media/list?path=" + encodeURIComponent(path || ""), { headers: { "X-Omarchy-Token": cfg.grokbotCode || "" } })
+            .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.message || j.error || ("HTTP " + r.status)); return j; }); });
+        }
+      },
+      onPlay: function (on) { cinePlaying = !!on; },
+      onExit: function () { cineUi = null; cinePlaying = false; renderAll(); }
+    });
+  }
+  var cinePlaying = false;
+  function closeCinemarchy() { if (cineUi) { var u = cineUi; cineUi = null; u.destroy(); cinePlaying = false; renderAll(); } }
+  function openCinemarchyModal() { openCinemarchy(); }
+  window.OMARCHY_OPEN_CINEMARCHY = openCinemarchy;
+  // While Cinemarchy is open its keys are its own (the TV keyboard still types into its URL field).
+  window.addEventListener("keydown", function (e) {
+    if (!cineUi) return;
+    if (lift.el && lift.el.style.display === "block") return;
+    var n = window.OmarchyCinemarchy.keyName(e);
+    if (n && cineUi.key(n, e)) {
+      e.preventDefault(); e.stopPropagation();
+      if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+    } else if (!(e.target && /INPUT/.test(e.target.tagName))) { e.stopPropagation(); if (e.stopImmediatePropagation) e.stopImmediatePropagation(); }
+  }, true);
+
+
+  // ---- v2.20 Radiomarchy (radio.js + fractals.js): Omarchy Radio and music-driven fractals ----
+  // One player for the whole app (the music goes on when Radiomarchy closes); the UI opens over #stage like Cinemarchy.
+  var radioEng = window.OmarchyRadio ? window.OmarchyRadio.engine({ store: window.localStorage }) : null, radioUi = null;
+  var RADIOMARCHY_VERSION = "0.1.0";
+  function openRadio(o) {
+    if (radioUi || !radioEng) return;
+    if (state.modalOpen) closeModal();
+    if (cineUi) closeCinemarchy();
+    var th = currentThemeObj();
+    radioUi = window.OmarchyRadio.open(document.getElementById("stage") || document.body, {
+      engine: radioEng, lang: getLang(), version: RADIOMARCHY_VERSION, saver: !!(o && o.saver), demo: !!(o && o.demo),
+      logoHtml: DATA.radiomarchyLogo ? blockArt(DATA.radiomarchyLogo, 1, 1, "width:auto;height:6.5vh") : "",
+      theme: { bg: th.bg, fg: th.fg, bright: th.fgBright, dim: cineMix(th.fg, th.bg, 0.5), accent: th.accent, accent2: th.accent2, green: th.green, cyan: th.cyan, red: th.red },
+      onExit: function () { radioUi = null; markInput(); renderAll(); }
+    });
+  }
+  function closeRadio() { if (radioUi) { var u = radioUi; radioUi = null; u.destroy(); renderAll(); } }
+  window.OMARCHY_OPEN_RADIO = openRadio;
+  // After YouTube (or similar) takes the sound, coming back to Home must still resume: claim the
+  // Media Session again (like Android claimSession) and PLAY / PLAY_PAUSE start the song without
+  // reopening Radiomarchy. A suspended AudioContext can look "playing" but be silent — PLAY
+  // must wake it, not toggle it off.
+  function claimRadioSession() {
+    if (!radioEng || !radioEng.current()) return;
+    if (radioEng.claimSession) radioEng.claimSession();
+    var ms = window.navigator && navigator.mediaSession;
+    if (!ms || !ms.setActionHandler) return;
+    try {
+      var t = radioEng.current();
+      if (t && ms.metadata !== undefined && window.MediaMetadata) {
+        ms.metadata = new MediaMetadata({ title: t.title || "", artist: t.artist || "Radiomarchy" });
+      }
+      ms.playbackState = radioEng.playing() ? "playing" : "paused";
+      ms.setActionHandler("play", function () { radioEng.ensureAudible(); });
+      ms.setActionHandler("pause", function () { radioEng.pause(); });
+      ms.setActionHandler("previoustrack", function () { radioEng.prev(); });
+      ms.setActionHandler("nexttrack", function () { radioEng.next(true); });
+    } catch (e) { /* older webOS / Tizen */ }
+  }
+  function radioMedia(m) {
+    if (!m || !radioEng || !radioEng.current()) return false;
+    if (m === "play") radioEng.ensureAudible();
+    else if (m === "playpause") { if (radioEng.playing()) radioEng.pause(); else radioEng.ensureAudible(); }
+    else if (m === "pause") radioEng.pause();
+    else if (m === "ff" || m === "next") radioEng.next(true);
+    else if (m === "rew" || m === "prev") radioEng.prev();
+    else return false;
+    claimRadioSession();
+    return true;
+  }
+  if (radioEng) radioEng.on(claimRadioSession);
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) claimRadioSession();
+  });
+  document.addEventListener("webOSRelaunch", claimRadioSession);
+  // While Radiomarchy is open its keys are its own; media keys reach the player from anywhere in OmarchyTV.
+  window.addEventListener("keydown", function (e) {
+    if (!radioEng) return;
+    var m = window.OmarchyRadio.mediaKey(e);
+    if (!radioUi) {
+      if (!m || cineUi || !radioMedia(m)) return;
+      e.preventDefault(); e.stopPropagation(); if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+      return;
     }
-    state.cineTab = tab;
-    openModal("CINEMARCHY · " + tabs[tab], "", items, false, null, { focusIdx: focusIdx });
-    state.modalDigit = function (n) { if (n >= 1 && n <= 4) openCinemarchyModal(n - 1); };
-    var subEl = document.getElementById("modal-sub");
-    if (subEl && DATA.cinemarchyLogo) {
-      subEl.style.display = "block";
-      subEl.innerHTML = '<div style="color:var(--t-accent);margin-bottom:10px;">' + blockArt(DATA.cinemarchyLogo, 6.3, 12) + '</div>' +
-        '<div style="margin-bottom:6px;"><span style="border:1px solid var(--t-accent);color:var(--t-accent);padding:0 5px;font-weight:bold;">ALPHA</span> Cinemarchy ' + CINEMARCHY_VERSION + ' (preview)</div>' +
-        '<div>Press 1-4 or OK on the top row to switch tabs</div>';
+    var n = m || (window.OmarchyCinemarchy ? window.OmarchyCinemarchy.keyName(e) : "");
+    if (e.keyCode === 427) n = "chup"; else if (e.keyCode === 428) n = "chdown";
+    if (n && radioUi.key(n, e)) { e.preventDefault(); }
+    e.stopPropagation(); if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+  }, true);
+  /** The top bar: "♫ Still Licensed — Michel Krapf" while the radio plays ("❚❚" paused); gone when it stops. */
+  // Same rule as Android HomeV29.radioBarMaxWidth: the label sits to the right of the centred clock
+  // and to the left of SpaceX, the racing countdown and the icons; it hides if the gap is under 80 px.
+  function radioBarMaxWidth(barW, clockW, rightRestW, gap, minW) {
+    var avail = (barW - rightRestW) - Math.floor((barW + clockW) / 2) - gap;
+    return avail < minW ? 0 : avail;
+  }
+  function layoutRadioBar() {
+    var el = document.getElementById("bar-radio"), bar = document.getElementById("waybar");
+    var clock = document.getElementById("bar-clock"), right = document.getElementById("bar-right");
+    if (!el || !bar || !clock || !right || el.style.display === "none") return 0;
+    if (typeof window.getComputedStyle !== "function") return 0;
+    var rest = parseFloat((window.getComputedStyle(bar).paddingRight) || 0) || 0, i, c, cs;
+    for (i = 0; i < right.children.length; i++) {
+      c = right.children[i];
+      cs = window.getComputedStyle(c);
+      if (c === el) { rest += (parseFloat(cs.marginLeft) || 0) + (parseFloat(cs.marginRight) || 0); continue; }
+      if (cs.display === "none") continue;
+      rest += c.offsetWidth + (parseFloat(cs.marginLeft) || 0) + (parseFloat(cs.marginRight) || 0);
     }
+    var max = radioBarMaxWidth(bar.offsetWidth, clock.offsetWidth, rest, 16, 80);
+    if (!max) { el.style.display = "none"; return 0; }
+    el.style.maxWidth = max + "px";
+    return max;
+  }
+  function tickRadioBar() {
+    var el = document.getElementById("bar-radio"), t = radioEng && radioEng.current();
+    if (!el) return;
+    if (!t) { el.style.display = "none"; el.style.maxWidth = ""; return; }
+    el.innerHTML = '<span style="color:var(--t-accent2)">' + (radioEng.playing() ? "♫ " : "❚❚ ") + '</span><span style="color:var(--t-fg-bright)">' + escHtml(t.title) +
+      '</span>' + (t.artist ? '<span style="color:var(--t-fg)"> — ' + escHtml(t.artist) + "</span>" : "");
+    el.style.display = "inline-block";
+    layoutRadioBar();
+  }
+  if (radioEng) {
+    radioEng.on(tickRadioBar);
+    setInterval(tickRadioBar, 2000);
+    var barRadio = document.getElementById("bar-radio");
+    if (barRadio) barRadio.addEventListener("click", function () { openRadio(); });
   }
 
+  // ---- v2.20 GrokBot Office (office.js): the bots at their desks, optional (Companion settings) ----
+  // Data: what the PC pushed (omarchy-tv office push -> GET /v1/office on the bridge) or the "office" field of a
+  // Grok Bot diretto reply, kept in localStorage. Asks and hires go through Grok Bot diretto (grokdirect.js).
+  var OFF = window.OmarchyOffice || null, officeUi = null, officeTimer = null, OFFICE_KEY = "omarchytv.office.v1";
+  function officeData() { try { return OFF.parse(window.localStorage.getItem(OFFICE_KEY) || "null"); } catch (e) { return OFF.parse(null); } }
+  function officeSave(d) { try { window.localStorage.setItem(OFFICE_KEY, JSON.stringify(OFF.toJson(d))); } catch (e) {} }
+  function officeFetch() {
+    var base = pcBase();
+    if (!base || typeof fetch !== "function" || !officeUi || document.hidden) return;
+    fetch(base + "/v1/office").then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+      if (!j || !officeUi || j.available === false) return;
+      var d = OFF.parse(j);
+      officeSave(d); officeUi.setData(d);
+    }, function () {});
+  }
+  // 2.20 multi-provider: Claude / ChatGPT (and every AI signed in on the PC) answer through the PC bridge with the
+  // ask code; the keys stay on the PC. The list is the PC's own (POST /v1/ai/providers): nothing listed, nothing offered.
+  function officePcReady() { return !!(pcBase() && cfg.grokbotCode && typeof fetch === "function"); }
+  function officeTag(p) {
+    var s = String(p.provider || p.id || "").toLowerCase();
+    return /claude|anthropic/.test(s) ? "claude" : /codex|openai|chatgpt|gpt/.test(s) ? "chatgpt" : /grok|xai/.test(s) ? "grok" : s;
+  }
+  function officeProviders() {
+    if (!officePcReady()) return [];
+    return (cfg.tuiProviders || []).filter(function (p) { return p.id !== "grok-bot"; }).map(function (p) { return { id: p.id, name: p.name, provider: officeTag(p) }; });
+  }
+  function officeRefreshProviders() {
+    if (!officePcReady()) return;
+    fetch(pcBase() + "/v1/ai/providers", { method: "POST", headers: { "X-Omarchy-Token": cfg.grokbotCode, "Content-Type": "text/plain" }, body: "{}" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j || !j.providers) return;
+        cfg.tuiProviders = j.providers.slice(0, 16).map(function (p) { return { id: String(p.id), name: String(p.name || p.id).slice(0, 32), provider: p.provider ? String(p.provider).slice(0, 16) : undefined }; });
+        saveCfg();
+        if (officeUi) officeUi.setProvider(officeUi.state().provider);
+      }, function () {});
+  }
+  function officePcPost(path, body, cb) {
+    if (!officePcReady()) { cb("not_set"); return; }
+    fetch(pcBase() + path, { method: "POST", headers: { "X-Omarchy-Token": cfg.grokbotCode, "Content-Type": "text/plain" }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j || {} }; }); })
+      .then(function (res) {
+        var j = res.j;
+        if (res.ok) { cb(null, j); return; }
+        cb(j.error === "unauthorized" ? "Wrong ask code: check it in the Companion settings." :
+          j.error === "not found" ? "Update the omarchy-tv plugin on the PC and restart omarchy-tv webos serve." : (j.message || "The PC could not answer."));
+      }, function () { cb("The PC did not answer · is omarchy-tv webos serve running?"); });
+  }
+  function officeListen(cb) {
+    var Ctor = speechCtor();
+    if (!Ctor) { cb("unsupported"); return; }
+    try {
+      var r = new Ctor(), done = false;
+      r.lang = speechLang(); r.interimResults = false; r.maxAlternatives = 1;
+      r.onresult = function (ev) { if (done) return; done = true; var a = ev.results && ev.results[0] && ev.results[0][0]; cb(null, a ? a.transcript : ""); };
+      r.onerror = function () { if (!done) { done = true; cb("error"); } };
+      r.onend = function () { if (!done) { done = true; cb("error"); } };
+      r.start();
+    } catch (e) { cb("unsupported"); }
+  }
+  function openOffice() {
+    if (officeUi || !OFF) return;
+    if (!cfg.officeEnabled) { showToast("GrokBot Office is off · Blue › Companion settings"); return; }
+    if (state.modalOpen) closeModal();
+    if (cineUi) closeCinemarchy();
+    if (radioUi) closeRadio();
+    var th = currentThemeObj();
+    officeUi = OFF.open(document.getElementById("stage") || document.body, {
+      lang: getLang(), data: officeData(), store: window.localStorage,
+      theme: { bg: th.bg, fg: th.fg, bright: th.fgBright, accent: th.accent, accent2: th.accent2, magenta: th.magenta, green: th.green, yellow: th.yellow, red: th.red, cyan: th.cyan },
+      speak: function (text, lang) { if (GBD) gbdSpeak(text, lang); },
+      listen: speechCtor() ? officeListen : null,
+      ask: GBD ? function (q, office, cb) {
+        var apps = visibleApps().map(function (a) { return a.name; });
+        OFF.ask(GBD, GBD.load(window.localStorage), q, askLang(), apps,
+          (window.OMARCHY_PLATFORM === "tizen" ? "OmarchyTV on Samsung Tizen" : "OmarchyTV on LG webOS") + " · GrokBot Office", office, function (err, rep, payload) {
+            if (payload) officeSave(OFF.applyReply(officeData(), payload));
+            cb(err, rep, payload);
+          });
+      } : null,
+      providers: officeProviders,
+      pcAsk: function (id, q, cb) {
+        officePcPost("/v1/ai/ask", { text: q, provider: id, lang: speechLang() }, function (err, j) { cb(err, j && j.text); });
+      },
+      pcHire: function (h, cb) {
+        officePcPost("/v1/office/hire", h, function (err, j) {
+          if (!err && j && j.office) officeSave(OFF.parse(j.office));
+          cb(err, j);
+        });
+      },
+      onProvider: function (id) { cfg.officeProvider = id; saveCfg(); },
+      onExit: closeOffice
+    });
+    if (cfg.officeProvider) officeUi.setProvider(cfg.officeProvider);
+    officeRefreshProviders();
+    officeFetch();
+    officeTimer = setInterval(officeFetch, 30000);   // only while the office is open (and the page visible)
+  }
+  function closeOffice() {
+    if (officeTimer) { clearInterval(officeTimer); officeTimer = null; }
+    if (officeUi) { var u = officeUi; officeUi = null; u.destroy(); markInput(); renderAll(); }
+  }
+  window.OMARCHY_OPEN_OFFICE = openOffice;
+  window.addEventListener("keydown", function (e) {
+    if (!officeUi) return;
+    var n = window.OmarchyCinemarchy ? window.OmarchyCinemarchy.keyName(e) : "";
+    var tgt = e.target, typing = tgt && /INPUT/.test(tgt.tagName);
+    if (typing && (n === "red" || n === "green" || n === "yellow" || n === "blue" || /^[1-8]$/.test(n))) n = "";   // letters are text here
+    if (officeUi.key(n, e)) e.preventDefault();
+    e.stopPropagation(); if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+  }, true);
+
   function openOmarchyMenu() {
-    openModal("Omarchy Menu", "OmarchyTV " + APP_VERSION, [
-      { label: "🎬 Cinemarchy (Media, Streaming, Live TV & Snippets)", right: "C ›", act: function () { openCinemarchyModal(0); } },
-      { label: "🧩 " + tr("sys_plugins"), right: ((cfg.pluginSpacexTv ? 1 : 0) + (cfg.pluginGrokbot ? 1 : 0)) + " on ›", act: openPluginsModal },
-      { label: "Walker (app launcher)", right: "›", act: openWalkerModal },
-      { label: tr("sys_themes"), right: cfg.theme, act: openThemesModal },
-      { label: tr("wp_title"), right: "›", act: function () { openWallpaperModal(); } },
-      { label: tr("wx_title"), right: "°" + cfg.tempUnit, act: openWeatherModal },
-      { label: tr("sys_saver"), right: "›", act: openSaverModal },
-      { label: tr("sys_all"), right: "›", act: openAllSettingsModal },
-      { label: "⌨ Grok Bot (Omarchy TUI)", right: "›", act: openGrokTui },
-      { label: "Grok Bot & AI", right: "›", act: openGrokBotHub },
-      { label: "Web apps", right: "›", act: openWebAppsModal },
-      { label: "AI meter", right: cfg.aiCredits === "dollars" ? "dollars" : "percent", act: function () {
+    openModal("Omarchy", "", [
+      { icon: "󰕼", label: "Cinemarchy", right: "C ›", act: function () { openCinemarchyModal(0); } },
+      { icon: "🎮", label: "OmarchyTV Arcade", right: "V-HOLD · RICE WARS · FORK BOMB ›", act: openArcade },
+      { icon: "♫", label: "Radiomarchy", right: "Omarchy Radio · R ›", act: function () { openRadio(); } },
+    ].concat(cfg.officeEnabled && OFF ? [{ icon: "󰚩", label: "GrokBot Office", right: "O ›", act: openOffice }] : []).concat([
+      { icon: "", label: tr("menu_plugins"), right: "›", act: openPluginsModal },
+      { icon: "󰀻", label: tr("menu_apps"), right: "›", act: openWalkerModal },
+      { icon: "󰸌", label: tr("sys_themes"), right: "›", act: openThemesModal },
+      { icon: "", label: tr("wp_title"), right: "›", act: function () { openWallpaperModal(); } },
+      { icon: "󰖐", label: tr("wx_title"), right: "›", act: openWeatherModal },
+      { icon: "󱄄", label: tr("sys_saver"), right: "›", act: openSaverModal },
+      { icon: "", label: tr("menu_setup"), right: "›", act: openAllSettingsModal },
+      { icon: "", label: tr("menu_terminal"), right: "›", act: openGrokTui },
+      { icon: "󰚩", label: "Grok Bot & AI", right: "›", act: openGrokBotHub },
+      { icon: "󰖟", label: "Web apps", right: "›", act: openWebAppsModal },
+      { icon: "󰾆", label: "AI meter", right: cfg.aiCredits === "dollars" ? "dollars" : "percent", act: function () {
         cfg.aiCredits = cfg.aiCredits === "dollars" ? "percent" : "dollars";
         saveCfg();
         renderWidgets();
@@ -1846,7 +3050,7 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
         renderModalList();
       } },
       { label: tr("sys_about"), right: APP_VERSION, act: openAboutModal }
-    ]);
+    ]));
   }
 
   var saverStatusOverride = "";
@@ -1869,17 +3073,273 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     log: function (m) { console.log("[OmarchySaver]", m); }
   };
 
+  function homeFxForSaver(pause) {
+    if (pause) {
+      if (omafireUi) { try { omafireUi.destroy(); } catch (e) {} omafireUi = null; omafireMode = ""; }
+      try { fractalTick(); } catch (e) {}
+    } else {
+      var wl = document.getElementById("wallpaper-layer");
+      try { omafireWall(wl); } catch (e) {}
+      try { fractalWall(wl); fractalTick(); } catch (e) {}
+    }
+  }
+
   function startScreensaver(statusText) {
+    if (cfg.saverMode === "radiomarchy" && radioEng) { openRadio({ saver: true }); return; }   // v2.20: the fractals, with the music if it plays
     saverStatusOverride = typeof statusText === "string" ? statusText : "";
     var ov = document.getElementById("saver-overlay");
     var fr = document.getElementById("saver-frame");
-    fr.src = "saver/index.html";
+    // v2.14 Live screensaver: a screen of its own (living.js fullscreen), no art under it.
+    fr.src = cfg.living && window.OmarchyLiving ? "about:blank" : cfg.saverMode === "pulse" ? pulseUrl() : "saver/index.html";
     ov.className = "active";
+    livingStart(ov);
+    pulseStart(fr);
+    if (cfg.saverMode === "pulse" && !cfg.living) {
+      fr.onload = function () { pulsePush(fr); };
+      pulsePush(fr);
+    }
+    homeFxForSaver(true);   // 2.20: no Home fractals / OmaFire work under the saver
+  }
+
+
+  // ---- 2.15.1 racing on LG and Samsung (Grant Charge, #123): same calendars as Android's Racing.java ----
+  var racingAsset = null, racingTick = null, racingNext = null;
+  function racingSeries() {
+    var R = window.OmarchyRacing, raw = cfg.racingSeries, out = [], i, id;
+    if (raw && raw.length) {
+      for (i = 0; i < raw.length; i++) {
+        id = raw[i];
+        if ((!R || R.known(id)) && out.indexOf(id) < 0) out.push(id);
+      }
+      return out;
+    }
+    return ["f1", "motogp"];
+  }
+  function pulseRacingOn() {
+    if (cfg.pulseRacing === true || cfg.pulseRacing === false) return cfg.pulseRacing;
+    return !!cfg.widgets.racing;
+  }
+  function racingWanted() { return !!cfg.widgets.racing || !!cfg.racingBar || pulseRacingOn(); }
+  var PULSE_PANEL_IDS = ["weather", "air", "system", "sky", "space", "launches", "planes", "earthquakes", "racing", "omarchy", "pc"];
+  var PULSE_PANEL_LABELS = { weather: "weather", air: "air", system: "TV stats", sky: "sky tonight", space: "space",
+    launches: "launches", planes: "planes", earthquakes: "earthquakes", racing: "racing", omarchy: "omarchy", pc: "PC panels" };
+  function pulsePanelOn(id) {
+    var p = cfg.pulsePanels;
+    if (p && Object.prototype.hasOwnProperty.call(p, id) && p[id] === false) return false;
+    if (id === "earthquakes" && cfg.earthquakes === false) return false;
+    if (id === "racing") return pulseRacingOn();
+    return true;
+  }
+  function setPulsePanel(id, on) {
+    if (!cfg.pulsePanels) cfg.pulsePanels = {};
+    cfg.pulsePanels[id] = !!on;
+    if (id === "earthquakes") cfg.earthquakes = !!on;
+    if (id === "racing") cfg.pulseRacing = !!on;
+  }
+  function pulsePanelsResolved() {
+    var o = {}, i;
+    for (i = 0; i < PULSE_PANEL_IDS.length; i++) o[PULSE_PANEL_IDS[i]] = pulsePanelOn(PULSE_PANEL_IDS[i]);
+    return o;
+  }
+  function openPulsePanelsModal() {
+    openModal("Pulse panels", "Which Pulse side panels show on the screensaver", PULSE_PANEL_IDS.map(function (id) {
+      return { label: PULSE_PANEL_LABELS[id], right: pulsePanelOn(id) ? "on" : "off", act: function () {
+        setPulsePanel(id, !pulsePanelOn(id)); saveCfg(); racingKick(); openPulsePanelsModal();
+      } };
+    }).concat([{ label: "Back", right: "‹", act: function () { openSaverModal(true); } }]));
+  }
+  function racingRead(id) {
+    try { var s = localStorage.getItem("omarchytv_racing_" + id); return s ? JSON.parse(s) : null; } catch (e) { return null; }
+  }
+  function racingWrite(id, meetings) {
+    try { localStorage.setItem("omarchytv_racing_" + id, JSON.stringify({ year: (window.OmarchyRacing && window.OmarchyRacing.YEAR) || 2026, meetings: meetings, saved: Date.now() })); } catch (e) {}
+  }
+  function racingAll(now) {
+    var R = window.OmarchyRacing, all = {}, series = racingSeries(), i;
+    if (!R) return all;
+    for (i = 0; i < series.length; i++) all[series[i]] = R.meetingsFrom(racingAsset, racingRead(series[i]), series[i]);
+    return all;
+  }
+  function racingIo() {
+    return {
+      series: racingSeries(), asset: racingAsset, read: racingRead, write: racingWrite,
+      get: function (url) { return fetch(url).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); }); },
+      onDone: function () { renderWidgets(); }
+    };
+  }
+  function racingKick() {
+    var R = window.OmarchyRacing;
+    if (!R || !racingWanted()) { if (!cfg.widgets.racing && !cfg.racingBar) stopRaceTick(); return; }
+    if (cfg.widgets.racing || cfg.racingBar) startRaceTick();
+    R.refreshIfStale(racingIo());
+  }
+  function startRaceTick() {
+    if (racingTick) return;
+    racingTick = setInterval(function () { tickRaceBar(); tickRaceNext(); }, 1000);
+  }
+  function stopRaceTick() {
+    if (racingTick) { clearInterval(racingTick); racingTick = null; }
+  }
+  function raceRowHtml(name, whenStr, nameCol, whenCol) {
+    return '<div class="race-row"><span class="race-row-name" style="color:' + nameCol + '">' + escHtml(name) +
+      '</span><span class="race-row-when" style="color:' + whenCol + '">' + escHtml(whenStr) + '</span></div>';
+  }
+  // One line per selected series (the next session). A second, dimmer line for the following
+  // weekend only when a single series is on, so two series still fit beside weather.
+  function raceSeriesLine(R, label, left, now, tz, extraWeekend) {
+    if (!left.length) return raceRowHtml(label + " · season complete", "", "var(--t-fg-dim)", "var(--t-fg-dim)");
+    var m = left[0], s = R.current(m, now) || R.race(m);
+    var live = !!(s && s.live(now));
+    var code = s ? String(s.code).toLowerCase() : "";
+    var name = label + " \u00b7 " + (live ? "\u25cf " : "") + code + " " + R.shortName(m);
+    var whenStr = !s ? "" : s.dateOnly ? R.day(s.start) : live ? "until " + R.when(s.endOrDefault(), tz).replace(/.* /, "") : R.when(s.start, tz);
+    var html = raceRowHtml(name, whenStr, live ? "var(--t-green)" : "var(--t-fg-bright)", live ? "var(--t-green)" : "var(--t-fg)");
+    if (extraWeekend && left[1]) {
+      var rs = R.race(left[1]);
+      html += raceRowHtml(R.shortName(left[1]), rs.dateOnly ? R.day(rs.start) : R.when(rs.start, tz), "var(--t-fg)", "var(--t-fg)");
+    }
+    return html;
+  }
+  function updateRacing() {
+    var R = window.OmarchyRacing, body = document.getElementById("race-body"), legend = document.getElementById("legend-race");
+    if (!R) { tickRaceBar(); return; }
+    var now = Date.now(), all = racingAll(now);
+    racingNext = R.soonest(all, now);
+    var tz = R.zone(cfg.racingTz || "");
+    if (legend) legend.textContent = "racing \u00b7 " + (R.zoneLabel(tz) || "local");
+    if (body && cfg.widgets.racing) {
+      var series = racingSeries(), extra = series.length <= 1, html = "", i;
+      html += '<div id="race-next"></div><div id="race-next-clock"></div>';
+      for (i = 0; i < series.length; i++) {
+        html += raceSeriesLine(R, R.label(series[i]).toLowerCase(), R.upcoming(all[series[i]] || [], now), now, tz, extra);
+      }
+      body.innerHTML = html;
+      tickRaceNext();
+    }
+    tickRaceBar();
+    if (cfg.widgets.racing || cfg.racingBar) startRaceTick();
+    else stopRaceTick();
+  }
+  function tickRaceNext() {
+    var el = document.getElementById("race-next"), clockEl = document.getElementById("race-next-clock"), R = window.OmarchyRacing;
+    if (!cfg.widgets.racing || !el || !clockEl || !R) return;
+    var now = Date.now(), n = racingNext;
+    if (n && now >= n.session.endOrDefault()) n = racingNext = R.soonest(racingAll(now), now);
+    if (!n) { el.style.display = "none"; clockEl.style.display = "none"; return; }
+    el.style.display = "block"; clockEl.style.display = "block";
+    el.innerHTML = '<span style="color:var(--t-fg)">next \u00b7 </span><span style="color:var(--t-accent)">' +
+      escHtml(R.label(n.series).toLowerCase() + " " + String(n.session.code).toLowerCase()) +
+      '</span><span style="color:var(--t-fg-bright)"> \u00b7 ' + escHtml(R.shortName(n.meeting)) + "</span>";
+    var live = n.session.live(now);
+    clockEl.textContent = live ? "\u25cf live" : R.clockShort(n.session.start - now);
+    clockEl.style.color = live ? "var(--t-green)" : "var(--t-fg-bright)";
+  }
+  function tickRaceBar() {
+    var bar = document.getElementById("bar-race"), R = window.OmarchyRacing;
+    if (!bar) return;
+    if (!cfg.racingBar || !R) { bar.style.display = "none"; layoutRadioBar(); return; }
+    var now = Date.now(), n = racingNext;
+    if (n && now >= n.session.endOrDefault()) n = racingNext = R.soonest(racingAll(now), now);
+    if (!n) { bar.style.display = "none"; layoutRadioBar(); return; }
+    var live = n.session.live(now);
+    bar.style.display = "inline-block";
+    bar.innerHTML = '<span style="color:var(--t-accent)">' + escHtml(R.label(n.series)) +
+      ' </span><span style="color:var(--t-fg)">' + escHtml(String(n.session.code).toLowerCase() + " · " + R.shortName(n.meeting)) +
+      '  </span><span style="color:' + (live ? "var(--t-green)" : "var(--t-fg-bright)") + '">' +
+      (live ? "● live" : R.clock(n.session.start - now)) + "</span>";
+    layoutRadioBar();
+  }
+
+  // ---- v2.15 Pulse screensaver: Pulse's own page (1.8 since 2.15.1) (vendor/pulse), the TV's hub inside it, the PC's state on top ----
+  function pulseCfg() {
+    var t = DATA.themes[cfg.theme] || {};
+    var c = { city: cfg.weatherCity || "", imperial: cfg.tempUnit === "F", theme: { name: cfg.theme, colors: t }, scene: cfg.pulseScene || "sphere", graphics: cfg.pulseGraphics || "auto" };
+    if (typeof cfg.weatherLat === "number" && typeof cfg.weatherLon === "number") { c.lat = cfg.weatherLat; c.lon = cfg.weatherLon; }
+    c.earthquakes = pulsePanelOn("earthquakes");
+    c.pulsePanels = pulsePanelsResolved();
+    // screensaver.racing follows the Home widget unless set; the series are the ones picked on Home.
+    if (pulseRacingOn() && window.OmarchyRacing) {
+      var rows = window.OmarchyRacing.pulseRows(racingAll(Date.now()), racingSeries(), Date.now());
+      if (rows.length) c.racing = rows;
+    }
+    return c;
+  }
+  function pulseUrl() {
+    return "pulse-host.html#cfg=" + encodeURIComponent(JSON.stringify(pulseCfg()));   // v2.20 host wraps vendored Pulse
+  }
+  // The Pulse page is an iframe: webOS often drops the #cfg hash on file://, and the calendar
+  // may still be loading when the URL is first built. Same path as Android: OmarchySaver.pulse()
+  // plus a postMessage once the frame is up (and again when the snapshot arrives).
+  function pulsePush(fr) {
+    if (!fr || !fr.contentWindow || cfg.living || cfg.saverMode !== "pulse") return;
+    try { var c = pulseCfg(); fr.contentWindow.postMessage({ pulseTV: "cfg", racing: c.racing || [], pulsePanels: c.pulsePanels, earthquakes: c.earthquakes }, "*"); } catch (e) {}
+  }
+  window.OmarchySaver.pulse = function () {
+    try { return JSON.stringify(pulseCfg()); } catch (e) { return "{}"; }
+  };
+  var pulseTimer = null;
+  function pulseStart(fr) {
+    pulseStop();
+    if (cfg.living || cfg.saverMode !== "pulse" || !pcReady()) return;
+    // the paired PC's Pulse (agents, workspaces, repos, panels, planes...) through the bridge, every 2 s
+    pulseTimer = setInterval(function () {
+      pcPost("/v1/pulse", {}).then(function (r) {
+        if (r.status === 200 && r.j && r.j.v && fr.contentWindow) fr.contentWindow.postMessage({ pulseTV: "pc", state: r.j }, "*");
+      }, function () {});
+    }, 2000);
+  }
+  function pulseStop() { if (pulseTimer) { clearInterval(pulseTimer); pulseTimer = null; } }
+
+  // ---- v2.14 Living screensaver (living.js): weather here, the rest from the PC bridge every 3 s ----
+  var livingUi = null, livingTimer = null, livingData = {};
+  function livingWeather() {
+    var wx = state.weather;
+    if (!wx || typeof wx.tempC !== "number") return null;
+    var c = Number(wx.code) || 0, keys = [95, 80, 71, 61, 51, 45, 3, 2, 1, 0], k = 0;
+    for (var i = 0; i < keys.length; i++) if (c >= keys[i]) { k = keys[i]; break; }
+    var f = cfg.tempUnit === "F", t = function (v) { return Math.round(f ? v * 9 / 5 + 32 : v); };
+    return { t: t(wx.tempC), unit: f ? "F" : "", code: c, desc: (tr("wmo") || {})[k] || "", place: wx.city || cfg.weatherCity,
+      min: typeof wx.minC === "number" ? t(wx.minC) : undefined, max: typeof wx.maxC === "number" ? t(wx.maxC) : undefined };
+  }
+  function livingLabels() {
+    return { weather: tr("living_weather"), notes: tr("living_notes_title"), x: tr("living_x_title"), github: "github",
+      waiting: tr("living_waiting"), x_not_set_up: tr("living_x_not_set_up"), x_budget: tr("living_x_budget"), x_error: tr("living_x_error"), x_user: tr("living_x_error") };
+  }
+  function livingStart(host) {
+    livingStop();
+    if (!cfg.living || !window.OmarchyLiving) return;
+    var t = (DATA.themes[cfg.theme] || {});
+    livingUi = window.OmarchyLiving.fullscreen(host, { qr: cfg.shareQr !== "off" && window.OmarchyQR ? window.OmarchyQR.PROJECT_URL : "", labels: livingLabels(), color: t.foreground || "#c0caf5", accent: t.accent || "#7aa2f7",
+      accent2: t.magenta || t.cyan, bg: t.background || "#000", user: cfg.promptUser || "user", host: cfg.promptHost || "omarchytv",
+      dateText: function (d) { try { return d.toLocaleDateString(getLang(), { weekday: "short", day: "numeric", month: "short" }); } catch (e) { return d.toDateString(); } } });
+    livingData = { weather: livingWeather() };
+    livingUi.update(livingData);
+    var tick = function () {
+      if (!livingUi) return;
+      livingData.weather = livingWeather();
+      if (!pcReady()) { livingUi.update(livingData); return; }
+      pcPost("/v1/living", { notes: !!cfg.livingNotes, github: cfg.livingGithub !== false, x: cfg.livingX || "off", radar: !!cfg.livingRadar }).then(function (r) {
+        if (!livingUi || r.status !== 200) return;
+        var j = r.j;
+        var ps = state.pcStatus;
+        livingData = { weather: livingWeather(), notes: j.notes, github: j.github, x: j.x, xMode: j.xMode, xError: j.xError, radar: j.radar,
+          pc: ps && typeof ps.cpu === "number" ? { cpu: ps.cpu, ram: ps.ram, host: ps.host } : null };
+        livingUi.update(livingData);
+      }, function () {});
+    };
+    tick();
+    livingTimer = setInterval(tick, 3000);
+  }
+  function livingStop() {
+    if (livingTimer) { clearInterval(livingTimer); livingTimer = null; }
+    if (livingUi) { livingUi.destroy(); livingUi = null; }
   }
 
   function stopScreensaver() {
     var ov = document.getElementById("saver-overlay");
     var fr = document.getElementById("saver-frame");
+    livingStop();
+    pulseStop();
     if (ov.className === "active") {
       ov.className = "";
       fr.src = "about:blank";
@@ -1887,6 +3347,7 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     }
     // Keys pressed inside the saver iframe never reach this document, so restart the idle clock here.
     markInput();
+    homeFxForSaver(false);
   }
 
   // Idle timer: start the screensaver after cfg.saverIdleMin minutes without input (0 = never),
@@ -1898,7 +3359,7 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
   });
   document.addEventListener("visibilitychange", markInput);
   setInterval(function () {
-    if (!cfg.saverIdleMin || document.hidden || state.modalOpen) return;
+    if (!cfg.saverIdleMin || document.hidden || state.modalOpen || arcadeUi || cineUi || radioUi || officeUi) return;
     if (document.getElementById("saver-overlay").className === "active") return;
     if (Date.now() - lastInput >= cfg.saverIdleMin * 60000) startScreensaver();
   }, 5000);
@@ -2084,7 +3545,7 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
 
 
   // Grok Bot companion avatar, webOS/Tizen: Tom Ballard's shapes, palette and eyes (MIT, vendored from
-  // his Grok Bot Desktop Companion v0.1.0, see vendor/grokbot/) drawn by companion.js. The motion follows
+  // his Agent Desktop v0.2.0, see vendor/grokbot/) drawn by companion.js. The motion follows
   // his Main.qml: an idle bob, a blink every 2.8-5.2 s (a third of them double), a look around now and
   // then, and sleep after two idle minutes (any key wakes it). "Animation" off keeps it still.
   var GBC = window.OmarchyCompanion || null;
@@ -2139,6 +3600,7 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
       pill.style.display = cfg.pluginSpacexTv ? "inline-flex" : "none";
       pill.textContent = "🚀 SpaceX TV · launches";
     }
+    layoutRadioBar();
     var gb = document.getElementById("grokbot-companion");
     if (gb) {
       gb.style.display = (cfg.pluginGrokbot && !cfg.companionHidden && state.ws === 0) ? "block" : "none";
@@ -2165,11 +3627,15 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
         cfg.pluginSpacexTv = !cfg.pluginSpacexTv; saveCfg(); renderPluginsUI(); openPluginsModal();
       } },
       { label: "🚀 Open SpaceX TV Launches & Live Streams", right: "4 streams ›", act: openSpacexModal },
-      { label: "🤖 Omarchy Grok Bot Desktop Companion (@tcballard · MIT)", right: cfg.pluginGrokbot ? "on" : "off", act: function () {
+      { label: "🤖 Omarchy Agent Desktop (@tcballard · MIT)", right: cfg.pluginGrokbot ? "on" : "off", act: function () {
         cfg.pluginGrokbot = !cfg.pluginGrokbot; saveCfg(); renderPluginsUI(); openPluginsModal();
       } },
       { label: "🤖 Open Grok Bot companion settings", right: "›", act: function () { openGrokbotCompanionModal(0); } },
-      { label: "⌨ Grok Bot (Omarchy TUI)", right: "›", act: openGrokTui }
+      { label: "⌨ Grok Bot (Omarchy TUI)", right: "›", act: openGrokTui },
+      { label: "📺 " + tr("plugin_retro_crt"), right: tr(cfg.pluginRetroCrt === "strong" ? "crt_strong" : cfg.pluginRetroCrt === "light" ? "crt_light" : "off"), act: function () {
+        var m = ["off", "light", "strong"];
+        cfg.pluginRetroCrt = m[(m.indexOf(cfg.pluginRetroCrt || "off") + 1) % m.length]; saveCfg(); applyCrt(); openPluginsModal();
+      } }
     ]);
   }
 
@@ -2207,7 +3673,7 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
   }
 
   // Grok Bot companion chat, webOS/Tizen. The chosen agent answers:
-  //  - "grokbot": @tcballard's Grok Bot Desktop Companion on the PC, through the omarchy-tv bridge
+  //  - "grokbot": @tcballard's Agent Desktop companion on the PC, through the omarchy-tv bridge
   //    (POST /v1/grokbot/ask with the ask code the bridge prints; it runs omarchy-link's grokbot ask);
   //  - "grok-web": grok.com in the TV browser (also the fallback when no PC is paired).
   // "open Netflix" / "apri YouTube" opens a matching app on the TV first, without asking anyone.
@@ -2355,7 +3821,7 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     if (!st.speak || !text || !window.speechSynthesis || typeof window.SpeechSynthesisUtterance !== "function") return;
     try {
       var u = new window.SpeechSynthesisUtterance(text);
-      u.lang = lang || (cfg.lang === "it" ? "it-IT" : cfg.lang === "de" ? "de-DE" : "en-US");   // the reply's own lang when valid
+      u.lang = lang || speechLang();   // the reply's own lang when valid
       window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
     } catch (e) {}
   }
@@ -2375,7 +3841,7 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     gbFace.busy = true; gbSay("Thinking…", 200000);
     if (reopen) openCompanionChat(false);
     var apps = visibleApps().map(function (a) { return a.name; });
-    GBD.ask(st, q, cfg.lang === "it" ? "it" : cfg.lang === "de" ? "de" : "en", apps,
+    GBD.ask(st, q, askLang(), apps,
       window.OMARCHY_PLATFORM === "tizen" ? "OmarchyTV on Samsung Tizen" : "OmarchyTV on LG webOS", function (err, rep) {
         gbFace.busy = false;
         var open = state.modalOpen && state.gbChat;
@@ -2437,7 +3903,7 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     var base = pcBase(), a = tuiAgent();
     tuiBusy = true; tuiAdd("dim", "asking " + a.name + "…");
     fetch(base + "/v1/ai/ask", { method: "POST", headers: { "X-Omarchy-Token": cfg.grokbotCode, "Content-Type": "text/plain" },
-      body: JSON.stringify({ text: q, provider: prov, session: tuiSession || undefined, lang: cfg.lang === "it" ? "it-IT" : cfg.lang === "de" ? "de-DE" : "en-US" }) })
+      body: JSON.stringify({ text: q, provider: prov, session: tuiSession || undefined, lang: speechLang() }) })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j || {} }; }); })
       .then(function (res) {
         tuiBusy = false;
@@ -2484,7 +3950,8 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     } else if (c.kind === "theme-unknown") tuiAdd("err", "no single theme matches “" + c.query + "” · try “themes”");
     else if (c.kind === "wallpaper") { cfg.wallpaperIdx = (cfg.wallpaperIdx || 0) + 1; cfg.wallpaper = ""; saveCfg(); applyTheme(); tuiAdd("ok", "next wallpaper"); }
     else if (c.kind === "saver") {
-      if (c.style === "aquarium") { cfg.saverMode = "aquarium"; cfg.saverArt = "aquarium"; }
+      if (c.style === "pulse") { cfg.saverMode = "pulse"; cfg.saverArt = "pulse"; }
+      else if (c.style === "aquarium") { cfg.saverMode = "aquarium"; cfg.saverArt = "aquarium"; }
       else if (c.style === "classic") { cfg.saverMode = "aquarium"; cfg.saverArt = "aquarium-classic"; }
       else if (c.style === "logo") { cfg.saverMode = "logo"; cfg.saverArt = "omarchy-tv"; }
       else if (c.style === "cinemarchy") { cfg.saverMode = "logo"; cfg.saverArt = "cinemarchy"; }
@@ -2517,7 +3984,7 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
   function tuiDirect(q) {
     var st = GBD.load(window.localStorage);
     tuiBusy = true; tuiAdd("dim", "asking Grok Bot diretto…");
-    GBD.ask(st, q, cfg.lang === "it" ? "it" : cfg.lang === "de" ? "de" : "en", visibleApps().map(function (a) { return a.name; }),
+    GBD.ask(st, q, askLang(), visibleApps().map(function (a) { return a.name; }),
       window.OMARCHY_PLATFORM === "tizen" ? "OmarchyTV on Samsung Tizen" : "OmarchyTV on LG webOS", function (err, rep) {
         tuiBusy = false;
         if (err) { tuiAdd("err", err); return; }
@@ -2575,7 +4042,9 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     ]);
   }
   function webApps() {
-    return AI_WEBAPPS.map(function (w) { return { name: w[0], url: w[1], builtin: true }; }).concat(cfg.webapps || []);
+    // v2.14 X first: the TV browser opens x.com (on LG/Samsung the remote works with the TV browser's own pointer).
+    return [{ name: "X", url: "https://x.com/home", builtin: true }]
+      .concat(AI_WEBAPPS.map(function (w) { return { name: w[0], url: w[1], builtin: true }; })).concat(cfg.webapps || []);
   }
   function openWebAppsModal() {
     var typed = "";
@@ -2648,7 +4117,7 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     if (!SR) { showToast("Voice is not available on this TV · use the keyboard"); return false; }
     try {
       var r = new SR();
-      r.lang = cfg.lang === "it" ? "it-IT" : cfg.lang === "de" ? "de-DE" : "en-US";
+      r.lang = speechLang();
       r.interimResults = false;
       r.onresult = function (ev) { var t = ev.results && ev.results[0] && ev.results[0][0] ? ev.results[0][0].transcript : ""; if (t) onText(t); };
       r.onerror = function () { showToast("I didn't catch that · try again or type"); };
@@ -2699,7 +4168,7 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
         return '<div class="gb-msg ' + (m.role === "user" ? "gb-me" : "gb-bot") + '">' + escHtml(m.text.length > 400 ? m.text.slice(0, 397) + "…" : m.text) + "</div>";
       }).join("");
       subEl.innerHTML = '<div style="display:flex;align-items:flex-start;gap:12px;"><span class="gb-mark">' + gbAvatar(48) + "</span><div>" +
-        (rows || "Hi! Ask me anything, or tell me which app to open.") + '<div class="gb-credit">Avatar from @tcballard\'s Grok Bot Desktop Companion v0.1.0 (MIT)</div></div></div>';
+        (rows || "Hi! Ask me anything, or tell me which app to open.") + '<div class="gb-credit">Avatar from @tcballard\'s Agent Desktop v0.2.0 (MIT)</div></div></div>';
       subEl.style.display = "block";
     }
     if (voice && speechCtor()) listen(function (t) { askCompanion(t, true); });
@@ -2744,7 +4213,7 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
       { label: "Sync bot, shape and colour from the PC", right: pcBase() ? "OK ›" : "pair the PC first", act: function () {
         if (!pcBase()) { showToast("Pair the PC in Workspace 4 first"); return; }
         showToast("Syncing with the PC…");
-        syncGrokbotFromPc(true).then(function (j) { showToast(j ? "Synced · " + ((j.roster || []).length) + " bots" : "The PC has no Grok Bot Desktop Companion, or the bridge is off"); if (state.modalOpen) openGrokbotCompanionModal(10); });
+        syncGrokbotFromPc(true).then(function (j) { showToast(j ? "Synced · " + ((j.roster || []).length) + " bots" : "The PC has no Agent Desktop companion, or the bridge is off"); if (state.modalOpen) openGrokbotCompanionModal(10); });
       } },
       { label: "Clear all companion chats", right: "", act: function () { if (GBC) GBC.clear(window.localStorage); gbFace.bubble = ""; renderPluginsUI(); showToast("Chats cleared"); } }
     ];
@@ -2782,6 +4251,19 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
           GBD.xaiVoices(gst).then(function (v) { if (v.length) { gst.xaiVoices = v; GBD.save(window.localStorage, gst); } }, function () {})
             .then(function () { gbdSpeak("Ciao! Sono Grok, con la voce " + gst.xaiVoice + ".", "it"); });
         } });
+      // v2.15 (#70): your own ntfy server for the replies (ntfy.sh's shared daily quota can't stop them), and its token.
+      var srvIdx = items.length;
+      items.push(
+        { label: "Save the reply server typed above (empty = ntfy.sh)", right: GBD.serverHost(gst.server) + " ›", act: function () {
+          var u = code.trim();
+          if (u && !GBD.validServer(u)) { showToast("The reply server must start with https://"); return; }
+          gst.server = u; showToast(u ? "Reply server saved" : "Back to ntfy.sh"); gsave(srvIdx);
+        } },
+        { label: "Save the reply server token typed above (optional)", right: gst.ntfyToken ? GBD.mask(gst.ntfyToken) : "none", act: function () {
+          var k = code.trim();
+          if (k && !GBD.validToken(k)) { showToast("An ntfy access token starts with tk_"); return; }
+          gst.ntfyToken = k; showToast(k ? "Token saved on this TV" : "Token removed"); gsave(srvIdx + 1);
+        } });
     }
     var offIdx = items.length;   // Android parity: companion offset steps 0/24/48/96/160 px, up/down half of it
     items.push({ label: "Companion offset (sideways · up/down)", right: (cfg.companionOffsetX || 0) + " · " + (cfg.companionOffsetY || 0), act: function () {
@@ -2789,7 +4271,13 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
       cfg.companionOffsetX = nx; cfg.companionOffsetY = nx / 2; saveCfg(); renderPluginsUI(); openGrokbotCompanionModal(offIdx);
     } });
     items.push({ label: "⌨ Grok Bot (Omarchy TUI)", right: "›", act: openGrokTui });   // last, so the indices above stay
-    openModal("Grok Bot companion", "Avatar, eyes and palette from @tcballard's Grok Bot Desktop Companion v0.1.0 (MIT) · Blue: chat · hold Blue: voice · " +
+    if (OFF) {   // v2.20 GrokBot Office: optional, off by default; it asks and hires through Grok Bot diretto above
+      var offIdx = items.length;
+      items.push(
+        { label: "GrokBot Office (optional)", right: cfg.officeEnabled ? "on" : "off", act: function () { cfg.officeEnabled = !cfg.officeEnabled; saveCfg(); openGrokbotCompanionModal(offIdx); } },
+        { label: "Open GrokBot Office", right: cfg.officeEnabled ? "O ›" : "turn it on first", act: function () { if (cfg.officeEnabled) openOffice(); else showToast("Turn GrokBot Office on first"); } });
+    }
+    openModal("Grok Bot companion", "Avatar, eyes and palette from @tcballard's Agent Desktop v0.2.0 (MIT) · Blue: chat · hold Blue: voice · " +
       (window.OMARCHY_PLATFORM === "tizen" ? "the remote's voice key opens it when the TV lets apps have it" : "the Magic Remote mic stays with webOS"),
       items, "PC ask code (printed by: omarchy-tv webos serve)", function (v) { code = v; }, { noAutoFocus: true, focusIdx: focusIdx || 0 });
   }
@@ -2840,15 +4328,16 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     if (idx === 0) openOmarchyMenu();
     else if (idx >= 1 && idx <= 5) switchWorkspace(idx - 1);
     else if (idx === 6) openCinemarchyModal(0);
-    else if (idx === 10) switchWorkspace(1);
-    else if (idx === 11) startScreensaver();
+    else if (idx === 7) openArcade();   // v2.14: the Arcade icon next to Cinemarchy
+    else if (idx === 11) switchWorkspace(1);
+    else if (idx === 12) startScreensaver();
     else launchApp({ name: "LG Settings", appId: "com.palm.app.settings" });
   }
 
-  // Home widgets that can take focus, in on-screen order (state.widgetIdx: 0 terminal, 1 weather,
-  // 2 pc, 3 ai credits). Hidden ones (Home widgets menu) are skipped, so ▲ ▼ never stop on nothing.
+  // Home widgets that can take focus, in on-screen order (state.widgetIdx: 0 terminal, 1 racing,
+  // 2 weather, 3 pc, 4 ai credits). Hidden ones (Home widgets menu) are skipped, so ▲ ▼ never stop on nothing.
   function focusableWidgets() {
-    return [cfg.widgets.term, cfg.widgets.weather, cfg.widgets.pc, cfg.widgets.ai]
+    return [cfg.widgets.term, !!cfg.widgets.racing, cfg.widgets.weather, cfg.widgets.pc, cfg.widgets.ai]
       .map(function (on, i) { return on ? i : -1; })
       .filter(function (i) { return i >= 0; });
   }
@@ -2925,6 +4414,18 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
       return;
     }
 
+    if ((k === "r" || k === "R" || code === 82) && !state.modalOpen && !cineUi) {   // v2.20 Radiomarchy
+      openRadio();
+      e.preventDefault();
+      return;
+    }
+
+    if ((k === "o" || k === "O" || code === 79) && !state.modalOpen && !cineUi && cfg.officeEnabled && OFF) {   // v2.20 GrokBot Office (when on)
+      openOffice();
+      e.preventDefault();
+      return;
+    }
+
     if ((k === "c" || k === "C" || code === 67) && !state.modalOpen) {
       openCinemarchyModal(0);
       e.preventDefault();
@@ -2932,7 +4433,7 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     }
 
     if (state.zone === "bar") {
-      if (k === "ArrowRight") { state.barIdx = Math.min(11, state.barIdx + 1); renderAll(); e.preventDefault(); return; }
+      if (k === "ArrowRight") { state.barIdx = Math.min(12, state.barIdx + 1); renderAll(); e.preventDefault(); return; }
       if (k === "ArrowLeft") { state.barIdx = Math.max(0, state.barIdx - 1); renderAll(); e.preventDefault(); return; }
       if (k === "ArrowDown") {
         if (state.ws === 0) state.zone = enterWidgets() ? "widgets" : "dock";
@@ -2954,7 +4455,8 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
       if (k === "ArrowDown") { state.zone = "dock"; renderAll(); e.preventDefault(); return; }
       if (k === "Enter") {
         if (state.widgetIdx === 0) openThemesModal();
-        else if (state.widgetIdx === 1) openWeatherModal();
+        else if (state.widgetIdx === 1) openWidgetsModal();
+        else if (state.widgetIdx === 2) openWeatherModal();
         else switchWorkspace(3);
         e.preventDefault(); return;
       }
@@ -3014,10 +4516,31 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
           cfg.pcSimulated = !cfg.pcSimulated;
           saveCfg(); pollPcStatus(); renderAll();
         } else {
-          openModal("Pair Omarchy Linux PC", "Enter your Omarchy PC LAN IP (serves http://<ip>:8765/v1/status):", [
-            { label: "Use 192.168.1.100:8765", right: "LAN", act: function () { cfg.pcHost = "192.168.1.100"; saveCfg(); pollPcStatus(); closeModal(); } },
+          // Typed address is used (issue #5, point 4): "Connect to …" appears as the first item once it looks valid.
+          var pairTyped = "";
+          // PCs that answered before come first, so reconnecting is one OK press; the example only shows without them.
+          var recentItems = (cfg.pcRecent || []).map(function (p) {
+            return { label: "Connect to " + p.host + (p.name ? " · " + p.name : ""), right: p.host === cfg.pcHost && !cfg.pcSimulated ? "current" : "OK", act: function () {
+              cfg.pcHost = p.host; cfg.pcSimulated = false; saveCfg(); pollPcStatus(); closeModal();
+            } };
+          });
+          var pairItems = recentItems.concat(recentItems.length ? [] : [
+            { label: "Use 192.168.1.100:8765", right: "LAN", act: function () { cfg.pcHost = "192.168.1.100"; saveCfg(); pollPcStatus(); closeModal(); } }
+          ]).concat(cfg.pcHost ? [
+            // Forget the current PC but keep it in the recent list, so reconnecting stays one OK press.
+            { label: "Disconnect " + cfg.pcHost, right: "›", act: function () { cfg.pcHost = ""; saveCfg(); pollPcStatus(); closeModal(); } }
+          ] : []).concat([
             { label: "Toggle simulated PC link", right: cfg.pcSimulated ? "on" : "off", act: function () { cfg.pcSimulated = !cfg.pcSimulated; saveCfg(); pollPcStatus(); closeModal(); } }
-          ], "192.168.1.x");
+          ]);
+          // With a recent PC to pick, don't pop the TV keyboard: ▲ from the first item still reaches the field.
+          openModal("Pair Omarchy Linux PC", "Enter your Omarchy PC LAN IP (serves http://<ip>:8765/v1/status):", pairItems.slice(), "192.168.1.x", function (v) {
+            pairTyped = (v || "").trim();
+            var ok = /^(https?:\/\/)?[A-Za-z0-9.-]+(:\d{1,5})?\/?$/.test(pairTyped);
+            state.modalItems = (ok ? [{ label: "Connect to " + pairTyped, right: "OK", act: function () {
+              cfg.pcHost = pairTyped.replace(/\/+$/, ""); cfg.pcSimulated = false; saveCfg(); pollPcStatus(); closeModal();
+            } }] : []).concat(pairItems);
+            state.modalIdx = 0; renderModalList();
+          }, { noAutoFocus: recentItems.length > 0 });
         }
         e.preventDefault(); return;
       }
@@ -3093,6 +4616,8 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
   if (gbEl) gbEl.onclick = function () { openCompanionChat(false); };
   document.getElementById("wx-box").onclick = openWeatherModal;
   document.getElementById("term-box").onclick = openThemesModal;
+  var raceEl = document.getElementById("race-box");
+  if (raceEl) raceEl.onclick = openWidgetsModal;
   document.getElementById("pc-box").onclick = function () { switchWorkspace(3); };
   document.getElementById("ai-box").onclick = function () { switchWorkspace(3); };
   document.getElementById("ws4-pair-btn").onclick = function () { state.zone = "ws4"; state.ws4Idx = 0; renderAll(); };
@@ -3124,15 +4649,87 @@ var CINEMARCHY_VERSION = "0.1.0-alpha";
     connectPc: function (host) { cfg.pcSimulated = false; cfg.pcHost = host; saveCfg(); return pollPcStatus().then(function (s) { renderAll(); return s; }); }
   };
 
+  // Optional remote setup uses this same modal, focus and theme system.
+  if (window.OmarchyRemote) OmarchyRemote.attach({state:state,modal:openModal,close:closeModal,toast:showToast});
+
   // Boot
   fitStage();
   applyTheme();
+  // Boot screen: the real network and omarchy-link state, asked while their spinners turn (boot.js clock()).
+  function bootLive(key, timedOut) {
+    if (key === "net") {
+      if (navigator.onLine === false) return timedOut ? { ok: false, text: "Network Manager: no connection yet." } : null;
+      return { ok: true, text: "Network online." };
+    }
+    if (key === "pc") {
+      if (!cfg.pcHost && !cfg.pcSimulated) return { ok: true, text: "Started omarchy-link.service (no PC paired yet)." };
+      var st = state.pcStatus;
+      if (st) return { ok: true, text: "omarchy-link: connected to " + (st.host || "your PC") + "." };
+      return timedOut ? { ok: false, text: "omarchy-link: " + (cfg.pcHost || "your PC") + " not reachable." } : null;
+    }
+    return { ok: true, text: "" };
+  }
+  // Boot screen "System Model": the TV's real model when the platform says it, else a generic name.
+  function tvModel() {
+    try {   // Samsung: only when webapis.js is loaded
+      var pi = window.webapis && window.webapis.productinfo;
+      var sm = pi && (pi.getRealModel ? pi.getRealModel() : pi.getModel && pi.getModel());
+      if (sm) return "Samsung " + sm;
+    } catch (e) {}
+    try {   // LG: PalmSystem.deviceInfo is a JSON string with modelName
+      var d = window.PalmSystem && window.PalmSystem.deviceInfo && JSON.parse(window.PalmSystem.deviceInfo);
+      if (d && d.modelName) return "LG " + d.modelName;
+    } catch (e) {}
+    return window.tizen ? "Samsung Smart TV (Tizen)" : "LG Smart TV (webOS)";
+  }
+  // Retro CRT: once the boot screen exists, fit it into the set (poll briefly; boot.js builds it on the next frames).
+  [50, 300, 800].forEach(function (ms) { setTimeout(function () { if (crtMode() !== "off") fitStage(); }, ms); });
+  if (window.OmarchyBoot) {
+    window.OmarchyBoot.install(function () {
+      var bt = currentThemeObj();
+      var mem = Number(navigator.deviceMemory) || 0;   // GB, rounded by the browser; absent on old engines
+      return {
+        mode: cfg.bootScreen || "boot",
+        sound: cfg.bootSound !== false,
+        qr: cfg.shareQr === "boot" && window.OmarchyQR ? window.OmarchyQR.PROJECT_URL : "",
+        version: APP_VERSION,
+        theme: cfg.theme,
+        model: tvModel(),
+        ramMb: mem * 1024,
+        display: (function () {   // the web UI's mode: TVs often report 1920x1080 even on a 4K panel
+          try { var r = window.devicePixelRatio || 1; return Math.round(screen.width * r) + "x" + Math.round(screen.height * r); } catch (e) { return ""; }
+        })(),
+        apps: (function () { try { return visibleApps().length; } catch (e) { return -1; } })(),
+        live: bootLive,
+        user: cfg.promptUser,
+        host: cfg.promptHost,
+        pcLinked: !!cfg.pcHost && !cfg.pcSimulated,
+        fx: cfg.bootFx !== false,
+        colors: { bg: bt.bg, fg: bt.fg, fgBright: bt.fgBright, fgDim: bt.fgDim, accent: bt.accent, accent2: bt.accent2, green: bt.green, red: bt.red, yellow: bt.yellow }
+      };
+    });
+  }
   updateClock();
   setInterval(updateClock, 15000);
   animateLogo();
   renderAll();
   fetchWeather();
+  if (window.OmarchyRacing) {
+    // Fetch cannot load file:// on webOS/Tizen; XMLHttpRequest can (status 0 or 200).
+    window.OmarchyRacing.getText("racing_2026.json").then(function (text) {
+      var j = JSON.parse(text);
+      if (j) racingAsset = j;
+      if (racingWanted()) { racingKick(); renderWidgets(); }
+      var fr = document.getElementById("saver-frame");
+      if (fr && document.getElementById("saver-overlay") && document.getElementById("saver-overlay").className === "active") pulsePush(fr);
+    }).catch(function () { if (racingWanted()) racingKick(); });
+    if (racingWanted()) racingKick();
+  }
   pollPcStatus();
+  if (cfg.pulseNotice) {   // v2.15: say once that Pulse is the new screensaver (and how to go back)
+    delete cfg.pulseNotice; saveCfg();
+    setTimeout(function () { showToast(tr("pulse_notice")); }, 5000);
+  }
 
   // Keep the PC panels live: refresh /v1/status every 5 s while the app is on screen. A request that
   // gets no answer (e.g. a firewall dropping packets) can hang for a long time, so skip ticks while one

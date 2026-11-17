@@ -28,7 +28,7 @@ final class LauncherConfig {
     /** Saved order of the non-dock apps (package names), written by move mode. */
     final List<String> order;
     final List<String> hidden;
-    /** "auto" (follow the TV), "en", "it", "de". */
+    /** "auto" (follow the TV) or one of {@link #LANGUAGES}. */
     final String language;
     /** Info panes shown top right: "clock", "sysinfo", "weather". */
     final List<String> panes;
@@ -58,6 +58,7 @@ final class LauncherConfig {
     static final int LONG_PRESS = 3;
     /** OmarchyTV actions a key can run (see MainActivity.runKeyAction). */
     static final String[] KEY_ACTIONS = {"walker", "voice", "home", "ask", "menu", "screensaver", "next-theme",
+            "cinemarchy", "radio", "arcade", "grokbot", "terminal", "office",   // v2.15 (#91): the Grok Bot companion, e.g. for Philips TVs whose Blue key opens the manual
             "workspace-1", "workspace-2", "workspace-3", "workspace-4", "workspace-5"};
 
     /** Maps a key name without the KEYCODE_ prefix to an Android keycode; 0 or less = unknown. */
@@ -131,6 +132,9 @@ final class LauncherConfig {
     }
 
     /** Built-in AI & Grok Bot WebApps (like Omarchy desktop webapps, zero API cost, persistent login in :web). */
+    /** v2.14 the X app: x.com with the remote mapped to X's shortcuts (XKeys). */
+    static final WebApp X_WEBAPP = new WebApp("x", "X", "https://x.com/home", "X", "desktop");
+
     static final WebApp[] BUILTIN_AI_WEBAPPS = new WebApp[]{
             new WebApp("grok-bot", "Grok Bot", "https://grok.com", "G", "desktop"),
             new WebApp("grok", "Grok (X)", "https://x.com/i/grok", "X", "desktop"),
@@ -200,10 +204,17 @@ final class LauncherConfig {
 
     static final class Provider {
         final String id, name;
+        /** v2.20 GrokBot Office tag (claude, chatgpt, grok, ...); "" from an older PC plugin. */
+        final String family;
 
         Provider(String id, String name) {
+            this(id, name, "");
+        }
+
+        Provider(String id, String name, String family) {
             this.id = id;
             this.name = name;
+            this.family = family == null ? "" : family;
         }
     }
 
@@ -397,20 +408,43 @@ final class LauncherConfig {
     final String wallpaper;          // "omarchy", "procedural", or an absolute image path
     /** Opt-in PC active wallpaper sync (default false: use bundled MIT theme wallpaper / Liftoff Sunset fallback). */
     final boolean syncPcWallpaper;
+    /** v2.14 reverse theme sync (default false): a theme picked on the TV also switches the paired PC. */
+    final boolean themeToPc;
+    /** v2.14 plugins: Retro CRT ("off" | "light" | "strong") and Omastorm (radar from the PC), both off by default. */
+    final String pluginRetroCrt;
+    final boolean pluginOmastorm;
+    /** v2.14 Living screensaver (default off): weather, GitHub, PC notifications (livingNotes, default off) and X
+     *  (livingX "off" | "notify" | "api") in ASCII boxes next to the screensaver art. */
+    final boolean living, livingNotes, livingGithub, livingRadar;
+    final String livingX;
+    /** v2.14 "TV and PC power together" (default false): TV on wakes the PC (Wake-on-LAN), TV off suspends it. */
+    final boolean pcPower;
+    /** The paired PC's MAC / subnet broadcast for Wake-on-LAN, from omarchy-link's "pc_wol" ("" until it sent them). */
+    final String pcMac, pcBroadcast;
     /** v2.13: play animated MP4 intro (e.g. cumulus, last-horizon) before settling on still wallpaper. */
     final boolean wallpaperIntro;
     /** v2.14 "Always-animated wallpaper" (default false): loop the theme's animated wallpaper while Home is on screen
      *  instead of playing it once and settling on the still. Video, Cinemarchy and the screensaver pause it (onPause). */
     final boolean wallpaperLoop;
+    /** v2.14 boot screen (BootScreenView): "boot" (default, once per TV boot), "wake" (also when the screen turns on), "off". */
+    final String bootScreen;
+    /** v2.14 boot screen scanlines and text glow (default true). */
+    final boolean bootFx;
+    /** v2.14 boot screen sound (default true) and OmaFire wallpaper sound (default false). */
+    final boolean bootSound, omafireSound;
+    /** v2.14 OmarchyTV Arcade: sound effects (default true) and RICE WARS re-theming the Omarchy PC (default false). */
+    final boolean arcadeSound, arcadePcTheme;
+    /** v2.14 QR code of OmarchyTV: "off", "live" (default: small, in the Live screensaver), "boot" (boot screen too). */
+    final String shareQr;
     /** v2.13: rotate among animated themes on Home resume/boot (default true; locked false on manual pick). */
     final boolean randomTheme;
     /** v2.13: rotate among animated wallpapers/intros on Home resume/boot (default true; locked false on manual pick). */
     final boolean randomWallpaper;
-    /** v2.13 Plugins Engine: SpaceX TV (com.sighmon.spacex-tv) & Grok Bot Companion (io.github.tcballard.grokbot-desktop). */
+    /** v2.13 Plugins Engine: SpaceX TV (com.sighmon.spacex-tv) & Agent Desktop (io.github.tcballard.grokbot-desktop). */
     final boolean pluginSpacexTv;
     final boolean pluginGrokbot;
     final String grokbotMessage;
-    /** Experimental: the bot @tcballard's Grok Bot Desktop Companion shows on the PC, pushed by omarchy-link
+    /** Experimental: the bot @tcballard's Agent Desktop companion shows on the PC, pushed by omarchy-link
      *  ("" = not mirrored). Shape/colour names from his bots.json; fill 0 = use the theme accent. */
     final String grokbotBotName, grokbotBotShape, grokbotBotMode, grokbotBotVersion;
     final int grokbotBotFill;
@@ -431,6 +465,20 @@ final class LauncherConfig {
             {"cumulus", "2", "wallpapers/cumulus/03-airship.webp"},
             {"cumulus", "3", "wallpapers/cumulus/04-lighthouse.webp"}
     };
+    /** v2.14: OmaFire (Wes Grimes) joins the random wallpaper pool: one draw in the pool of intros + fires. */
+    static final String[] RANDOM_FIRES = {"omafire:campfire", "omafire:embers"};
+    /** v2.14: the theme made for OmaFire (palette from Wes Grimes' scene); with the theme's own wallpaper it shows the campfire. */
+    static final String CAMPFIRE_THEME = "campfire";
+
+    /** A fire for this rotation, or null for an intro: each of the intros and fires is equally likely, never the same fire twice. */
+    static String randomFire(java.util.Random rng, String curWp) {
+        int n = ANIMATED_INTROS.length + RANDOM_FIRES.length;
+        int pick = rng.nextInt(n) - ANIMATED_INTROS.length;
+        if (pick < 0) return null;
+        String fire = RANDOM_FIRES[pick];
+        if (fire.equals(curWp)) fire = RANDOM_FIRES[(pick + 1) % RANDOM_FIRES.length];
+        return fire;
+    }
     /** v2.13: OLED anti-burn-in pixel shift / periodic subtle drift. */
     final boolean antiBurnIn;
     /** v2.13: Ambient lighting / Ambilight mode: "off" (default), "theme", "hybrid", "video". */
@@ -445,17 +493,42 @@ final class LauncherConfig {
     final String screensaverMode;
     /** v2.10: which of the current theme's official backgrounds (assets/wallpapers/<theme>/), like Omarchy next-background. */
     final int wallpaperBg;
+    /** v2.15 (#71): "randomScope": "intros" (the animated intros, default) or "all" (every bundled theme). */
+    final String randomScope;
     /** The resolved Omarchy theme (see Theme). */
     final Theme theme;
     final int accent;                // focus border start, walker border, active workspace underline
     final int accent2;               // focus border end, "TV" gradient end
     final String logo;               // "omarchy-tv" (default), "omarchy" or "original" (see Art)
     final String screensaverArt;     // defaults to logo
+    /** v2.15 the Pulse screensaver's scene: sphere (default), skyline, orbit, calm, hacker, noir; 2.15.1 mars, monolith. */
+    final String pulseScene;
+    /** 2.15.1 how rich Pulse draws (screensaver.pulseGraphics): auto (default, starts at 1.8 and adapts), low, medium, high. */
+    final String pulseGraphics;
+    /** Pulse's planes: how far the panel looks (screensaver.planesNm: 25 default, 50, 100, 150, 200, 250), the earthquakes
+     *  panel (screensaver.earthquakes, default on) and OpenSky as a second plane feed (screensaver.opensky, default off). */
+    final int pulsePlanesNm;
+    final boolean pulseQuakes, pulseOpensky;
+    /** 2.15.1 Pulse's racing side panel (screensaver.racing; default: on when the Home racing widget is on). */
+    final boolean pulseRacing;
+    /** 2.15.1 which Pulse side panels show (screensaver.pulsePanels). Missing keys are on. */
+    static final String[] PULSE_PANEL_IDS = {"weather", "air", "system", "sky", "space", "launches", "planes", "earthquakes", "racing", "omarchy", "pc"};
+    final java.util.Map<String, Boolean> pulsePanels;
+    /** v2.15: Home says once that Pulse is the new screensaver; "Previous screensaver" can undo the switch. */
+    final boolean pulseNotice, hasSsBefore;
+    /** v2.15 "agentAlert": a PC agent waiting for you shows up on the TV, over whatever is playing (off by default). */
+    final boolean agentAlert;
     final boolean screensaverClock;
     /** v2.13: procedural ST3 synth audio for Aquarium screensaver (default true). */
     final boolean saverSound;
     /** v2.9: screensaver.txt pushed by the PC (link.screensaver, PUT /v1/screensaver); "" = OMARCHY TV logo. */
     final String screensaverText;
+    /**
+     * #84: whether the PC's screensaver.txt is what the saver shows ("screensaver.pcText", true by default). It stays
+     * true for anyone who never touched the Logo row, so a PC that pushes a text keeps being seen; picking an art on
+     * the TV turns it off, and the "Screensaver from PC" row turns it back on.
+     */
+    final boolean screensaverFromPc;
     /** Logo width as a share of the screen: "small" 45%, "medium" 56%, "large" 68% (default). */
     final String screensaverSize;
     /** Effect animation speed: "slow", "normal" (default), "fast". */
@@ -486,6 +559,13 @@ final class LauncherConfig {
     final boolean textTiles;
     /** v2.10: home widgets on/off: weather, pc, ai, deploys (default all on). */
     final boolean wWeather, wPc, wAi, wDeploys, wTerm, wT3;
+    /** "racing" home widget (remaining 2026 F1 + MotoGP weekends, homeWidgets.racing, default off) and its
+     *  countdown in the bar (racing.bar; 2.15.1: off unless set, the panel has its own countdown). */
+    final boolean wRacing, barRacing;
+    /** omarchytv.json racing.timezone: the zone session times are shown in (default Asia/Bangkok). */
+    final String racingTz;
+    /** 2.15 omarchytv.json racing.series: the series the widget follows (Racing.SERIES ids), default f1 and motogp. */
+    final java.util.List<String> racingSeries;
     /** v2.10 "Disponi riquadri": panel id -> {cellX, cellY} offset on a 12x8 screen grid (empty = default layout). */
     final java.util.Map<String, int[]> panelPos;
     /** v2.10: Send to TV (cast) is off until switched on (omarchytv.json "cast": {"enabled": true}). */
@@ -624,7 +704,7 @@ final class LauncherConfig {
         if (pa != null) {
             for (int i = 0; i < pa.length() && provs.size() < 16; i++) {
                 JSONObject o = pa.optJSONObject(i);
-                if (o != null && !o.optString("id").isEmpty()) provs.add(new Provider(o.optString("id"), o.optString("name", o.optString("id"))));
+                if (o != null && !o.optString("id").isEmpty()) provs.add(new Provider(o.optString("id"), o.optString("name", o.optString("id")), o.optString("provider", "")));
             }
         }
         aiProviders = Collections.unmodifiableList(provs);
@@ -654,16 +734,40 @@ final class LauncherConfig {
         weatherLon = wx != null ? wx.optDouble("lon", Double.NaN) : Double.NaN;
         weatherPlace = wx != null ? wx.optString("place", "") : "";
         tempF = j != null && "F".equalsIgnoreCase(j.optString("tempUnit", "C").trim());
-        String defWp = c != null ? c.getString(R.string.wallpaper).trim() : "omarchy";
+        String defWp = c != null ? c.getString(R.string.wallpaper).trim() : FractalLayer.ID;
         wallpaper = j != null ? j.optString("wallpaper", defWp).trim() : defWp;
         syncPcWallpaper = j != null && j.optBoolean("syncPcWallpaper", false);
+        themeToPc = j != null && j.optBoolean("themeToPc", false);
+        pcPower = j != null && j.optBoolean("pcPower", false);
+        JSONObject lv = j != null ? j.optJSONObject("living") : null;
+        living = lv != null && lv.optBoolean("enabled", false);
+        livingNotes = lv != null && lv.optBoolean("notes", false);
+        livingGithub = lv == null || lv.optBoolean("github", true);
+        livingRadar = lv != null && lv.optBoolean("radar", false);
+        String lx = lv != null ? lv.optString("x", "off") : "off";
+        livingX = "notify".equals(lx) || "api".equals(lx) ? lx : "off";
+        JSONObject lkWol = j != null && j.optJSONObject("link") != null ? j.optJSONObject("link").optJSONObject("pcWol") : null;
+        pcMac = lkWol != null && WakeOnLan.mac(lkWol.optString("mac", "")) != null ? lkWol.optString("mac") : "";
+        pcBroadcast = lkWol != null && WakeOnLan.ipv4(lkWol.optString("broadcast", "")) ? lkWol.optString("broadcast") : "";
         wallpaperIntro = j == null || j.optBoolean("wallpaper_intro", j.optBoolean("wallpaperIntro", true));
         wallpaperLoop = j != null && j.optBoolean("wallpaperLoop", false);
+        bootScreen = bootScreenMode(j != null ? j.optString("bootScreen", "boot") : "boot");
+        bootFx = j == null || j.optBoolean("bootFx", true);
+        bootSound = j == null || j.optBoolean("bootSound", true);
+        omafireSound = j != null && j.optBoolean("omafireSound", false);
+        arcadeSound = j == null || j.optBoolean("arcadeSound", true);
+        arcadePcTheme = j != null && j.optBoolean("arcadePcTheme", false);
+        String sq = j != null ? j.optString("shareQr", "live") : "live";
+        shareQr = "off".equals(sq) || "boot".equals(sq) ? sq : "live";
         randomTheme = j == null || j.optBoolean("random_theme", j.optBoolean("randomTheme", true));
-        randomWallpaper = j == null || j.optBoolean("random_wallpaper", j.optBoolean("randomWallpaper", true));
+        // 2.20: a fresh install keeps the Radiomarchy fractals wallpaper (random off). A saved file still defaults random on unless migration locked it.
+        randomWallpaper = j != null && j.optBoolean("random_wallpaper", j.optBoolean("randomWallpaper", true));
         JSONObject plObj = j != null ? j.optJSONObject("plugins") : null;
-        pluginSpacexTv = plObj == null || plObj.optBoolean("spacexTv", true);
+        pluginSpacexTv = plObj != null && plObj.has("spacexTv") && plObj.optBoolean("spacexTv");   // 2.20: off unless the user (or a saved setting) turned it on
         pluginGrokbot = plObj == null || plObj.optBoolean("grokbot", true);
+        String crt = plObj != null ? plObj.optString("retroCrt", "off") : "off";
+        pluginRetroCrt = "light".equals(crt) || "strong".equals(crt) ? crt : "off";
+        pluginOmastorm = plObj != null && plObj.optBoolean("omastorm", false);
         grokbotMessage = plObj != null ? plObj.optString("grokbotMessage", "") : "";
         JSONObject gbBot = plObj != null ? plObj.optJSONObject("grokbotBot") : null;
         grokbotBotName = gbBot != null ? gbBot.optString("shortName", gbBot.optString("name", "")) : "";
@@ -699,6 +803,7 @@ final class LauncherConfig {
         String tvIp = j != null ? j.optString("ambilight_tv_ip", "127.0.0.1").trim() : "127.0.0.1";
         ambilightTvIp = tvIp.matches("[0-9A-Za-z.:-]{1,64}") ? tvIp : "127.0.0.1";
         wallpaperBg = j != null ? Math.max(0, j.optInt("wallpaper_bg", 0)) : 0;
+        randomScope = j != null && "all".equals(j.optString("randomScope", "intros")) ? "all" : "intros";
         JSONObject theme = j != null ? j.optJSONObject("theme") : null;
         if (theme == null && j != null && j.opt("theme") instanceof String) {
             try { theme = new JSONObject().put("name", j.optString("theme", "last-horizon")); } catch (Exception ignored) {}
@@ -711,13 +816,33 @@ final class LauncherConfig {
         String defLogo = c != null ? c.getString(R.string.logo).trim() : "omarchy-tv";
         logo = j != null ? j.optString("logo", defLogo).trim() : defLogo;
         String defaultSsArt = (ss != null && ss.has("mode") && !"aquarium".equals(ss.optString("mode"))) ? logo : "aquarium";
-        screensaverArt = ss != null ? ss.optString("art", defaultSsArt).trim() : "aquarium";
+        // v2.15: Pulse is the default screensaver (an existing setup is switched once by pulseDefault()).
+        screensaverArt = ss != null ? ss.optString("art", defaultSsArt).trim() : "pulse";
         boolean aqArt = "aquarium".equals(screensaverArt) || "aquarium-classic".equals(screensaverArt);
-        String ssMode = ss != null ? ss.optString("mode", aqArt ? "aquarium" : "logo").trim() : "aquarium";
+        String ssMode = ss != null ? ss.optString("mode", aqArt ? "aquarium" : "logo").trim() : "pulse";
         if (aqArt) ssMode = "aquarium";
+        if ("pulse".equals(screensaverArt)) ssMode = "pulse";
+        String ps = ss != null ? ss.optString("pulseScene", "sphere") : "sphere";
+        pulseNotice = j != null && j.optBoolean("pulseNotice", false);
+        agentAlert = j != null && j.optBoolean("agentAlert", false);
+        hasSsBefore = j != null && j.optJSONObject("ssBefore215") != null;
+        pulseScene = Arrays.asList("sphere", "skyline", "orbit", "calm", "hacker", "noir", "mars", "monolith").contains(ps) ? ps : "sphere";
+        String pg = ss != null ? ss.optString("pulseGraphics", "auto") : "auto";
+        pulseGraphics = Arrays.asList("low", "medium", "high").contains(pg) ? pg : "auto";
+        int pnm = ss != null ? ss.optInt("planesNm", 25) : 25;
+        pulsePlanesNm = pnm == 50 || pnm == 100 || pnm == 150 || pnm == 200 || pnm == 250 ? pnm : 25;
+        org.json.JSONObject ppo = ss != null ? ss.optJSONObject("pulsePanels") : null;
+        java.util.Map<String, Boolean> pulsePanelMap = new java.util.HashMap<>();
+        for (String id : PULSE_PANEL_IDS) {
+            if (ppo != null && ppo.has(id)) pulsePanelMap.put(id, ppo.optBoolean(id, true));
+        }
+        pulsePanels = java.util.Collections.unmodifiableMap(pulsePanelMap);
+        pulseQuakes = pulsePanelMap.containsKey("earthquakes") ? pulsePanelMap.get("earthquakes") : (ss == null || ss.optBoolean("earthquakes", true));
+        pulseOpensky = ss != null && ss.optBoolean("opensky", false);
         screensaverMode = ssMode;
         boolean defSsClock = c != null && c.getResources().getBoolean(R.bool.screensaver_clock);
         screensaverClock = ss != null ? ss.optBoolean("clock", defSsClock) : defSsClock;
+        screensaverFromPc = ss == null || ss.optBoolean("pcText", true);
         saverSound = ss == null || ss.optBoolean("sound", j != null ? j.optBoolean("saverSound", true) : true);
         uiSize = j != null ? j.optString("uiSize", "medium").trim() : "medium";
         JSONObject geo = j != null ? j.optJSONObject("geometry") : null;
@@ -749,6 +874,19 @@ final class LauncherConfig {
         wDeploys = hw == null || hw.optBoolean("deploys", true);
         wTerm = hw == null || hw.optBoolean("term", true);
         wT3 = hw == null || hw.optBoolean("t3", true);
+        wRacing = hw != null && hw.optBoolean("racing", false);   // opt-in: a new widget never appears unasked
+        JSONObject rc = j != null ? j.optJSONObject("racing") : null;
+        barRacing = rc != null && rc.optBoolean("bar", false);   // 2.15.1: off unless asked (the countdown is in the panel now)
+        racingTz = rc != null && !rc.optString("timezone", "").trim().isEmpty() ? rc.optString("timezone").trim() : "";   // 2.15: "" = the TV's own zone
+        java.util.List<String> rs = new java.util.ArrayList<>();
+        JSONArray rsa = rc != null ? rc.optJSONArray("series") : null;
+        for (int i = 0; rsa != null && i < rsa.length(); i++) {
+            String id = rsa.optString(i);
+            if (Racing.known(id) && !rs.contains(id)) rs.add(id);
+        }
+        if (rsa == null) { rs.add(Racing.F1); rs.add(Racing.MOTOGP); }
+        racingSeries = java.util.Collections.unmodifiableList(rs);
+        pulseRacing = pulsePanelMap.containsKey("racing") ? pulsePanelMap.get("racing") : (ss != null && ss.has("racing") ? ss.optBoolean("racing") : wRacing);
         java.util.Map<String, int[]> ppos = new java.util.HashMap<>();
         JSONObject pj = j != null ? j.optJSONObject("panelPos") : null;
         if (pj != null) for (java.util.Iterator<String> it = pj.keys(); it.hasNext(); ) {
@@ -796,16 +934,134 @@ final class LauncherConfig {
      * Rotates theme and/or animated wallpaper/intro in {@code j} according to {@code random_theme} and
      * {@code random_wallpaper} flags. Returns true if {@code j} was modified.
      */
+    /**
+     * v2.15: Pulse becomes everyone's screensaver, once. What was there before (art, mode, the Live screen) is kept in
+     * "ssBefore215" so Settings › Screensaver can put it back; "pulseNotice" asks Home to say so once. Never again after.
+     */
+    static boolean pulseDefault(JSONObject j) throws org.json.JSONException {
+        if (j == null || j.optBoolean("pulseDefault215", false)) return false;
+        JSONObject ss = j.optJSONObject("screensaver");
+        if (ss == null) j.put("screensaver", ss = new JSONObject());
+        JSONObject lv = j.optJSONObject("living");
+        boolean wasPulse = "pulse".equals(ss.optString("art", "")) && (lv == null || !lv.optBoolean("enabled", false));
+        if (!wasPulse) {
+            // no art set yet = the old default, the Aquarium (so "Previous screensaver" brings that back)
+            j.put("ssBefore215", new JSONObject().put("art", ss.optString("art", "aquarium")).put("mode", ss.optString("mode", "aquarium"))
+                    .put("living", lv != null && lv.optBoolean("enabled", false)));
+            j.put("pulseNotice", true);
+        }
+        ss.put("art", "pulse").put("mode", "pulse");
+        if (lv != null) lv.put("enabled", false);
+        j.put("pulseDefault215", true);
+        return true;
+    }
+
+    /**
+     * v2.20: the default Home animated background is Radiomarchy fractals. One-time. An explicit wallpaper
+     * (random locked off, or a wallpaper other than the old factory default "omarchy" / empty) is left alone.
+     * New and implicit installs get the fractals and random_wallpaper is locked off so rotation cannot replace them.
+     */
+    static boolean fractalWallpaperDefault(JSONObject j) throws org.json.JSONException {
+        if (j == null || j.optBoolean("fractalWp220", false)) return false;
+        j.put("fractalWp220", true);
+        boolean randomOff = (j.has("random_wallpaper") && !j.optBoolean("random_wallpaper", true))
+                || (j.has("randomWallpaper") && !j.optBoolean("randomWallpaper", true));
+        String wp = j.has("wallpaper") ? j.optString("wallpaper", "").trim() : "";
+        boolean explicitWp = !wp.isEmpty() && !"omarchy".equals(wp) && !FractalLayer.ID.equals(wp);
+        if (randomOff || explicitWp) return true;
+        j.put("wallpaper", FractalLayer.ID);
+        j.put("random_wallpaper", false);
+        return true;
+    }
+
+    
+    /** A Pulse side panel is on unless screensaver.pulsePanels names it false. earthquakes still follows screensaver.earthquakes. */
+    boolean pulsePanel(String id) {
+        Boolean v = pulsePanels.get(id);
+        if (v != null) return v;
+        if ("earthquakes".equals(id)) return pulseQuakes;
+        if ("racing".equals(id)) return pulseRacing;
+        return true;
+    }
+
+    /** Write one Pulse panel toggle, keeping screensaver.earthquakes / screensaver.racing in step. */
+    static void putPulsePanel(org.json.JSONObject ss, String id, boolean on) throws org.json.JSONException {
+        org.json.JSONObject p = ss.optJSONObject("pulsePanels");
+        if (p == null) ss.put("pulsePanels", p = new org.json.JSONObject());
+        p.put(id, on);
+        if ("earthquakes".equals(id)) ss.put("earthquakes", on);
+        if ("racing".equals(id)) ss.put("racing", on);
+    }
+
+    static org.json.JSONObject pulsePanelsJson(LauncherConfig cfg) throws org.json.JSONException {
+        org.json.JSONObject o = new org.json.JSONObject();
+        for (String id : PULSE_PANEL_IDS) o.put(id, cfg.pulsePanel(id));
+        return o;
+    }
+
+    /** Settings › Screensaver › "Previous screensaver": back to what pulseDefault() replaced. */
+    static boolean restoreBeforePulse(JSONObject j) throws org.json.JSONException {
+        JSONObject b = j != null ? j.optJSONObject("ssBefore215") : null;
+        if (b == null) return false;
+        JSONObject ss = j.optJSONObject("screensaver");
+        if (ss == null) j.put("screensaver", ss = new JSONObject());
+        if (b.optString("art", "").isEmpty()) ss.remove("art"); else ss.put("art", b.optString("art"));
+        if (b.optString("mode", "").isEmpty()) ss.remove("mode"); else ss.put("mode", b.optString("mode"));
+        if (b.optBoolean("living", false)) {
+            JSONObject lv = j.optJSONObject("living");
+            if (lv == null) j.put("living", lv = new JSONObject());
+            lv.put("enabled", true);
+        }
+        j.remove("ssBefore215");
+        return true;
+    }
+
     static boolean applyRandomRotation(JSONObject j, java.util.Random rng) {
+        return applyRandomRotation(j, rng, null);
+    }
+
+    /**
+     * v2.15 (#71): with "randomScope": "all", a random theme is any bundled theme ({@code allThemes}), with one of its
+     * own backgrounds when the wallpaper is random too (and the fires now and then). Default "intros": as before.
+     */
+    static boolean applyRandomRotation(JSONObject j, java.util.Random rng, String[] allThemes) {
         if (j == null || rng == null) return false;
         boolean rt = j.optBoolean("random_theme", j.optBoolean("randomTheme", true));
         boolean rw = j.optBoolean("random_wallpaper", j.optBoolean("randomWallpaper", true));
         if (!rt && !rw) return false;
         try {
+            if (rt && "all".equals(j.optString("randomScope", "intros")) && allThemes != null && allThemes.length > 1
+                    && !(rw && rng.nextInt(8) == 0)) {   // 1 in 8 the fire still comes (below)
+                JSONObject cto = j.optJSONObject("theme");
+                String cur = cto != null ? cto.optString("name", "") : j.optString("theme", "");
+                String next = allThemes[rng.nextInt(allThemes.length)];
+                if (next.equals(cur)) next = allThemes[(java.util.Arrays.asList(allThemes).indexOf(next) + 1 + rng.nextInt(allThemes.length - 1)) % allThemes.length];
+                JSONObject t = cto != null ? new JSONObject(cto.toString()) : new JSONObject();
+                t.put("name", next);
+                t.put("source", "tv");
+                j.put("theme", t);
+                if (rw) {
+                    j.put("wallpaper", "omarchy");
+                    j.put("wallpaper_bg", rng.nextInt(12));   // the theme's own backgrounds, taken modulo their count
+                }
+                return true;
+            }
             JSONObject curThemeObj = j.optJSONObject("theme");
             String curTheme = curThemeObj != null ? curThemeObj.optString("name", "last-horizon") : j.optString("theme", "last-horizon");
             int curBg = j.optInt("wallpaper_bg", 0);
             String curWp = j.optString("wallpaper", "omarchy");
+            String fire = rw ? randomFire(rng, curWp) : null;
+            if (fire != null) {
+                if (rt) {   // the fire comes with its own theme, as the intros bring theirs
+                    JSONObject t = curThemeObj != null ? new JSONObject(curThemeObj.toString()) : new JSONObject();
+                    t.put("name", CAMPFIRE_THEME);
+                    t.put("source", "tv");
+                    j.put("theme", t);
+                }
+                j.put("wallpaper", fire);
+                j.put("wallpaper_bg", 0);
+                return true;
+            }
             if (rt && rw) {
                 int curIdx = -1;
                 for (int i = 0; i < ANIMATED_INTROS.length; i++) {
@@ -874,6 +1130,16 @@ final class LauncherConfig {
         j.put("random_theme", false);
     }
 
+    /**
+     * #92: a theme picked from the launcher page's Theme row is a manual choice like the themes page, so it
+     * locks the rotation (random_theme = false) and resets the background to the new theme's first one.
+     * Rotation stays on for anyone who never picked a theme.
+     */
+    static void pickTheme(JSONObject j, String themeName) throws org.json.JSONException {
+        lockTheme(j, themeName);
+        j.put("wallpaper_bg", 0);
+    }
+
     static void lockWallpaper(JSONObject j, String wallpaper, int bgIdx) throws org.json.JSONException {
         j.put("wallpaper", wallpaper);
         j.put("wallpaper_bg", bgIdx);
@@ -888,6 +1154,53 @@ final class LauncherConfig {
 
     private static float clamp(float v, float lo, float hi) {
         return Math.max(lo, Math.min(hi, v));
+    }
+
+    /**
+     * Launcher languages, in menu order after "auto". Each has res/values-xx/strings.xml (pt-PT is values-pt,
+     * pt-BR values-pt-rBR, zh-CN values-zh, nb also values-no) and a native name in {@code lang_*}
+     * (values/strings.xml). Arabic is right-to-left text only: the layout is not mirrored (no supportsRtl).
+     */
+    static final String[] LANGUAGES = {"en", "it", "de", "fr", "es", "pt-PT", "pt-BR", "nl", "pl", "sv", "da",
+            "nb", "fi", "cs", "hu", "ro", "el", "tr", "uk", "ru", "ar", "zh-CN", "ja"};
+
+    /** Speech recognition / text-to-speech tag for a locale: its language with the usual country ("it" → it-IT). */
+    static String speechTag(java.util.Locale l) {
+        String lang = l == null ? "en" : l.getLanguage();
+        switch (lang) {
+            case "it": return "it-IT";
+            case "de": return "de-DE";
+            case "fr": return "fr-FR";
+            case "es": return "es-ES";
+            case "pt": return "BR".equals(l.getCountry()) ? "pt-BR" : "pt-PT";
+            case "nl": return "nl-NL";
+            case "pl": return "pl-PL";
+            case "sv": return "sv-SE";
+            case "da": return "da-DK";
+            case "cs": return "cs-CZ";
+            case "ro": return "ro-RO";
+            case "el": return "el-GR";
+            case "ru": return "ru-RU";
+            case "uk": return "uk-UA";
+            case "tr": return "tr-TR";
+            case "hu": return "hu-HU";
+            case "fi": return "fi-FI";
+            case "nb":
+            case "no": return "nb-NO";
+            case "ar": return "ar-SA";
+            case "zh": return "zh-CN";
+            case "ja": return "ja-JP";
+            default: return "en-US";
+        }
+    }
+
+    /** Next value in the language menu cycle: auto → en → it → … → ja → auto. */
+    static String nextLanguage(String cur) {
+        if (cur == null || "auto".equals(cur)) return LANGUAGES[0];
+        for (int i = 0; i < LANGUAGES.length; i++) {
+            if (LANGUAGES[i].equalsIgnoreCase(cur)) return i + 1 < LANGUAGES.length ? LANGUAGES[i + 1] : "auto";
+        }
+        return "auto";
     }
 
     /**
@@ -906,7 +1219,7 @@ final class LauncherConfig {
             if (dpi >= 120 && dpi <= 960) conf.densityDpi = dpi;
             conf.fontScale = conf.fontScale * cfg.fontScale;
             if (!"auto".equals(cfg.language) && !cfg.language.isEmpty()) {
-                java.util.Locale loc = new java.util.Locale(cfg.language);
+                java.util.Locale loc = java.util.Locale.forLanguageTag(cfg.language);   // "pt-BR" needs the tag form
                 java.util.Locale.setDefault(loc);
                 conf.setLocale(loc);
                 conf.setLayoutDirection(loc);
@@ -1102,5 +1415,11 @@ final class LauncherConfig {
             if ((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '.' || ch == '_' || ch == '-') b.append(ch);
         }
         return b.length() == 0 ? def : b.toString();
+    }
+
+    /** omarchytv.json "bootScreen": "boot", "wake" or "off"; anything else is "boot". */
+    static String bootScreenMode(String v) {
+        String m = v == null ? "" : v.trim().toLowerCase(java.util.Locale.ROOT);
+        return "wake".equals(m) || "off".equals(m) ? m : "boot";
     }
 }

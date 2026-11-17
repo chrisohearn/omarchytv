@@ -220,6 +220,19 @@ public final class OmarchyLink implements LinkServer.Host {
         });
     }
 
+    /** v2.20 GrokBot Office: office_hire to the PC (Link worker); {@code done} on the UI thread with null or the error. */
+    static void officeHire(JSONObject data, java.util.function.Consumer<String> done) {
+        OmarchyLink r = runtime;
+        if (r == null || !r.live()) {
+            done.accept("not_connected");
+            return;
+        }
+        bg.execute(() -> {
+            String e = r.server.officeHire(data);
+            main.post(() -> done.accept(e));
+        });
+    }
+
     /**
      * AI-pane source switches: the full list of enabled ids, in display order. Written on the Link worker;
      * {@code done} runs on the UI thread with null when sent, else "not_connected" / "busy".
@@ -330,6 +343,63 @@ public final class OmarchyLink implements LinkServer.Host {
         });
     }
 
+    /** Reverse theme sync: tell the paired PC(s) the theme just picked on the TV. Fire and forget. */
+    /** v2.14 Omastorm from the PC: action "start" | "key" (with key) | "stop". */
+    /** Cinemarchy: ask the PC for a folder of its media ("" = its shared folders); the answer is a "media_list" event. */
+    static void mediaList(String path) {
+        mediaSend("media_list", path, -1);
+    }
+
+    /** Cinemarchy: play one of the PC's files here (the PC streams it once, to this TV only, like omarchy-tv send). */
+    static void mediaPlay(String path, double position) {
+        mediaSend("media_play", path, position);
+    }
+
+    private static void mediaSend(String type, String path, double position) {
+        OmarchyLink r = runtime;
+        if (r == null || !r.live() || r.server.connectedClients() == 0) return;
+        bg.execute(() -> {
+            try {
+                JSONObject o = new JSONObject().put("path", path == null ? "" : path);
+                if (position > 0) o.put("position", position);
+                r.server.broadcast(type, o);
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
+    static void omastorm(String action, String key) {
+        OmarchyLink r = runtime;
+        if (r == null || !r.live() || r.server.connectedClients() == 0) return;
+        bg.execute(() -> {
+            try {
+                JSONObject o = new JSONObject().put("action", action);
+                if (key != null) o.put("key", key);
+                r.server.broadcast("omastorm", o);
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
+    /** v2.14 send the Living screensaver prefs to the connected PCs (on connect and when a setting changes). */
+    static void livingPrefs() {
+        OmarchyLink r = runtime;
+        if (r == null || !r.live() || r.server.connectedClients() == 0) return;
+        JSONObject p = Living.prefs(LauncherConfig.get(r.app));
+        bg.execute(() -> r.server.livingPrefs(p));
+    }
+
+    static void themeSet(String name) {
+        OmarchyLink r = runtime;
+        if (r == null || !r.live() || name == null || name.isEmpty()) return;
+        bg.execute(() -> {
+            try {
+                r.server.themeSet(name);
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
     static void statusChanged() {
         OmarchyLink r = runtime;
         if (r != null) r.maybeBroadcastStatus();
@@ -379,6 +449,7 @@ public final class OmarchyLink implements LinkServer.Host {
         // Foreground-app checks run only while a PC listens; with no PC there is no timer at all.
         s.setOnClientsChanged(() -> {
             main.post(this::schedulePoll);
+            livingPrefs();   // a PC (re)connected: tell it what the Living screensaver wants
             emit("clients", new JSONObject());   // AI pane: "pc offline" mark on/off
         });
         server = s;
@@ -426,6 +497,8 @@ public final class OmarchyLink implements LinkServer.Host {
                 if (Intent.ACTION_DREAMING_STARTED.equals(a)) screensaver = true;
                 else if (Intent.ACTION_DREAMING_STOPPED.equals(a)) screensaver = false;
                 if (Intent.ACTION_SCREEN_ON.equals(a) || Intent.ACTION_DREAMING_STOPPED.equals(a)) recoverBinding();
+                if (Intent.ACTION_SCREEN_ON.equals(a)) powerChanged(true);
+                else if (Intent.ACTION_SCREEN_OFF.equals(a)) powerChanged(false);
                 maybeBroadcastStatus();
             }
         }, f);
@@ -441,6 +514,25 @@ public final class OmarchyLink implements LinkServer.Host {
             }
         }, pf);
         rebind();
+        if (screenOn()) powerChanged(true);   // the TV just booted: wake the PC too
+    }
+
+    /**
+     * v2.14 "TV and PC power together" (pcPower, default off). On: Wake-on-LAN to the PC's MAC (from "pc_wol") and
+     * "tv_power" on (cancels a pending suspend). Off (standby): "tv_power" standby, the PC suspends after its grace
+     * time. Sent at once from the network thread: the TV may cut the network a few seconds after standby.
+     */
+    private void powerChanged(boolean on) {
+        LauncherConfig cfg = LauncherConfig.get(app);
+        if (!cfg.pcPower) return;
+        bg.execute(() -> {
+            if (on && !cfg.pcMac.isEmpty()) WakeOnLan.send(cfg.pcMac, cfg.pcBroadcast);
+            if (!live() || server.connectedClients() == 0) return;
+            try {
+                server.broadcast("tv_power", new JSONObject().put("state", on ? "on" : "standby"));
+            } catch (Exception ignored) {
+            }
+        });
     }
 
     private boolean polling;
@@ -914,6 +1006,34 @@ public final class OmarchyLink implements LinkServer.Host {
 
     @Override
     public void onEvent(String pcId, String type, JSONObject data) {
+        if ("living".equals(type)) {   // v2.14: kept for the screensaver page, not an event for the UI
+            Living.set(data);
+            return;
+        }
+        if ("pulse".equals(type)) {   // v2.15: the PC's Pulse, for the Pulse screensaver (PulseLink, memory only)
+            PulseLink.put(data.toString());
+            return;
+        }
+        if ("agent".equals(type)) {   // v2.15: an AI agent on the PC is waiting for you (opt-in, over any app)
+            if (!LauncherConfig.get(app).agentAlert) return;
+            String name = data.optString("name", "agent"), what = data.optString("text", "");
+            String msg = app.getString(R.string.agent_alert, name.length() > 40 ? name.substring(0, 40) : name, what.length() > 80 ? what.substring(0, 80) : what);
+            main.post(() -> android.widget.Toast.makeText(app, msg, android.widget.Toast.LENGTH_LONG).show());
+            emit(type, data);
+            return;
+        }
+        if ("pc_wol".equals(type)) {   // remember the PC's MAC for Wake-on-LAN; rewrite only when it changed
+            LauncherConfig cur = LauncherConfig.get(app);
+            String mac = data.optString("mac", ""), bc = data.optString("broadcast", "");
+            if (!mac.equals(cur.pcMac) || !bc.equals(cur.pcBroadcast)) {
+                LauncherConfig.update(app, j -> {
+                    JSONObject link = j.optJSONObject("link");
+                    if (link == null) j.put("link", link = new JSONObject());
+                    link.put("pcWol", data);
+                });
+            }
+            return;
+        }
         emit(type, data);
     }
 

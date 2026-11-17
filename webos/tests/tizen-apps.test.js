@@ -158,7 +158,9 @@ test("uninstalling the focused All Apps tile moves focus to the last remaining a
   assert.deepStrictEqual(tz.calls, ["3201907018807"]);
   t.press("ArrowLeft"); t.press("Enter");
   assert.deepStrictEqual(tz.calls, ["3201907018807", "111299001912"], "navigation still works after the shrink");
-  assert.deepStrictEqual(JSON.parse(t.store.omarchytv_cfg_2110), cfg, "saved order and hidden apps are untouched");
+  const saved = JSON.parse(t.store.omarchytv_cfg_2110);
+  for (const k of ["saverMode", "saverArt", "living", "pulseDefault215", "ssBefore215", "pulseNotice", "fractalWp220", "wallpaper", "randomWallpaper"]) delete saved[k];   // one-time Pulse + 2.20 fractals default
+  assert.deepStrictEqual(saved, cfg, "saved order and hidden apps are untouched");
 });
 
 test("a catalogue shrink keeps a surviving focused app by id on both the dock and All Apps", () => {
@@ -398,16 +400,25 @@ test("input names are escaped and huge lists are bounded", () => {
   assert.ok(t.inputTiles().length <= 16);
 });
 
-test("Cinemarchy Live TV tab lists the actual Tizen inputs and follows updates", () => {
+// Cinemarchy (cinemarchy.js) reads the inputs through its host API each time it draws; a stand-in records that API.
+function fakeCinemarchy(t) {
+  const hub = { api: null, refreshed: 0 };
+  t.ctx.OmarchyCinemarchy = { keyName: () => "", open: (el, api) => { hub.api = api; return { key: () => true, destroy() {}, refresh() { hub.refreshed++; } }; } };
+  return hub;
+}
+
+test("Cinemarchy's TV & inputs list the actual Tizen inputs and follow updates", () => {
   const calls = [];
   const t = boot({ tizen: fakeTizen(), inputs: INPUTS, switchInput: (id) => calls.push(id) });
+  const hub = fakeCinemarchy(t);
   t.ctx.OmarchyTestAPI.openCinemarchyModal(2);
-  const labels = () => t.ctx.__OMARCHY_STATE.modalItems.map((i) => i.label).join("|");
+  const labels = () => hub.api.inputs().map((i) => i.name).join("|");
   assert.match(labels(), /HDMI 1 · Connected/);
   assert.doesNotMatch(labels(), /HDMI 3|HDMI 4|HDMI 1 · HDMI 1/);
   t.emitInputs([INPUTS[0], INPUTS[2]]);
-  assert.doesNotMatch(labels(), /HDMI 1/, "open Live TV tab refreshed");
-  t.ctx.__OMARCHY_STATE.modalItems.find((i) => /HDMI 2/.test(i.label)).act();
+  assert.doesNotMatch(labels(), /HDMI 1/, "the open hub reads the new inputs");
+  assert.ok(hub.refreshed >= 1, "and redraws");
+  hub.api.inputs().find((i) => /HDMI 2/.test(i.name)).launch();
   assert.deepStrictEqual(calls, ["hdmi2"]);
 });
 
@@ -433,10 +444,11 @@ test("an empty input update clears stale sources and accepts a later hardware ca
   assert.strictEqual(t.inputTiles().length, 0);
   assert.strictEqual(t.ctx.__OMARCHY_STATE.ws2Idx, 0);
   assert.strictEqual(t.inputTitle(), "No inputs available");
+  const hub = fakeCinemarchy(t);
   t.ctx.OmarchyTestAPI.openCinemarchyModal(2);
-  assert.strictEqual(t.ctx.__OMARCHY_STATE.modalItems.length, 1, "only the tab selector remains");
+  assert.strictEqual(hub.api.inputs().length, 0, "no invented source in Cinemarchy");
   t.emitInputs(INPUTS);
-  assert.strictEqual(t.ctx.__OMARCHY_STATE.modalItems.length, 4);
+  assert.strictEqual(hub.api.inputs().length, 3);
 });
 
 test("webOS app launches preserve the upstream service API path", () => {

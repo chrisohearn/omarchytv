@@ -1,17 +1,17 @@
-# OmarchyTV for LG webOS — Installation Guide (`2.13.9`)
+# OmarchyTV for LG webOS — Installation Guide (`2.20.0`)
 
 > **Status: Experimental (`testing`, NOT beta)**
-> This is an experimental **`testing`** build of **OmarchyTV** for **LG webOS TVs** (webOS 3.x / 4.0 / 5.0 / 6.0 / 22 / 23 / 24; on webOS 3.x the bundled `compat.js` fills in the missing browser features), based on the latest Android TV release (**2.13.0**). Tested on a real LG 32LQ63006LA (webOS 22).
+> This is an experimental **`testing`** build of **OmarchyTV** for **LG webOS TVs** (webOS 3.x / 4.0 / 5.0 / 6.0 / 22 / 23 / 24 / 25; on webOS 3.x the bundled `compat.js` fills in the missing browser features), based on the latest Android TV release (**2.20.0**). Tested on a real LG 32LQ63006LA (webOS 22); the community reported an LG 55QNED80T6A on webOS 25 working with 2.13.9 ([#95](https://github.com/piermark/omarchytv/issues/95)).
 > Community feedback and compatibility reports from LG webOS TV users are warmly welcome!
 
 ---
 
-## Downloads (`v2.13.9`)
+## Downloads (`v2.20.0`)
 
-- **LG webOS Package (`.ipk`):** [`omarchytv-webos-2.13.9.ipk`](https://github.com/piermark/omarchytv/releases/download/v2.13.9/omarchytv-webos-2.13.9.ipk) ([GitLab](https://gitlab.com/piermark/omarchytv/-/releases/v2.13.9))
-  - SHA-256: `3a7efc5452711bb7323f9ff369e9e7c10508f5ea599d27db6062a108f81a9d6f`
-- **PC Plugin (Android TV + LG webOS):** [`omarchy-tv-pc-plugin-2.13.0-beta.tar.gz`](https://github.com/piermark/omarchytv/releases/tag/v2.13.0-beta)
-  - SHA-256: `968c5ffb79f5b88254df6ff922888027c1776c49bcf154980f1427c3338521bf`
+- **LG webOS Package (`.ipk`):** [`omarchytv-webos-2.20.0-testing.ipk`](https://github.com/piermark/omarchytv/releases/download/v2.20.0/omarchytv-webos-2.20.0-testing.ipk) ([GitLab](https://gitlab.com/piermark/omarchytv/-/releases/v2.20.0))
+  - SHA-256: `7a59997bb9e718aae6686b09d0dd6955d2898e4015624552f2fce68098a18aae`
+- **PC Plugin (Android TV + LG webOS):** [`omarchy-tv-pc-plugin-2.20.0.tar.gz`](https://github.com/piermark/omarchytv/releases/download/v2.20.0/omarchy-tv-pc-plugin-2.20.0.tar.gz) ([GitLab](https://gitlab.com/piermark/omarchytv/-/releases/v2.20.0))
+  - SHA-256: `7aa341b9a22c51ec27e42fd44846186ebc4b19f54e53ae18e3018a1229cd3733`
 
 ---
 
@@ -30,7 +30,7 @@ The remote's `Home` button still opens LG Home. If you have an always-on machine
 **Rooted TVs (Homebrew Channel):** no other machine is needed. In OmarchyTV open **Workspace 5 › All OmarchyTV settings** and turn on:
 
 - **Open when the TV starts**: OmarchyTV opens once the TV has booted.
-- **Home button opens OmarchyTV**: when LG Home comes up, OmarchyTV opens instead. Press `Home` while you are already in OmarchyTV to reach LG Home and its menus.
+- **Home button opens OmarchyTV**: when LG Home comes up, OmarchyTV opens instead. Press `Home` while you are already in OmarchyTV to reach LG Home and its menus. On webOS 3.x, `Home` shows LG's app bar over the current app, so the bar appears for a moment before OmarchyTV opens.
 - **Keep loaded in the background**: webOS stops closing OmarchyTV when another app needs memory, so going back to it (Home, Quick Access) doesn't restart it. It adds OmarchyTV to the `KeepAlive` list in `/home/root/memorymanager-conf.json`, the writable override of LG's memory-manager settings, and restarts the memory manager.
 
 Both run on the TV through Homebrew Channel's start-up scripts ([`app/rooted/omarchytv-home.sh`](app/rooted/omarchytv-home.sh)); turning both off removes the start-up hook. On unrooted TVs the two settings show "rooted TV only".
@@ -48,7 +48,7 @@ Both run on the TV through Homebrew Channel's start-up scripts ([`app/rooted/oma
 3. **On your computer:**
    - Install and open **[webOS Dev Manager](https://github.com/webosbrew/dev-manager-desktop)** (available on Linux, macOS, and Windows; on Arch / Omarchy: `yay -S webos-dev-manager-bin` or AppImage).
    - Add your TV using its IP address and the 6-character Passphrase from the Developer Mode app.
-   - Click **Apps → Install** (top right) and select **`omarchytv-webos-2.13.9.ipk`**.
+   - Click **Apps → Install** (top right) and select **`omarchytv-webos-2.20.0-testing.ipk`**.
 4. **Launch OmarchyTV** from your LG TV's Home bar!
 
 ---
@@ -78,17 +78,28 @@ ares-novacom --device lgtv --getkey
 With `ares-install` directly:
 
 ```bash
-ares-install --device lgtv omarchytv-webos-2.13.9.ipk
+ares-install --device lgtv omarchytv-webos-2.20.0-testing.ipk
 ares-launch  --device lgtv com.omarchytv.home
 ```
 
-Or using the **OmarchyTV PC Plugin (`2.13.0-beta`)**:
+Or using the **OmarchyTV PC Plugin (`2.20.0`)**:
 
 ```bash
-omarchy-tv update omarchytv-webos-2.13.9.ipk --tv lgtv
+omarchy-tv update omarchytv-webos-2.20.0-testing.ipk --tv lgtv
 ```
 
 ---
+
+### Keep Developer Mode alive (1000 hours)
+
+On an unrooted TV, OmarchyTV runs through LG's Developer Mode, and a Developer Mode session lasts **1000 hours** (about
+41 days). When it runs out, Developer Mode turns off and the TV **removes the sideloaded app**. To keep it, open the
+**Developer Mode** app on the TV before then and press **EXTEND**: that starts a new 1000 hours.
+
+OmarchyTV can remind you (2.15, idea by @XanderHalloran, #131): Settings › Widgets › **dev mode countdown** adds a box
+to the widget row with the days left (hours under 48 h; yellow under 14 days, red under 7). The app can't read LG's
+timer, so after each EXTEND choose **dev mode · I just pressed EXTEND** and it counts the next 1000 hours. Rooted TVs
+(Method C) don't need any of this.
 
 ## Method C — Rooted TV (Homebrew Channel, no Developer Mode)
 
@@ -106,7 +117,7 @@ ssh-copy-id root@192.168.1.50
 ### 2. Install & Launch the `.ipk`
 
 ```bash
-scp omarchytv-webos-2.13.9.ipk root@192.168.1.50:/tmp/omarchytv.ipk
+scp omarchytv-webos-2.20.0-testing.ipk root@192.168.1.50:/tmp/omarchytv.ipk
 ssh -t root@192.168.1.50 'luna-send-pub -i luna://com.webos.appInstallService/dev/install "{\"id\":\"com.ares.defaultName\",\"ipkUrl\":\"/tmp/omarchytv.ipk\",\"subscribe\":true}"'
 ```
 
@@ -124,17 +135,77 @@ To update, install the new `.ipk` the same way. To uninstall (it ends on its own
 ssh -t root@192.168.1.50 'luna-send-pub -i luna://com.webos.appInstallService/dev/remove "{\"id\":\"com.omarchytv.home\",\"subscribe\":true}"'
 ```
 
+If you turned on **Open when the TV starts** or **Home button opens OmarchyTV**, turn them off before uninstalling. Otherwise remove what they left behind:
+
+```bash
+ssh root@192.168.1.50 'rm -f /var/lib/webosbrew/init.d/omarchytv; rm -rf /var/lib/omarchytv'
+```
+
+### 3. webOS 3.x and older firmware
+
+Tested on an LG TV with webOS 3.9.3, rooted with Homebrew Channel.
+
+**Launching.** The application manager is only reachable as `com.webos.applicationManager` there; `com.webos.service.applicationmanager` returns `Service does not exist`. Launch with:
+
+```bash
+ssh -t root@192.168.1.50 'luna-send -n 1 luna://com.webos.applicationManager/launch "{\"id\":\"com.omarchytv.home\"}"'
+```
+
+**Uninstalling.** The remove can end with `"state":"remove failed"` (`FAILED_REMOVE`, at the `removing ipk` step) even though the app is gone. Check that `/media/developer/apps/usr/palm/applications/com.omarchytv.home` no longer exists before trying again.
+
+**Root only starts after you open Homebrew Channel.** If, after a reboot, SSH refuses connections and OmarchyTV doesn't open by itself (and the Home button isn't redirected) until you open Homebrew Channel, your firmware doesn't run Homebrew Channel's boot hook. Newer webOS 3.x firmware only runs `start-devmode.sh` when it carries LG's signature, so the rooted startup only happens when Homebrew Channel is opened. This is [webos-homebrew-channel#245](https://github.com/webosbrew/webos-homebrew-channel/issues/245).
+
+Homebrew Channel fixed it in [PR #230](https://github.com/webosbrew/webos-homebrew-channel/pull/230) (a boot activity that works on webOS < 4.0), but the fix is newer than the latest release (v0.7.3). Until a release includes it, either open Homebrew Channel once after every boot, or install a development build:
+
+1. Open the latest successful **Lint & Build** run on `main` in [Homebrew Channel's Actions](https://github.com/webosbrew/webos-homebrew-channel/actions) and download the `hbchannel-ipk` and `hbchannel-manifest` artifacts (you need to be signed in to GitHub). The `.ipk` is still named `0.7.3`. Check that its SHA-256 matches `ipkHash` in the manifest:
+
+   ```bash
+   sha256sum org.webosbrew.hbchannel_0.7.3_all.ipk
+   ```
+
+2. Open Homebrew Channel so SSH is up, then install the build and give its service root again. The install replaces the service's permissions, and `elevate-service` restores them; keep the SSH session open until it finishes. (Homebrew Channel's own self-update stalled on this TV, so install it directly.)
+
+   ```bash
+   scp org.webosbrew.hbchannel_0.7.3_all.ipk root@192.168.1.50:/tmp/hbchannel.ipk
+   ssh -t root@192.168.1.50 'luna-send-pub -i luna://com.webos.appInstallService/dev/install "{\"id\":\"com.ares.defaultName\",\"ipkUrl\":\"/tmp/hbchannel.ipk\",\"subscribe\":true}"'
+   # wait for "state":"installed", then Ctrl+C
+   ssh root@192.168.1.50 'NODE_PATH=/usr/lib/nodejs:/usr/lib/node_modules /media/developer/apps/usr/palm/services/org.webosbrew.hbchannel.service/elevate-service org.webosbrew.hbchannel.service'
+   ssh -t root@192.168.1.50 'luna-send -n 1 luna://org.webosbrew.hbchannel.service/checkRoot "{}"'
+   ```
+
+3. Register the boot activity. It should answer with an `activityId`:
+
+   ```bash
+   ssh -t root@192.168.1.50 'luna-send -n 1 luna://org.webosbrew.hbchannel.service/registerActivity "{}"'
+   ```
+
+4. Reboot without opening Homebrew Channel. SSH and OmarchyTV should come up on their own. The activity (`org.webosbrew.hbchannel.service.autostart`) shows as `paused` between boots; that's how the fix keeps it from firing in a loop.
+
+When a Homebrew Channel release includes the fix, update to it from Homebrew Channel as usual. To go back to v0.7.3, install its `.ipk` from [Homebrew Channel's releases](https://github.com/webosbrew/webos-homebrew-channel/releases) the same way and run `elevate-service` again.
+
+**Low memory (optional).** TVs with 1–1.5 GB of RAM keep apps such as Netflix, YouTube, Amazon and Live TV preloaded in the background, and webOS reopens them when you close them. That memory is then missing for OmarchyTV, and its screensaver stalls more. The preload list comes from `configd`, which reads a writable override layer at `/var/luna/preferences/configd/layers/overlay`. To stop all preloading, copy the TV's current list into that layer with every app disabled:
+
+```bash
+ssh root@192.168.1.50 'mkdir -p /var/luna/preferences/configd/layers/overlay && luna-send -n 1 luna://com.webos.service.config/getConfigs "{\"configNames\":[\"com.webos.service.preloadmanager.supportAppList\"]}" </dev/null | sed -e "s/.*supportAppList\":/{\"maxPreloadApp\":0,\"supportAppList\":/" -e "s/},\"returnValue\".*/}/" -e "s/\"isEnabled\":true/\"isEnabled\":false/g" -e "s/\"isPinUp\":true,//g" > /var/luna/preferences/configd/layers/overlay/com.webos.service.preloadmanager.json && luna-send -n 1 luna://com.webos.service.config/reconfigure "{}" && restart webos-preload-manager'
+```
+
+The apps open a little slower the first time after that. To undo, delete the file and reboot:
+
+```bash
+ssh root@192.168.1.50 'rm /var/luna/preferences/configd/layers/overlay/com.webos.service.preloadmanager.json && reboot'
+```
+
 ---
 
 ## Connecting Your Omarchy Linux PC (Live Stats, Themes & Wallpaper)
 
-The `2.13.0-beta` PC plugin includes a lightweight HTTP + CORS bridge (`omarchy-tv webos-serve`) so your LG webOS TV can display live PC telemetry (CPU, RAM, uptime, GPU, active theme, and AI credit usage) without requiring native sockets on the TV.
+The `2.20.0` PC plugin includes a lightweight HTTP + CORS bridge (`omarchy-tv webos-serve`) so your LG webOS TV can display live PC telemetry (CPU, RAM, uptime, GPU, active theme, and AI credit usage) without requiring native sockets on the TV.
 
 ### 1. Start the bridge on your Omarchy PC
 
 ```bash
-# Extract and install the 2.13.0-beta PC plugin
-tar -xzf omarchy-tv-pc-plugin-2.13.0-beta.tar.gz
+# Extract and install the 2.20.0 PC plugin
+tar -xzf omarchy-tv-pc-plugin-2.20.0.tar.gz
 cd pc-plugin
 mkdir -p ~/.local/share ~/.local/bin
 cp -r omarchy-link ~/.local/share/omarchy-link
@@ -162,6 +233,7 @@ OmarchyTV reads the apps installed on your LG TV (for example NOW, MUBI, DAZN an
 - If you decline or the prompt times out, the built-in app list stays and OmarchyTV doesn't ask again on its own.
 - **Settings > All settings > Read installed TV apps** turns this on or off (on by default).
 - **Settings > All settings > Re-pair with TV** forgets the key and shows the prompt again, for example after a TV reset or if new apps don't appear.
+- **Missed the prompt on the first start?** The app row then shows only the built-in tiles. Use **Re-pair with TV** above and accept the prompt: your TV's own apps appear, with their icons ([#127](https://github.com/piermark/omarchytv/issues/127)).
 
 ## Grok Bot · Omarchy TUI (new in `2.13.9`)
 
@@ -197,3 +269,13 @@ OmarchyTV on LG webOS never modifies system files or disables any built-in TV pa
   ```bash
   ares-install --device lgtv --remove com.omarchytv.home
   ```
+
+## Optional iPhone Remote (rooted TVs)
+
+The optional iPhone Remote build adds **Workspace 5 → Remotes → iPhone Remote**.
+Choose **Enable**, scan the QR code in Apple Home, then select **OmarchyTV** in
+**Control Center → Apple TV Remote**. The Apple Home picker only selects inputs.
+It requires Homebrew Channel and Node 16+ on the TV; no LG agreement acceptance,
+PC or LG account is needed. Pairings survive updates. Settings include disable,
+pairing reset and removal. See [iPhone Remote](iphone-remote/README.md) for build
+instructions, installation lifecycle and feature limits.

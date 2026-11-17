@@ -36,6 +36,9 @@
         <item>org.droidtv.channels</item>
         <item>org.droidtv.zapster</item>
         <item>org.droidtv.eum</item>
+        <!-- Amazon Fire OS: the Live TV guide app. Its launcher is permission-gated, so the TV
+             tile enters it through .GuideWrapperActivity (see LiveTv.java). -->
+        <item>com.amazon.tv.livetv</item>
     </string-array>
     <!-- Xiaomi / MediaTek sets: com.mediatek.wwtv.tvcenter -->
 
@@ -50,7 +53,7 @@
     <string name="logo" translatable="false">omarchy-tv</string>
     <!-- Home wallpaper: "omarchy" = Omarchy's Tokyo Night "liftoff" background (bundled, see NOTICE),
          "procedural" = original Tokyo Night gradient drawn in code (no image). -->
-    <string name="wallpaper" translatable="false">omarchy</string>
+    <string name="wallpaper" translatable="false">radiomarchy:fractals</string>
     <!-- Bar menu icon: true = Omarchy's icon.png (MIT), false = the original "[otv]" text mark. -->
     <bool name="omarchy_icon">true</bool>
 

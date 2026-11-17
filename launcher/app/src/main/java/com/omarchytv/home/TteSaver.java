@@ -7,6 +7,7 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
@@ -29,7 +30,8 @@ import java.util.Locale;
  * Three levels, never black: (1) the official tte.js package (assets/saver/tte-js, ES modules, 37 effects) served
  * from https://appassets.androidplatform.net by a tiny shouldInterceptRequest handler (ES modules are blocked on
  * file://); (2) the bundled single-file build (assets/saver/tte-bundle.js); (3) the native {@link AsciiSaverView}
- * when the page reports no engine, has not drawn within 3 s, or the TV has no usable WebView.
+ * when the page reports no engine, has not drawn within 3 s, or the TV has no usable WebView. If the renderer process
+ * dies (onRenderProcessGone) the screensaver closes and the Home screen comes back, through {@link #onDead}.
  * Console messages and JS errors go to logcat with tag "OmarchyTV".
  */
 final class TteSaver {
@@ -41,8 +43,12 @@ final class TteSaver {
     private final Context ctx;
     private final FrameLayout root;
     private final Handler h = new Handler(Looper.getMainLooper());
+    private final Runnable loadTick = this::logLoad;
+    private long lastProcTicks, lastProcAt;
     private WebView web;
     private AsciiSaverView fallback;
+    /** What to do when the WebView renderer dies: the owner closes the screensaver and returns to Home. */
+    Runnable onDead;
     private volatile boolean drawn, stopped;
     /** Test hook (screensaver window intent extras, not exported): one fixed effect, or "bundle"/"native" level. */
     String forceEffect = "", forceMode = "";
@@ -91,6 +97,18 @@ final class TteSaver {
             @JavascriptInterface public String forceEffect() { return forceEffect; }
             @JavascriptInterface public String forceMode() { return forceMode; }
             @JavascriptInterface public void log(String m) { Log.i(TAG, "salvaschermo: " + m); }
+            /** v2.15 Pulse: where the TV is, its theme and scene (PulseSaver.config). */
+            @JavascriptInterface public String pulse() { return PulseSaver.config(c.getApplicationContext()); }
+            /** v2.15 Pulse: the TV's own numbers for the system and network panels. */
+            @JavascriptInterface public String tvStats() { return PulseSaver.tvStats(c.getApplicationContext()); }
+            /** v2.15 Pulse: the paired PC's Pulse state, as omarchy-link last pushed it (null without a PC). */
+            @JavascriptInterface public String pcPulse() { return PulseLink.state(); }
+            /** v2.15 Pulse: an effect (ISS overhead, liftoff, a Starlink train): "Look up, now". */
+            @JavascriptInterface public void fx(String json) { PulseLink.onFx(c.getApplicationContext(), json); }
+            /** v2.14 Living screensaver: weather + the PC's feed, as JSON (Living.forSaver). */
+            @JavascriptInterface public String living() { return Living.forSaver(c.getApplicationContext()); }
+            /** Screensaver > Clock (#83): the web saver draws its own clock when this is on. */
+            @JavascriptInterface public boolean clock() { return LauncherConfig.get(c.getApplicationContext()).screensaverClock; }
             @JavascriptInterface public void drawn(String mode, int count, String effect) {
                 drawn = true;
                 h.post(() -> revealWeb());
@@ -105,6 +123,7 @@ final class TteSaver {
             @Override
             public boolean onConsoleMessage(ConsoleMessage m) {
                 String line = "console " + m.messageLevel() + ": " + m.message() + " @" + m.sourceId() + ":" + m.lineNumber();
+                if (m.message() != null && m.message().contains("OmarchyPulse")) Log.i("OmarchyPulse", m.message());
                 if (m.messageLevel() == ConsoleMessage.MessageLevel.ERROR) Log.e(TAG, line);
                 else Log.i(TAG, line);
                 return true;
@@ -120,12 +139,22 @@ final class TteSaver {
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
                 return true;   // the saver never navigates
             }
+
+            @android.annotation.TargetApi(26)
+            @Override
+            public boolean onRenderProcessGone(WebView view, android.webkit.RenderProcessGoneDetail d) {
+                // v2.14: the renderer died (old TVs, 1-2 GB of RAM). The screensaver runs inside the dream/preview
+                // process: unhandled, it would take that down. Same fallback as a page that draws nothing: native.
+                rendererGone(view);
+                return true;
+            }
         });
         return w;
     }
 
     /** Minimal WebViewAssetLoader: https://appassets.androidplatform.net/assets/... -> APK assets; nothing else loads. */
     private WebResourceResponse serve(Uri u) {
+        if (PulseSaver.proxied(u)) return PulseSaver.proxy(ctx, u, "https://" + HOST);   // v2.15 Pulse's data services
         String path = u.getPath();
         if (!HOST.equals(u.getHost()) || path == null || !path.startsWith("/assets/") || path.contains("..")) {
             return new WebResourceResponse("text/plain", "utf-8", 404, "Not Found", null, null);
@@ -133,8 +162,10 @@ final class TteSaver {
         String rel = path.substring("/assets/".length());
         try {
             InputStream in = ctx.getAssets().open(rel);
+            if (PulseAdapt.pulseHtml(rel)) in = PulseAdapt.inject(in, ctx);   // v2.20: dpr hint + 720p-floor / fps-cap wrapper
             String mime = rel.endsWith(".js") ? "text/javascript" : rel.endsWith(".html") ? "text/html"
-                    : rel.endsWith(".ttf") ? "font/ttf" : rel.endsWith(".json") ? "application/json" : "text/plain";
+                    : rel.endsWith(".ttf") ? "font/ttf" : rel.endsWith(".json") ? "application/json"
+                    : rel.endsWith(".css") ? "text/css" : rel.endsWith(".png") ? "image/png" : "text/plain";
             WebResourceResponse r = new WebResourceResponse(mime, "utf-8", in);
             java.util.Map<String, String> hd = new java.util.HashMap<>();
             hd.put("Access-Control-Allow-Origin", "https://" + HOST);
@@ -147,7 +178,7 @@ final class TteSaver {
 
     static String text(Context c) {
         LauncherConfig cfg = LauncherConfig.get(c);
-        String t = cfg.screensaverText;
+        String t = cfg.screensaverFromPc ? cfg.screensaverText : "";   // #84: an art picked on the TV wins
         if (t != null && !t.trim().isEmpty()) return t;
         if ("cinemarchy".equals(cfg.screensaverArt)) return Art.load(c, "cinemarchy");
         if ("omarchy".equals(cfg.screensaverArt)) return Art.load(c, "omarchy");
@@ -231,7 +262,8 @@ final class TteSaver {
         }
         drawn = false;
         LauncherConfig cfg = LauncherConfig.get(ctx);
-        if ("native".equals(forceMode) || AsciiSaverView.isAquarium(cfg)) {
+        boolean pulse = !cfg.living && "pulse".equals(cfg.screensaverArt) && !"native".equals(forceMode);   // v2.15
+        if (!pulse && !cfg.living && ("native".equals(forceMode) || AsciiSaverView.isAquarium(cfg))) {   // v2.14 Live needs the page
             toNative("aquarium/nativo");
             return;
         }
@@ -243,10 +275,50 @@ final class TteSaver {
             placeholder.start();
         }
         web.setAlpha(0f);
-        web.loadUrl("https://" + HOST + "/assets/saver/index.html");
+        web.loadUrl("https://" + HOST + (pulse ? "/assets/pulse/index.html" : "/assets/saver/index.html"));
+        h.removeCallbacks(loadTick);
+        lastProcTicks = 0;
+        lastProcAt = 0;
+        if (pulse) h.postDelayed(loadTick, 2000);
         h.postDelayed(() -> {
             if (!drawn) toNative("nessun disegno entro " + drawTimeoutMs + " ms");
         }, drawTimeoutMs);
+    }
+
+    /** logcat tag OmarchyPulse: this process's CPU as % of one core, plus RAM, every 2 s (Sony measurements). */
+    private void logLoad() {
+        if (stopped) return;
+        try {
+            long ticks = procTicks();
+            long now = SystemClock.elapsedRealtime();
+            if (lastProcAt > 0 && ticks >= lastProcTicks && now > lastProcAt) {
+                long clk = 100;
+                try { clk = android.system.Os.sysconf(android.system.OsConstants._SC_CLK_TCK); } catch (Throwable ignored) {}
+                if (clk <= 0) clk = 100;
+                double cpu = 100.0 * (ticks - lastProcTicks) / (clk * ((now - lastProcAt) / 1000.0));
+                android.app.ActivityManager am = (android.app.ActivityManager) ctx.getSystemService(Context.ACTIVITY_SERVICE);
+                android.app.ActivityManager.MemoryInfo mi = new android.app.ActivityManager.MemoryInfo();
+                if (am != null) am.getMemoryInfo(mi);
+                Log.i("OmarchyPulse", String.format(Locale.US, "cpu=%.1f%% of one core (this process) availMem=%dMB web=%s",
+                        cpu, mi.availMem / (1024 * 1024), web != null ? web.getWidth() + "x" + web.getHeight() : "?"));
+            }
+            lastProcTicks = ticks;
+            lastProcAt = now;
+        } catch (Throwable ignored) {
+        }
+        if (!stopped) h.postDelayed(loadTick, 2000);
+    }
+
+    private static long procTicks() {
+        try (java.io.BufferedReader in = new java.io.BufferedReader(new java.io.FileReader("/proc/self/stat"))) {
+            String line = in.readLine();
+            int r = line.lastIndexOf(')');
+            String[] p = line.substring(r + 1).trim().split("\s+");
+            // after comm: state ppid ... utime stime cutime cstime (fields 14-17 of the whole file, indexes 11-14 here)
+            return Long.parseLong(p[11]) + Long.parseLong(p[12]) + Long.parseLong(p[13]) + Long.parseLong(p[14]);
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     private void logEnv() {
@@ -281,7 +353,7 @@ final class TteSaver {
 
     private AsciiSaverView newNative() {
         AsciiSaverView v = new AsciiSaverView(ctx, null);
-        v.setShowClock(false);
+        v.setShowClock(LauncherConfig.get(ctx).screensaverClock);   // #83: the Screensaver > Clock row does something
         v.setWidthFraction(0.65f);
         return v;
     }
@@ -294,6 +366,33 @@ final class TteSaver {
             root.removeView(placeholder);
             placeholder = null;
         }
+    }
+
+    /**
+     * The WebView renderer crashed or was killed for memory (low-RAM TVs). On the UI thread, as every call here:
+     * drop the dead WebView, stop the clocks, and run {@link #onDead} so the owner closes the screensaver and the Home
+     * screen comes back. Where nobody can close it (a Dream the system runs) the native view takes over instead.
+     */
+    private void rendererGone(WebView w) {
+        if (w != null && w.getParent() instanceof ViewGroup) ((ViewGroup) w.getParent()).removeView(w);
+        if (w != null && w == web) web = null;
+        try {
+            if (w != null) w.destroy();
+        } catch (Throwable ignored) {
+        }
+        if (onDead != null && !stopped) {   // v2.14: close this screensaver, the Home screen is right there
+            Log.w(TAG, "salvaschermo: renderer WebView morto, chiudo e torno alla Home");
+            stopped = true;
+            h.removeCallbacksAndMessages(null);
+            if (fallback != null) fallback.stop();
+            if (placeholder != null) {
+                placeholder.stop();
+                placeholder = null;
+            }
+            onDead.run();
+            return;
+        }
+        toNative("renderer WebView morto");   // nobody to close it (a dream the system owns): keep the native one
     }
 
     private void toNative(String why) {

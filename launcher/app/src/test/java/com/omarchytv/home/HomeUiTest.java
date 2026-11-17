@@ -472,6 +472,38 @@ public class HomeUiTest {
         capture("light-theme-dark-panels");
     }
 
+    @Test public void racingColumnWeatherForecastAndStatsShareTheWidgetRow() throws Exception {
+        appCount = 6;
+        create(config("tokyo-night", 6).put("homeWidgets", new JSONObject().put("racing", true)));
+        Files.write(Weather.cacheFile(activity).toPath(), ("{\"current\":{\"temperature_2m\":18,\"weather_code\":3},\"daily\":{"
+                + "\"time\":[\"2026-11-16\",\"2026-11-17\",\"2026-11-18\",\"2026-11-19\",\"2026-11-20\",\"2026-11-21\"],"
+                + "\"weather_code\":[3,61,0,3,71,95],\"temperature_2m_min\":[12,10,9,8,7,6],\"temperature_2m_max\":[20,18,17,16,15,14]}}")
+                .getBytes(StandardCharsets.UTF_8));
+        home.refresh(); settle();
+        View race = home.panelView("racing"), weather = home.panelView("weather"), pc = home.panelView("pc"), ai = home.panelView("ai");
+        assertEquals(HomeV29.raceColWidth(), race.getWidth());
+        assertEquals(HomeV29.weatherColWidth(true), weather.getWidth());
+        assertEquals(HomeV29.sideColWidth(true), ai.getWidth());
+        assertEquals(ai.getWidth(), pc.getWidth());
+        assertFalse("racing is read-only: the remote skips it", race.isFocusable());
+        int[] raceAt = new int[2], wxAt = new int[2], aiAt = new int[2];
+        race.getLocationOnScreen(raceAt);
+        weather.getLocationOnScreen(wxAt);
+        ai.getLocationOnScreen(aiAt);
+        assertTrue("racing sits right of the term box", raceAt[0] >= HomeV29.HOME_MARGIN + HomeV29.TERM_W);
+        assertTrue("racing, weather and the stats column do not overlap",
+                raceAt[0] + race.getWidth() <= wxAt[0] && wxAt[0] + weather.getWidth() <= aiAt[0]);
+        assertNotNull(text("10°/18°"));
+        assertNotNull(text("6°/14°"));
+        for (TextView t : texts(weather)) {
+            assertTrue("weather text stays within its card", t.getRight() <= weather.getWidth());
+            if (t.getText().toString().contains("°/")) {
+                assertTrue("forecast temperatures are not ellipsized", t.getLayout().getEllipsisCount(0) == 0);
+            }
+        }
+        capture("racing-weather-forecast");
+    }
+
     @Test public void sixAppsUseOneRowAndOutsidePcOffsetFallsBackToTheAlignedDeck() throws Exception {
         appCount = 6;
         JSONObject json = config("tokyo-night", 6).put("panelPos", new JSONObject()
