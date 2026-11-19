@@ -28,6 +28,8 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.omarchytv.home.link.LinkServer.PcStats;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -109,14 +111,14 @@ final class HomeV29 extends FrameLayout {
     private final TextView termInfo, termLogo, termPrompt;
     // widgets
     private final LinearLayout widgets;
-    private final BoxView wxBox, pcBox, depBox, t3Box;
+    private final BoxView wxBox, pcBox, pc2Box, depBox, t3Box;
     /** "racing": the remaining 2026 F1 and MotoGP weekends (Racing), the top row's first column, left of weather. */
     private final BoxView raceBox;
     private final LinearLayout raceBody;
-    private final LinearLayout statsColumn;
+    private final LinearLayout weatherColumn, statsColumn;
     /** Bar countdown to the next F1 / MotoGP session, ticking every second while Home is attached. */
     private final TextView barRace;
-    private final LinearLayout pcBody, aiBody, depBody;
+    private final LinearLayout pcBody, pc2Body, aiBody, depBody;
     private final LinearLayout t3Body;
     private final int t3RowHeight;
     private com.omarchytv.home.link.Agents t3Agents = new com.omarchytv.home.link.Agents();
@@ -326,7 +328,14 @@ final class HomeV29 extends FrameLayout {
         raceBox.setFocusable(false);   // read-only, like the pc and deploys panels: the remote skips it
         raceBody = vbox();
         raceBox.addView(raceBody, new LinearLayout.LayoutParams(-1, -2));
-        wxBox = widget(r1, act.getString(R.string.v29_weather), 0);
+        weatherColumn = vbox();
+        weatherColumn.setClipChildren(false);
+        r1.addView(weatherColumn, new LinearLayout.LayoutParams(px(584), -2));
+        wxBox = widget(weatherColumn, act.getString(R.string.v29_weather), 0);
+        pc2Box = widget(weatherColumn, "omarchy · pc", 0);
+        pc2Box.setFocusable(false);
+        pc2Box.setVisibility(GONE);
+        ((LinearLayout.LayoutParams) pc2Box.getLayoutParams()).topMargin = px(16);
         statsColumn = vbox();
         statsColumn.setClipChildren(false);
         LinearLayout.LayoutParams statsLayout = new LinearLayout.LayoutParams(px(584), -2);
@@ -337,7 +346,7 @@ final class HomeV29 extends FrameLayout {
         pcBox.setFocusable(false);
         // Explicit widths keep a lone widget from stretching when other panels are hidden;
         // applyRaceColumns() sets the final ones (they depend on the racing column).
-        for (View col : new View[]{raceBox, wxBox, pcBox, ai}) {
+        for (View col : new View[]{raceBox, wxBox, pcBox, pc2Box, ai}) {
             LinearLayout.LayoutParams cl = (LinearLayout.LayoutParams) col.getLayoutParams();
             cl.width = px(584);
             cl.weight = 0f;
@@ -410,6 +419,11 @@ final class HomeV29 extends FrameLayout {
         wxBox.addView(wxForecastRow, forecastRowLp);
         pcBody = vbox();
         pcBox.addView(pcBody, new LinearLayout.LayoutParams(-1, -2));
+        pc2Body = vbox();
+        pc2Box.addView(pc2Body, new LinearLayout.LayoutParams(-1, -2));
+        pc2Box.addOnLayoutChangeListener((v, l, top, r, bottom, ol, ot, or, ob) -> {
+            if (bottom - top != ob - ot && cfg != null && editPanel == null) post(() -> applyPanelPos(cfg));
+        });
         aiBody = vbox();
         ai.addView(aiBody, new LinearLayout.LayoutParams(-1, -2));
         depBody = vbox();
@@ -738,7 +752,7 @@ final class HomeV29 extends FrameLayout {
                 ws[i].setTextColor(on ? acc : t.fg);
             }
         }
-        for (BoxView b : new BoxView[]{term, wxBox, pcBox, aiBoxRef, depBox, raceBox, appWin, tvWin, appsWin, pcWin, sysWin, grokbotBox}) {
+        for (BoxView b : new BoxView[]{term, wxBox, pcBox, pc2Box, aiBoxRef, depBox, raceBox, appWin, tvWin, appsWin, pcWin, sysWin, grokbotBox}) {
             if (b != null) b.setColors(winBg, t.muted, acc, t.cyan);
         }
         if (barSpacex != null) barSpacex.setTextColor(acc2);
@@ -774,7 +788,7 @@ final class HomeV29 extends FrameLayout {
         for (View b : barIcons) tint(b, ink(t.fgBright));
         tip.setBackgroundColor(Theme.withAlpha(darkSurface(t.bg), 1f));
         tip.setTextColor(ink(t.fgBright));
-        for (BoxView b : new BoxView[]{term, wxBox, pcBox, aiBoxRef, depBox, raceBox, t3Box, appWin, tvWin, appsWin, pcWin, sysWin, grokbotBox}) b.setColors(winBg, t.muted, ink(accent()), ink(t.cyan));
+        for (BoxView b : new BoxView[]{term, wxBox, pcBox, pc2Box, aiBoxRef, depBox, raceBox, t3Box, appWin, tvWin, appsWin, pcWin, sysWin, grokbotBox}) b.setColors(winBg, t.muted, ink(accent()), ink(t.cyan));
         barSpacex.setTextColor(ink(accent2()));
         barSpacex.setVisibility(c.pluginSpacexTv ? VISIBLE : GONE);
         grokbotEyes.setTextColor(ink(accent()));
@@ -795,9 +809,9 @@ final class HomeV29 extends FrameLayout {
         aiBoxRef.setVisibility(c.wAi ? VISIBLE : GONE);
         raceBox.setVisibility(c.wRacing ? VISIBLE : GONE);
         // weather is the row's first panel when racing is off: no gap in front of it then
-        LinearLayout.LayoutParams wxl = (LinearLayout.LayoutParams) wxBox.getLayoutParams();
+        LinearLayout.LayoutParams wxl = (LinearLayout.LayoutParams) weatherColumn.getLayoutParams();
         wxl.leftMargin = c.wRacing ? px(16) : 0;
-        wxBox.setLayoutParams(wxl);
+        weatherColumn.setLayoutParams(wxl);
         LayoutParams wl = (LayoutParams) widgets.getLayoutParams();
         wl.width = px(widgetsWidth(c.wRacing));
         widgets.setLayoutParams(wl);
@@ -909,7 +923,7 @@ final class HomeV29 extends FrameLayout {
         span(info, (up / 60 > 0 ? (up / 60) + " h " : "") + (up % 60) + " min", t.fg);
         termInfo.setText(info);
         updateWeather();
-        updatePc(pcBody, depBody, depBox, cfg.wDeploys);
+        updatePcWidgets(OmarchyLink.pcStats());
         updateAi(aiBody);
         updateRacing();
         updateRemote();
@@ -1387,7 +1401,7 @@ final class HomeV29 extends FrameLayout {
         return v;
     }
 
-    /** "label  [bar]  NN%": bar 12 px (CPU/RAM) or 10 px (AI), fill colour given, track = selection. */
+    /** "label  [bar]  NN%": bar 12 px (system stats) or 10 px (AI), fill colour given, track = selection. */
     private View barRow(String label, int labelCols, double frac, int fill, int barH, String right) {
         LinearLayout r = hbox();
         LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(-1, -2);
@@ -1411,17 +1425,38 @@ final class HomeV29 extends FrameLayout {
         return r;
     }
 
-    private void updatePc(LinearLayout pcBody, LinearLayout depBody, View depBox, boolean depOn) {
+    void updatePcWidgets(List<PcStats> peers) {
+        boolean second = cfg.wPc && peers.size() > 1;
+        pc2Box.setVisibility(second ? VISIBLE : GONE);
+        weatherColumn.setVisibility(cfg.wWeather || second ? VISIBLE : GONE);
+        ((LinearLayout.LayoutParams) pc2Box.getLayoutParams()).topMargin = cfg.wWeather ? px(16) : 0;
+        PcStats primary = peers.isEmpty() ? null : peers.get(0);
+        updatePc(pcBox, pcBody, primary, false);
+        if (second) updatePc(pc2Box, pc2Body, peers.get(1), true);
+        updateDeploys(depBody, depBox, cfg.wDeploys, primary);
+    }
+
+    private void updatePc(BoxView box, LinearLayout pcBody, PcStats peer, boolean compact) {
+        box.setLegend(peer == null ? "omarchy · pc" : peer.name, px(18), px(20));
         pcBody.removeAllViews();
-        depBody.removeAllViews();
-        JSONObject st = OmarchyLink.connected() ? com.omarchytv.home.link.LinkServer.stats() : null;
-        if (!OmarchyLink.connected()) {
+        JSONObject st = peer == null ? null : peer.data;
+        if (peer == null || !peer.connected) {
             pcBody.addView(offline());
         } else if (st == null) {
             pcBody.addView(line("…"));
+        } else if (compact) {
+            // Keep the second card above two rows of apps even with the weather forecast expanded.
+            LinearLayout readings = hbox();
+            for (String key : new String[]{"cpu", "ram", "disk"}) {
+                if (!st.has(key)) continue;
+                TextView reading = line(key + " " + st.optInt(key) + "%");
+                readings.addView(reading, new LinearLayout.LayoutParams(0, -2, 1f));
+            }
+            pcBody.addView(readings, new LinearLayout.LayoutParams(-1, -2));
         } else {
             if (st.has("cpu")) pcBody.addView(barRow("cpu", 4, st.optInt("cpu") / 100.0, t.green, 12, st.optInt("cpu") + "%"));
             if (st.has("ram")) pcBody.addView(barRow("ram", 4, st.optInt("ram") / 100.0, t.yellow, 12, st.optInt("ram") + "%"));
+            if (st.has("disk")) pcBody.addView(barRow("disk", 4, st.optInt("disk") / 100.0, t.cyan, 12, st.optInt("disk") + "%"));
             JSONObject np = st.optJSONObject("nowPlaying");
             if (np != null) {
                 LinearLayout r = hbox();
@@ -1442,6 +1477,11 @@ final class HomeV29 extends FrameLayout {
                 pcBody.addView(r, l);
             }
         }
+    }
+
+    private void updateDeploys(LinearLayout depBody, View depBox, boolean depOn, PcStats peer) {
+        depBody.removeAllViews();
+        JSONObject st = peer == null ? null : peer.data;
         JSONArray d = st != null ? st.optJSONArray("deploys") : null;
         depBox.setVisibility(depOn && d != null && d.length() > 0 ? VISIBLE : GONE);
         for (int i = 0; d != null && i < d.length(); i++) {
@@ -1737,14 +1777,22 @@ final class HomeV29 extends FrameLayout {
         r.setGravity(Gravity.TOP);
         r.setBaselineAligned(false);
         pcPaneBody.addView(r, new LinearLayout.LayoutParams(-1, -2));
-        BoxView pc = widget(r, "omarchy · pc", 0), ai = widget(r, "ai credits · pc", 24), dep = widget(r, "deploys · pc", 24);
+        List<PcStats> peers = OmarchyLink.pcStats();
         int winBg = windowBackground();
-        for (BoxView b : new BoxView[]{pc, ai, dep}) b.setColors(winBg, t.muted, ink(t.accent), ink(t.cyan));
-        LinearLayout pb = vbox(), ab = vbox(), db = vbox();
-        pc.addView(pb, new LinearLayout.LayoutParams(-1, -2));
+        for (int i = 0; i < Math.min(2, Math.max(1, peers.size())); i++) {
+            BoxView pc = widget(r, "omarchy · pc", i == 0 ? 0 : 24);
+            pc.setColors(winBg, t.muted, ink(t.accent), ink(t.cyan));
+            pc.setFocusable(i == 0);
+            LinearLayout pb = vbox();
+            pc.addView(pb, new LinearLayout.LayoutParams(-1, -2));
+            updatePc(pc, pb, peers.isEmpty() ? null : peers.get(i), false);
+        }
+        BoxView ai = widget(r, "ai credits · pc", 24), dep = widget(r, "deploys · pc", 24);
+        for (BoxView b : new BoxView[]{ai, dep}) b.setColors(winBg, t.muted, ink(t.accent), ink(t.cyan));
+        LinearLayout ab = vbox(), db = vbox();
         ai.addView(ab, new LinearLayout.LayoutParams(-1, -2));
         dep.addView(db, new LinearLayout.LayoutParams(-1, -2));
-        updatePc(pb, db, dep, true);
+        updateDeploys(db, dep, true, peers.isEmpty() ? null : peers.get(0));
         if (dep.getVisibility() != VISIBLE) {
             dep.setVisibility(VISIBLE);
             TextView v = line("—");
@@ -1772,7 +1820,7 @@ final class HomeV29 extends FrameLayout {
         actions.addView(bAsk, sl1);
         actions.addView(bAgents, sl2);
         pcPaneBody.addView(actions, al);
-        if (keep) pc.requestFocus();
+        if (keep) r.getChildAt(0).requestFocus();
     }
 
     private TextView button(String label, Runnable r) {
@@ -1834,7 +1882,7 @@ final class HomeV29 extends FrameLayout {
 
     // ---- v2.10 "Disponi riquadri": move home panels on a 12x8 grid (fractions of the screen: same at 1080p and 4K) ----
     static final int GRID_X = 12, GRID_Y = 8;
-    static final String[] PANEL_IDS = {"term", "weather", "pc", "ai", "deploys", "racing", "t3"};
+    static final String[] PANEL_IDS = {"term", "weather", "pc", "ai", "deploys", "racing", "t3", "pc2"};
     private View editPanel;
     private String editId;
     private int editCx, editCy, editOldCx, editOldCy;
@@ -1844,6 +1892,7 @@ final class HomeV29 extends FrameLayout {
             case "term": return term;
             case "weather": return wxBox;
             case "pc": return pcBox;
+            case "pc2": return pc2Box;
             case "ai": return aiBoxRef;
             case "deploys": return depBox;
             case "racing": return raceBox;
@@ -2381,10 +2430,15 @@ final class HomeV29 extends FrameLayout {
         rl.width = px(raceW);
         rl.weight = 0f;
         raceBox.setLayoutParams(rl);
-        LinearLayout.LayoutParams wxl = (LinearLayout.LayoutParams) wxBox.getLayoutParams();
+        LinearLayout.LayoutParams wxl = (LinearLayout.LayoutParams) weatherColumn.getLayoutParams();
         wxl.width = px(weather);
         wxl.weight = 0f;
-        wxBox.setLayoutParams(wxl);
+        weatherColumn.setLayoutParams(wxl);
+        for (View col : new View[]{wxBox, pc2Box}) {
+            LinearLayout.LayoutParams cl = (LinearLayout.LayoutParams) col.getLayoutParams();
+            cl.width = px(weather);
+            col.setLayoutParams(cl);
+        }
         LinearLayout.LayoutParams sl = (LinearLayout.LayoutParams) statsColumn.getLayoutParams();
         sl.width = px(side);
         statsColumn.setLayoutParams(sl);

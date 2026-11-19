@@ -1,4 +1,4 @@
-"""v2.9 home widgets: "omarchy · pc" (CPU, RAM, now playing), "deploys · pc" (opt-in) and screensaver.txt.
+"""Home widgets: CPU, RAM, disk, now playing, opt-in deploys, and screensaver.txt.
 
 Cheap reads only: /proc/stat delta, /proc/meminfo, `playerctl metadata` (if installed); on macOS the Mach CPU
 tick counters and `vm_stat` instead of /proc, and Spotify or Music through `osascript` instead of playerctl.
@@ -77,6 +77,15 @@ def ram_percent() -> int | None:
         return None
 
 
+def disk_percent() -> int | None:
+    """Usage of the filesystem containing the home directory (the data volume on macOS)."""
+    try:
+        usage = shutil.disk_usage(config.HOME)
+        return round(100 * usage.used / usage.total) if usage.total else None
+    except OSError:
+        return None
+
+
 def _vm_stat_ram() -> int | None:
     """macOS: Activity Monitor's "Memory Used" (app memory + wired + compressed) over hw.memsize."""
     try:
@@ -144,13 +153,13 @@ def deploys(cfg: dict) -> list | None:
     return out[:8]
 
 
+def system_payload() -> dict:
+    return {key: percent for key, percent in (("cpu", cpu_percent()), ("ram", ram_percent()),
+                                             ("disk", disk_percent())) if percent is not None}
+
+
 def payload(cfg: dict) -> dict:
-    p: dict = {}
-    c, r = cpu_percent(), ram_percent()
-    if c is not None:
-        p["cpu"] = c
-    if r is not None:
-        p["ram"] = r
+    p = system_payload()
     np = now_playing()
     if np:
         p["nowPlaying"] = np

@@ -20,6 +20,8 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
 
+import com.omarchytv.home.link.LinkServer.PcStats;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.After;
@@ -502,6 +504,51 @@ public class HomeUiTest {
             }
         }
         capture("racing-weather-forecast");
+    }
+
+    @Test public void pairedComputersHaveSeparateStatsCardsEvenWithRacingAndTwoAppRows() throws Exception {
+        JSONObject json = config("tokyo-night", 4).put("homeWidgets", new JSONObject().put("racing", true));
+        create(json);
+        Files.write(Weather.cacheFile(activity).toPath(), ("{\"current\":{\"temperature_2m\":18,\"weather_code\":3},\"daily\":{"
+                + "\"time\":[\"2026-11-16\",\"2026-11-17\",\"2026-11-18\",\"2026-11-19\",\"2026-11-20\",\"2026-11-21\"],"
+                + "\"weather_code\":[3,61,0,3,71,95],\"temperature_2m_min\":[12,10,9,8,7,6],\"temperature_2m_max\":[20,18,17,16,15,14]}}")
+                .getBytes(StandardCharsets.UTF_8));
+        home.refresh();
+        PcStats pc = new PcStats("omarchy-pc", true, new JSONObject().put("cpu", 16).put("ram", 39));
+        PcStats mac = new PcStats("omarchy-mac", true, new JSONObject().put("cpu", 27).put("ram", 48).put("disk", 100));
+        home.updatePcWidgets(List.of(pc, mac));
+        settle();
+
+        View pcCard = home.panelView("pc"), macCard = home.panelView("pc2");
+        assertTrue(pcCard.isShown());
+        assertTrue(macCard.isShown());
+        assertFalse(pcCard.isFocusable());
+        assertFalse(macCard.isFocusable());
+        assertEquals(List.of("cpu", "16%", "ram", "39%"), texts(pcCard).stream().map(v -> v.getText().toString()).toList());
+        assertEquals(List.of("cpu 27%", "ram 48%", "disk 100%"), texts(macCard).stream().map(v -> v.getText().toString()).toList());
+        assertNotNull(text("10°/18°"));
+        for (TextView reading : texts(macCard)) assertEquals(0, reading.getLayout().getEllipsisCount(0));
+        int[] pcAt = new int[2], macAt = new int[2], appsAt = new int[2];
+        pcCard.getLocationOnScreen(pcAt);
+        macCard.getLocationOnScreen(macAt);
+        ((View) home.row.getParent()).getLocationOnScreen(appsAt);
+        assertTrue(macAt[0] + macCard.getWidth() <= pcAt[0]);
+        assertTrue(macAt[1] + macCard.getHeight() <= appsAt[1]);
+        capture("two-host-system-stats");
+
+        pc.data.put("deploys", new JSONArray().put(new JSONObject().put("name", "service").put("status", "ok")));
+        home.updatePcWidgets(List.of(pc, mac));
+        assertEquals(View.VISIBLE, home.panelView("deploys").getVisibility());
+        home.updatePcWidgets(List.of(pc, new PcStats(mac.name, false, null)));
+        settle();
+        assertEquals(activity.getString(R.string.v29_pc_off), texts(macCard).get(0).getText().toString());
+        assertEquals("16%", texts(pcCard).get(1).getText().toString());
+        home.updatePcWidgets(List.of(pc));
+        assertFalse(macCard.isShown());
+        home.bind(new LauncherConfig(activity, json.put("homeWidgets", new JSONObject().put("pc", false)), 1), apps);
+        home.updatePcWidgets(List.of(pc, mac));
+        assertFalse(pcCard.isShown());
+        assertFalse(macCard.isShown());
     }
 
     @Test public void sixAppsUseOneRowAndOutsidePcOffsetFallsBackToTheAlignedDeck() throws Exception {

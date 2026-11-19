@@ -1,11 +1,13 @@
-"""omarchy · pc widget: CPU, RAM and now playing (Linux /proc + playerctl, macOS Mach ticks + vm_stat + osascript)."""
+"""System stats and now-playing data on Linux and macOS."""
 import subprocess
 import sys
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
 import helpers  # noqa: F401  (hermetic env + sys.path)
-from omarchy_link import stats
+from omarchy_link import pulse_state, stats
+from omarchy_link.session import Session
 
 VM_STAT = """Mach Virtual Memory Statistics: (page size of 16384 bytes)
 Pages free:                                     4839.
@@ -52,6 +54,41 @@ class Stats(unittest.TestCase):
         with mock.patch.object(sys, "platform", "darwin"), mock.patch.object(stats.subprocess, "run", bad):
             self.assertIsNone(stats.ram_percent())
 
+    def test_payload_reports_usage_for_the_home_filesystem(self):
+        usage_result = SimpleNamespace(total=200, used=134)
+        with mock.patch.object(stats, "cpu_percent", return_value=None), \
+                mock.patch.object(stats, "ram_percent", return_value=42), \
+                mock.patch.object(stats, "now_playing", return_value=None), \
+                mock.patch.object(stats.shutil, "disk_usage", return_value=usage_result) as usage:
+            self.assertEqual(stats.payload({}), {"ram": 42, "disk": 67})
+            usage.assert_called_once_with(stats.config.HOME)
+            usage.side_effect = OSError("volume unavailable")
+            self.assertEqual(stats.payload({}), {"ram": 42})
+
+    def test_mars_reports_metrics_without_a_local_pulse_hub(self):
+        session = Session.__new__(Session)
+        session.stream = mock.Mock()
+        session.cfg = {}
+        session.state = {"screensaver": True, "capabilities": []}
+        readings = {"cpu": 27, "ram": 48, "disk": 61}
+        with mock.patch.object(pulse_state, "read", return_value=None) as read, \
+                mock.patch.object(stats, "system_payload", return_value=readings) as collect:
+            session.push_pulse()
+            session.stream.send.assert_not_called()
+            collect.assert_not_called()
+
+            session.state["capabilities"] = ["pulse-host-stats"]
+            session.pulse_at = 0
+            session.push_pulse()
+            session.stream.send.assert_called_once_with("pulse", {"hostStats": readings})
+            session.push_pulse()
+            collect.assert_called_once()
+
+            read.return_value = {"v": "1.8", "widgets": [{"id": "repos"}]}
+            session.pulse_at = 0
+            session.push_pulse()
+            session.stream.send.assert_called_with("pulse", {**read.return_value, "hostStats": readings})
+
     @unittest.skipUnless(sys.platform == "darwin", "macOS only")
     def test_macos_real_readers(self):
         self.assertIsNone(stats.cpu_percent())
@@ -59,6 +96,8 @@ class Stats(unittest.TestCase):
         cpu, ram = stats.cpu_percent(), stats.ram_percent()
         self.assertTrue(cpu is None or 0 <= cpu <= 100, cpu)
         self.assertTrue(0 < ram <= 100, ram)
+        disk = stats.disk_percent()
+        self.assertTrue(0 <= disk <= 100, disk)
 
     def players(self, running, states):
         """subprocess.run stand-in: pgrep finds the apps in `running`; osascript answers from `states`."""

@@ -923,6 +923,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                 String n = data.optString("paired", "");
                 if (!n.isEmpty()) Toast.makeText(this, getString(R.string.link_paired_toast, n), Toast.LENGTH_LONG).show();
                 refreshMenu("link");
+                if (resumed && home != null) home.refresh();
                 break;
             }
             case "pairing":
@@ -3079,12 +3080,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
     /** v2.10 "Disponi riquadri": pick a home panel, move it with the D-pad (OK saves, Back cancels), or reset. */
     private AsciiMenu.Page arrangePage() {
         AsciiMenu.Page p = new AsciiMenu.Page(str(R.string.v210_arrange));
-        int[] names = {R.string.v210_w_term, R.string.v210_w_weather, R.string.v210_w_pc, R.string.v210_w_ai, R.string.v210_w_deploys, R.string.t3_widget};
+        int[] names = {R.string.v210_w_term, R.string.v210_w_weather, R.string.v210_w_pc, R.string.v210_w_ai,
+                R.string.v210_w_deploys, R.string.w_racing, R.string.t3_widget, R.string.v210_w_pc};
         for (int i = 0; i < HomeV29.PANEL_IDS.length; i++) {
             final String id = HomeV29.PANEL_IDS[i];
             View v = home.panelView(id);
             boolean shown = v != null && v.getVisibility() == View.VISIBLE;
-            p.add(str(names[i]), shown ? "›" : str(R.string.off), r -> {
+            String name = str(names[i]);
+            if ("pc2".equals(id)) name += " 2";
+            p.add(name, shown ? "›" : str(R.string.off), r -> {
                 if (!shown) return true;
                 if (menu != null) menu.dismiss();
                 setWorkspace(1);

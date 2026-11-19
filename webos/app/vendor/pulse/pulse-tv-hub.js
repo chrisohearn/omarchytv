@@ -667,8 +667,19 @@
       if (!panelOn(cfg, "weather")) st.weather = null;
       if (!panelOn(cfg, "air")) st.air = null;
       if (!panelOn(cfg, "system")) { st.sys = null; st.ui.system = false; st.ui.network = false; }
+      if (ui.scene === "mars" && panelOn(cfg, "system") && panelOn(cfg, "pc") && cfg.pulseHostStats) {
+        st.widgets = st.widgets.concat(hostStatPanels(cfg.pulseHostStats()));
+      }
       if (SCENES[ui.scene]) { st.sceneTicket = "tv"; st.scene = sceneState(st, t); }   // 2.15.1 Pulse 1.8's scenes (mars, monolith)
       return st;
+    }
+    function hostStatPanels(hosts) {
+      return (hosts || []).slice(0, 2).map(function (host, i) {
+        var stats = host.stats || {};
+        var rows = ["cpu", "ram", "disk"].filter(function (key) { return typeof stats[key] === "number"; })
+          .map(function (key) { return [key, stats[key] + "%"]; });
+        return rows.length ? { id: "tv-host-stats-" + i, title: host.name, type: "kv", slot: "left", order: 1 + i, data: { rows: rows } } : null;
+      }).filter(Boolean);
     }
     /** What a scene sees (Pulse's docs/SCENES.md): the same read-only copy the PC's hub gives, from what the TV knows. */
     function sceneState(st, t) {

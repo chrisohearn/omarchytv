@@ -185,6 +185,7 @@ fake status or swallow commands.
 | `GET /v1/wallpaper` | ✓ | → `{sha256: <hex of current pushed JPEG> \| null}` |
 | `PUT /v1/wallpaper` | ✓ | `Content-Type: image/jpeg`, ≤ 8 MiB, ≤ 3840x2160 → `{sha256}` / `415 not_jpeg` |
 | `PUT /v1/widgets` | ✓ | Widgets → `{ok:true}` |
+| `PUT /v1/stats` | ✓ | System stats → `{ok:true}` |
 | `PUT /v1/ai` | ✓ | AI credits → `{ok:true}` |
 | `PUT /v1/ai/providers` | ✓ | Assistant providers → `{ok:true}` (§6, Assistant) |
 | `PUT /v1/agents` | ✓ | Agent activity snapshot → `{ok:true}` (§6, Agents) |
@@ -347,6 +348,19 @@ Shortcut actions on the TV:
   PC (§7). The PC runs only commands defined in its own `config.json`, and by
   default asks for confirmation with a desktop notification. The TV never sends
   a command line.
+
+### System stats (`PUT /v1/stats`)
+
+The client may send integer percentages `cpu`, `ram` and `disk` (0–100), plus
+`nowPlaying: {artist, title}` and `deploys: [{name, status}]`. `disk` measures the
+filesystem containing the client's home directory. Every field can be omitted.
+The TV keeps the latest sample per pairing in memory for up to 30 seconds.
+Home and the PC workspace show the first two paired computers by their pairing names.
+The session sends samples every five seconds by default while `homeVisible` is true.
+The Mars Pulse screensaver advertises `pulse-host-stats` when its System and PC Panels
+are enabled. During the screensaver, Link includes the same percentages as `hostStats`
+in its existing `pulse` event, even on hosts without a local Pulse hub. The TV displays
+fresh readings beside the scene using the pairing names.
 
 ### AI credits (`PUT /v1/ai`)
 

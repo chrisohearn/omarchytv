@@ -51,6 +51,9 @@
   function tv() {
     try { return host && host.tvStats ? JSON.parse(host.tvStats()) : null; } catch (e) { return null; }
   }
+  function pulseHostStats() {
+    try { return host && host.pulseHostStats ? JSON.parse(host.pulseHostStats()) : []; } catch (e) { return []; }
+  }
   // The paired PC's Pulse: Android hands it over (OmarchySaver.pcPulse); LG and Samsung post it into this frame.
   var fromParent = null, fromParentAt = 0;
   root.addEventListener("message", function (ev) {
@@ -102,7 +105,7 @@
     lat: cfg.lat, lon: cfg.lon, city: cfg.city || "", imperial: !!cfg.imperial, theme: cfg.theme, quality: quality, polish: polish, scenes: scenesOk,
     motion: cfg.motion, scene: cfg.scene || "sphere", clock: cfg.clock, launches: cfg.launches, planes: cfg.planes, starlink: cfg.starlink,
     planesNm: cfg.planesNm, earthquakes: cfg.earthquakes, opensky: !!cfg.opensky, openskyAuth: !!cfg.openskyAuth, racing: cfg.racing,
-    pulsePanels: cfg.pulsePanels, tv: tv, pc: pc
+    pulsePanels: cfg.pulsePanels, tv: tv, pc: pc, pulseHostStats: pulseHostStats
   };
   var hub = root.OmarchyPulseTV.create(hubCfg, net);
   root.__pulseTV = hub;

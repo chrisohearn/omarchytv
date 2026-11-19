@@ -359,6 +359,30 @@ test("2.15.1 screensaver.racing: the next sessions as a side panel, soonest firs
   assert.strictEqual(panel({ racing: [racing[3]] }).length, 0);   // nothing left to race: no empty panel
 });
 
+test("Mars displays each paired computer's live stats beside the original Pulse panels", () => {
+  let hosts = [{ name: "omarchy-pc", stats: { cpu: 18, ram: 39, disk: 56 } },
+    { name: "omarchy-mac", stats: { cpu: 0, ram: 48, disk: 61 } }];
+  const cfg = { scene: "mars", pulseHostStats: () => hosts };
+  const h = P.create(cfg, () => Promise.resolve(null), () => 1000000);
+  h._S.pc = { v: "1.8", sys: { cpu: 18, ram: 39 }, widgets: [{ id: "repos" }] };
+  const panels = () => h.state().widgets.filter(w => w.id.startsWith("tv-host-stats-"));
+  assert.ok(h.state().widgets.some(w => w.id === "repos"));
+  assert.strictEqual(h.state().scene.sys.cpu, 18);
+  assert.deepStrictEqual(panels().map(w => [w.title, w.data.rows]), [
+    ["omarchy-pc", [["cpu", "18%"], ["ram", "39%"], ["disk", "56%"]]],
+    ["omarchy-mac", [["cpu", "0%"], ["ram", "48%"], ["disk", "61%"]]]
+  ]);
+  hosts = [hosts[0]];
+  assert.deepStrictEqual(panels().map(w => w.title), ["omarchy-pc"]);
+  cfg.pulsePanels = { pc: false };
+  assert.strictEqual(panels().length, 0);
+  cfg.pulsePanels = { system: false };
+  assert.strictEqual(panels().length, 0);
+  cfg.pulsePanels = {};
+  cfg.scene = "monolith";
+  assert.strictEqual(panels().length, 0);
+});
+
 test("2.15.1 Pulse 1.8 on the TV: its look, its scenes in their own frames, and graphics that fit the TV", () => {
   const net = () => Promise.resolve(null), mk = cfg => P.create(Object.assign({ lat: 44.91, lon: 8.61 }, cfg), net, () => 1000000);
   const pj = fs.readFileSync(V + "pulse.js", "utf8");

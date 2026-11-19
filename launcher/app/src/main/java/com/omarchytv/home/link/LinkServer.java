@@ -992,7 +992,7 @@ public final class LinkServer {
         }
         if ("PUT".equals(m) && "/v1/wallpaper".equals(p)) return wallpaper(req);
         if ("PUT".equals(m) && "/v1/widgets".equals(p)) return widgets(body);
-        if ("PUT".equals(m) && "/v1/stats".equals(p)) return stats(body, a.pcId);
+        if ("PUT".equals(m) && "/v1/stats".equals(p)) return stats(body, a);
         if ("PUT".equals(m) && "/v1/screensaver".equals(p)) return screensaver(body);
         if ("PUT".equals(m) && "/v1/ai".equals(p)) return ai(body, a.pcId);
         if ("PUT".equals(m) && "/v1/ai/providers".equals(p)) return providers(body, a.pcId);
@@ -1148,9 +1148,11 @@ public final class LinkServer {
                         isError = sr.status != 200;
                         break;
                     }
-                    case "tv_ai_status":
-                        out = new JSONObject().put("agents", agents()).put("stats", stats() != null ? stats() : JSONObject.NULL);
+                    case "tv_ai_status": {
+                        JSONObject stats = latestStats();
+                        out = new JSONObject().put("agents", agents()).put("stats", stats != null ? stats : JSONObject.NULL);
                         break;
+                    }
                     case "tv_cinemarchy":
                         out = new JSONObject().put("library", cinemarchyLibrary()).put("snippets", cinemarchySnippets());
                         break;
@@ -1515,22 +1517,77 @@ public final class LinkServer {
         return panes;
     }
 
-    /** Last PUT /v1/stats (home "omarchy · pc" / "deploys · pc"), in memory only: gone with the process. */
-    private static volatile JSONObject lastStats;
-    private static volatile long lastStatsAt;
+    static final class StatsSample {
+        final JSONObject data;
+        final long receivedAt = System.nanoTime();
 
-    /** Latest PC stats (cpu, ram, nowPlaying, deploys) or null; the caller also checks a PC is connected. */
-    public static JSONObject stats() {
-        return System.currentTimeMillis() - lastStatsAt < 30_000 ? lastStats : null;
+        StatsSample(JSONObject data) { this.data = data; }
+
+        boolean fresh(long now) { return now - receivedAt < TimeUnit.SECONDS.toNanos(30); }
+    }
+
+    public static final class PcStats {
+        public final String name;
+        public final boolean connected;
+        public final JSONObject data;
+
+        public PcStats(String name, boolean connected, JSONObject data) {
+            this.name = name;
+            this.connected = connected;
+            this.data = data;
+        }
+    }
+
+    /** Latest samples in pairing order. A missing, expired, or offline sample has no readings. */
+    public List<PcStats> statsByPc() {
+        List<PcStats> out = new ArrayList<>();
+        long now = System.nanoTime();
+        for (LinkStore.Pc pc : store.list()) {
+            StatsSample sample = pc.stats;
+            boolean connected = connected(pc.id);
+            out.add(new PcStats(pc.name, connected, connected && sample != null && sample.fresh(now) ? sample.data : null));
+        }
+        return out;
+    }
+
+    /** Preserve the single latest report for Living and MCP. */
+    public JSONObject latestStats() {
+        StatsSample latest = null;
+        long now = System.nanoTime();
+        for (LinkStore.Pc pc : store.list()) {
+            StatsSample sample = pc.stats;
+            if (sample != null && sample.fresh(now) && (latest == null || sample.receivedAt - latest.receivedAt > 0)) {
+                latest = sample;
+            }
+        }
+        return latest == null ? null : latest.data;
+    }
+
+    /** Mars only needs the names and percentages of the same paired hosts shown on Home. */
+    public JSONArray pulseHostStats() {
+        JSONArray out = new JSONArray();
+        List<LinkStore.Pc> pcs = store.list();
+        long now = System.nanoTime();
+        for (int i = 0; i < Math.min(2, pcs.size()); i++) {
+            LinkStore.Pc pc = pcs.get(i);
+            StatsSample sample = pc.pulseStats;
+            if (sample == null || !sample.fresh(now) || !connected(pc.id)) continue;
+            try {
+                out.put(new JSONObject().put("name", pc.name).put("stats", sample.data));
+            } catch (JSONException ignored) {
+            }
+        }
+        return out;
     }
 
     static final Set<String> DEPLOY_STATUS = new HashSet<>(Arrays.asList("green", "yellow", "red", "ok", "building", "failed"));
 
-    /** v2.9: {cpu 0..100, ram 0..100, nowPlaying {artist, title}?, deploys [{name, status}]?}. Never written to disk. */
-    private Response stats(JSONObject b, String pcId) throws Exception {
+    /** Optional CPU, RAM and disk percentages, now playing and deploys. Never written to disk. */
+    private Response stats(JSONObject b, Auth a) throws Exception {
         JSONObject o = new JSONObject();
         if (b.has("cpu")) o.put("cpu", Math.max(0, Math.min(100, b.optInt("cpu"))));
         if (b.has("ram")) o.put("ram", Math.max(0, Math.min(100, b.optInt("ram"))));
+        if (b.opt("disk") instanceof Number) o.put("disk", Math.max(0, Math.min(100, b.optInt("disk"))));
         JSONObject np = b.optJSONObject("nowPlaying");
         if (np != null && !np.optString("title", "").isEmpty()) {
             o.put("nowPlaying", new JSONObject().put("artist", printable(np.optString("artist", ""), 64)).put("title", printable(np.optString("title", ""), 96)));
@@ -1548,9 +1605,11 @@ public final class LinkServer {
             }
             o.put("deploys", out);
         }
-        lastStats = o;
-        lastStatsAt = System.currentTimeMillis();
-        host.onEvent(pcId, "stats", o);
+        LinkStore.Pc pc = store.get(a.pcId);
+        if (pc != null && pc.token == a.token) {
+            pc.stats = new StatsSample(o);
+            host.onEvent(pc.id, "stats", o);
+        }
         return new Response(200, ok());
     }
 
@@ -2139,14 +2198,17 @@ public final class LinkServer {
 
     final class WsClient {
         final String pcId;
+        final LinkStore.Pc pairing;
         final byte[] ks;
         final Socket sock;
         final OutputStream out;
         long sendSeq, recvSeq;
         volatile boolean closed;
 
-        WsClient(String pcId, byte[] ks, Socket sock, OutputStream out) {
-            this.pcId = pcId;
+        WsClient(Auth auth, byte[] ks, Socket sock, OutputStream out) {
+            this.pcId = auth.pcId;
+            LinkStore.Pc pc = store.get(pcId);
+            this.pairing = pc != null && pc.token == auth.token ? pc : null;
             this.ks = ks;
             this.sock = sock;
             this.out = out;
@@ -2205,7 +2267,7 @@ public final class LinkServer {
         r.headers.put("X-OTV-Nonce", serverNonce);
         r.headers.put("X-OTV-Sig", LinkCrypto.signResponse(a.token, a.nonce, 101, LinkCrypto.utf8(serverNonce)));
         write(out, r);
-        WsClient c = new WsClient(a.pcId, LinkCrypto.wsSessionKey(a.token, a.nonce, serverNonce), sock, out);
+        WsClient c = new WsClient(a, LinkCrypto.wsSessionKey(a.token, a.nonce, serverNonce), sock, out);
         sock.setSoTimeout(70_000);   // the PC pings every 25 s; we ping too
         linkUp(c);
         host.log("events: " + a.pcId.substring(0, Math.min(6, a.pcId.length())) + "… connected");
@@ -2318,7 +2380,20 @@ public final class LinkServer {
                 if (data.optString("name", "").length() <= 200 && data.optString("text", "").length() <= 500) host.onEvent(c.pcId, type, data);
                 break;
             case "pulse":   // v2.15 the PC's Omarchy Pulse state for the Pulse screensaver, memory only
-                if (data.has("v") && data.toString().length() <= 256 * 1024) host.onEvent(c.pcId, type, data);
+                if (data.toString().length() > 256 * 1024) break;
+                JSONObject readings = data.optJSONObject("hostStats");
+                if (readings == null && data.has("v")) readings = data.optJSONObject("sys");  // older Link clients
+                if (c.pairing != null && readings != null) {
+                    JSONObject stats = new JSONObject();
+                    for (String key : new String[]{"cpu", "ram", "disk"}) {
+                        if (readings.opt(key) instanceof Number) {
+                            stats.put(key, Math.round(Math.max(0, Math.min(100, readings.optDouble(key)))));
+                        }
+                    }
+                    c.pairing.pulseStats = stats.length() == 0 ? null : new StatsSample(stats);
+                }
+                data.remove("hostStats");
+                if (data.has("v")) host.onEvent(c.pcId, type, data);
                 break;
             case "liftoff":   // v2.14 a build/update on the PC: rocket countdown on Home (LiftoffView)
                 host.onEvent(c.pcId, type, liftoff(data));

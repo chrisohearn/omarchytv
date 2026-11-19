@@ -611,7 +611,11 @@ class Session:
             return
         self.pulse_at = now
         from . import pulse_state   # noqa: PLC0415
-        st = pulse_state.read()
+        st = pulse_state.read() or {}
+        if "pulse-host-stats" in self.state.get("capabilities", []):
+            readings = stats.system_payload()
+            if readings:
+                st["hostStats"] = readings
         if st:
             self.stream.send("pulse", st)
 

@@ -70,7 +70,7 @@ final class Living {
             }
             JSONObject rad = f.optJSONObject("radar");
             if (pc && cfg.livingRadar && rad != null) data.put("radar", rad);
-            org.json.JSONObject st = com.omarchytv.home.link.LinkServer.stats();
+            JSONObject st = OmarchyLink.latestStats();
             if (pc && st != null) data.put("pc", new JSONObject().put("cpu", st.optInt("cpu")).put("ram", st.optInt("ram")));
             JSONObject w = weather(c, cfg);
             if (w != null) data.put("weather", w);

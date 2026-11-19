@@ -29,6 +29,9 @@ public final class LinkStore {
         public final long pairedAt;
         public long lastSeen;
         public String lastAddress;
+        // Telemetry belongs to this pairing and is never serialized.
+        volatile LinkServer.StatsSample stats;
+        volatile LinkServer.StatsSample pulseStats;
 
         Pc(String id, String name, byte[] token, long pairedAt, long lastSeen, String lastAddress) {
             this.id = id;

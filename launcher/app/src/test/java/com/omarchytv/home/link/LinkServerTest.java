@@ -11,15 +11,18 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -125,6 +128,98 @@ public class LinkServerTest {
 
     void assertSigned(Resp r, String nonce) {
         assertEquals(r.headers.get("x-otv-sig"), LinkCrypto.signResponse(token, nonce, r.status, r.body));
+    }
+
+    private Socket statsEvents(JSONObject pulse) throws Exception {
+        String ts = String.valueOf(System.currentTimeMillis() / 1000);
+        String nonce = LinkCrypto.b64u(LinkCrypto.randomBytes(16));
+        String sig = LinkCrypto.signRequest(token, "GET", "/v1/events", ts, nonce, new byte[0]);
+        Socket events = new Socket(InetAddress.getLoopbackAddress(), port);
+        try {
+            events.setSoTimeout(5000);
+            String req = "GET /v1/events HTTP/1.1\r\nHost: tv\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                    + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Protocol: omarchytv-link.v1\r\n"
+                    + "Authorization: OTV1 pc=" + pcId + ", ts=" + ts + ", nonce=" + nonce + ", sig=" + sig + "\r\n\r\n";
+            events.getOutputStream().write(req.getBytes(StandardCharsets.ISO_8859_1));
+            BufferedReader in = new BufferedReader(new InputStreamReader(events.getInputStream(), StandardCharsets.ISO_8859_1));
+            assertEquals("101", in.readLine().split(" ")[1]);
+            String header, serverNonce = null;
+            do {
+                header = in.readLine();
+                assertNotNull(header);
+                if (header.startsWith("X-OTV-Nonce: ")) serverNonce = header.substring("X-OTV-Nonce: ".length());
+            } while (!header.isEmpty());
+            assertEquals(0x81, in.read()); // The hello frame follows connection registration.
+            int length = in.read();
+            if (length == 126) length = (in.read() << 8) | in.read();
+            for (int i = 0; i < length; i++) assertTrue(in.read() >= 0);
+
+            assertNotNull(serverNonce);
+            String event = new JSONObject().put("seq", 1).put("type", "pulse").put("data", pulse).toString();
+            byte[] sealed = LinkCrypto.utf8(LinkCrypto.seal(LinkCrypto.wsSessionKey(token, nonce, serverNonce), event));
+            OutputStream out = events.getOutputStream();
+            out.write(0x81);
+            if (sealed.length < 126) {
+                out.write(0x80 | sealed.length);
+            } else {
+                out.write(0x80 | 126);
+                out.write(sealed.length >> 8);
+                out.write(sealed.length & 0xff);
+            }
+            out.write(new byte[4]); // All-zero mask for the fixture.
+            out.write(sealed);
+            out.write(new byte[]{(byte) 0x89, (byte) 0x80, 0, 0, 0, 0});
+            assertEquals(0x8a, in.read()); // The pong confirms the preceding event was processed.
+            return events;
+        } catch (Exception | AssertionError e) {
+            events.close();
+            throw e;
+        }
+    }
+
+    @Test
+    public void pairedComputersKeepIndependentStatsAndOlderClientsCanOmitDisk() throws Exception {
+        server.limits = false; // Both clients use the same loopback address.
+        token = LinkCrypto.randomBytes(32);
+        server.store().put(pcId, "omarchy-pc", token, "127.0.0.1");
+        Socket mac = null;
+        try (Socket pc = statsEvents(new JSONObject("{\"v\":\"1.8\",\"sys\":{\"cpu\":14,\"ram\":36,\"disk\":51,\"temp\":46}}"))) {
+            assertEquals(200, signed("PUT", "/v1/stats", "{\"cpu\":18,\"ram\":38}").status);
+            pcId = "1234567890abcdef";
+            token = LinkCrypto.randomBytes(32);
+            server.store().put(pcId, "omarchy-mac", token, "127.0.0.1");
+            mac = statsEvents(new JSONObject("{\"hostStats\":{\"cpu\":32,\"ram\":67,\"disk\":82,\"temp\":40}}"));
+            assertEquals(200, signed("PUT", "/v1/stats", "{\"cpu\":27,\"ram\":49,\"disk\":101}").status);
+            List<LinkServer.PcStats> peers = server.statsByPc();
+            assertEquals(2, peers.size());
+            assertEquals("omarchy-pc", peers.get(0).name);
+            assertEquals(18, peers.get(0).data.getInt("cpu"));
+            assertFalse(peers.get(0).data.has("disk"));
+            assertEquals("omarchy-mac", peers.get(1).name);
+            assertEquals(27, peers.get(1).data.getInt("cpu"));
+            assertEquals(49, peers.get(1).data.getInt("ram"));
+            assertEquals(100, peers.get(1).data.getInt("disk"));
+            assertEquals(27, server.latestStats().getInt("cpu"));
+
+            org.json.JSONArray mars = server.pulseHostStats();
+            assertEquals(2, mars.length());
+            assertEquals("omarchy-pc", mars.getJSONObject(0).getString("name"));
+            assertEquals(51, mars.getJSONObject(0).getJSONObject("stats").getInt("disk"));
+            assertEquals("omarchy-mac", mars.getJSONObject(1).getString("name"));
+            JSONObject macPulse = mars.getJSONObject(1).getJSONObject("stats");
+            assertEquals(32, macPulse.getInt("cpu"));
+            assertEquals(67, macPulse.getInt("ram"));
+            assertEquals(82, macPulse.getInt("disk"));
+            assertFalse(macPulse.has("temp"));
+
+            assertEquals(200, signed("POST", "/v1/unpair", "{}").status);
+            assertEquals("omarchy-pc", server.statsByPc().get(0).name);
+            assertEquals(1, server.statsByPc().size());
+            assertEquals(18, server.latestStats().getInt("cpu"));
+            assertEquals(1, server.pulseHostStats().length());
+        } finally {
+            if (mac != null) mac.close();
+        }
     }
 
     @Test

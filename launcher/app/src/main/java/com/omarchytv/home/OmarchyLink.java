@@ -202,6 +202,21 @@ public final class OmarchyLink implements LinkServer.Host {
         return r == null || !r.live() ? java.util.Collections.<LinkStore.Pc>emptyList() : r.server.store().list();
     }
 
+    static List<LinkServer.PcStats> pcStats() {
+        OmarchyLink r = runtime;
+        return r == null || !r.live() ? java.util.Collections.emptyList() : r.server.statsByPc();
+    }
+
+    static JSONObject latestStats() {
+        OmarchyLink r = runtime;
+        return r == null || !r.live() ? null : r.server.latestStats();
+    }
+
+    static String pulseHostStats() {
+        OmarchyLink r = runtime;
+        return r == null || !r.live() ? "[]" : r.server.pulseHostStats().toString();
+    }
+
     /**
      * "> ask", written on the Link worker (never on the UI thread: a socket write there throws
      * NetworkOnMainThreadException). {@code done} runs on the UI thread with null when sent, else
@@ -786,7 +801,10 @@ public final class OmarchyLink implements LinkServer.Host {
                     "key:play_pause", "key:play", "key:pause", "key:stop", "key:next", "key:previous", "key:rewind",
                     "key:fast_forward", "key:volume_up", "key:volume_down", "key:mute"}) caps.put(c);
             if (OmarchyRemote.enabled()) caps.put("key:back");
-            if (!LauncherConfig.get(app).aiProviders.isEmpty()) caps.put("ai-ask");
+            LauncherConfig cfg = LauncherConfig.get(app);
+            if (!cfg.aiProviders.isEmpty()) caps.put("ai-ask");
+            if ("pulse".equals(cfg.screensaverMode) && "mars".equals(cfg.pulseScene)
+                    && cfg.pulsePanel("system") && cfg.pulsePanel("pc")) caps.put("pulse-host-stats");
             JSONObject fg = null;
             String pkg = null, source = "launcher";
             if (homeVisible) pkg = app.getPackageName();

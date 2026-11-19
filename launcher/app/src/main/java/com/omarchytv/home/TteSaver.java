@@ -103,6 +103,7 @@ final class TteSaver {
             @JavascriptInterface public String tvStats() { return PulseSaver.tvStats(c.getApplicationContext()); }
             /** v2.15 Pulse: the paired PC's Pulse state, as omarchy-link last pushed it (null without a PC). */
             @JavascriptInterface public String pcPulse() { return PulseLink.state(); }
+            @JavascriptInterface public String pulseHostStats() { return OmarchyLink.pulseHostStats(); }
             /** v2.15 Pulse: an effect (ISS overhead, liftoff, a Starlink train): "Look up, now". */
             @JavascriptInterface public void fx(String json) { PulseLink.onFx(c.getApplicationContext(), json); }
             /** v2.14 Living screensaver: weather + the PC's feed, as JSON (Living.forSaver). */
