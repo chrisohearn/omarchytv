@@ -803,8 +803,10 @@ public final class OmarchyLink implements LinkServer.Host {
             if (OmarchyRemote.enabled()) caps.put("key:back");
             LauncherConfig cfg = LauncherConfig.get(app);
             if (!cfg.aiProviders.isEmpty()) caps.put("ai-ask");
-            if ("pulse".equals(cfg.screensaverMode) && "mars".equals(cfg.pulseScene)
-                    && cfg.pulsePanel("system") && cfg.pulsePanel("pc")) caps.put("pulse-host-stats");
+            if ("pulse".equals(cfg.screensaverMode) && cfg.pulsePanel("pc")) {
+                caps.put("pulse-meter-widgets");
+                if ("mars".equals(cfg.pulseScene) && cfg.pulsePanel("system")) caps.put("pulse-host-stats");
+            }
             JSONObject fg = null;
             String pkg = null, source = "launcher";
             if (homeVisible) pkg = app.getPackageName();

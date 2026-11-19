@@ -88,6 +88,14 @@ canvas.spark { display: block; width: 100%; height: 3rem; margin-top: .5rem; }
 .seg i { position: absolute; left: 0; top: 0; bottom: 0; background:
   repeating-linear-gradient(90deg, var(--c, var(--accent)) 0 .42rem, transparent .42rem .55rem);
   box-shadow: 0 0 .5rem rgba(var(--accent-rgb), .25); }
+.meter-group .big { font-size: 2.2rem; }
+.meter-group .tiles { margin-top: .65rem; }
+.meter-group .meter-reading + .meter-reading { margin-top: .8rem; }
+.meter-group.compact .row { line-height: 1.2; }
+.meter-group.compact .seg { margin: .15rem 0 0; }
+.meter-group.compact .meter-reading + .meter-reading { margin-top: .3rem; }
+.meter-group.compact.many { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .3rem 1.2rem; }
+.meter-group.compact.many .meter-reading { margin-top: 0; }
 .meter { display: grid; grid-template-columns: 3.4rem 1fr 4.6rem; align-items: center; gap: .6rem; font-size: 1rem; line-height: 1.7; }
 .meter .k { color: rgba(var(--fg-rgb), .6); }
 .meter .v { text-align: right; }

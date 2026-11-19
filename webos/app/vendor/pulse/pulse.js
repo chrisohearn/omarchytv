@@ -269,6 +269,38 @@
     return el;
   }
 
+  function segmentBar(percent) {
+    return '<div class="seg" style="height:.8rem"><i style="width:' + percent.toFixed(1) + '%"></i></div>';
+  }
+
+  function statusTiles(items) {
+    // Long names (problems, alerts) get a full tile to avoid clipping.
+    var wide = items.some(function (it) { return String(it.title || "").length > 15; });
+    return '<div class="tiles' + (wide ? " one" : "") + '">' + items.slice(0, wide ? 6 : 12).map(function (it) {
+      var level = ["ok", "warn", "crit", "info"].indexOf(it.level) >= 0 ? it.level : "";
+      return '<div class="tile ' + level + '" data-i="' + items.indexOf(it) + '"><span class="dot ' +
+        (level ? "lv-" + level : "") + '"></span><span class="n">' + esc(it.title) +
+        '</span><span class="m">' + esc(it.note || "") + "</span></div>";
+    }).join("") + "</div>";
+  }
+
+  function meterGroup(d) {
+    var rows = Array.isArray(d.rows) ? d.rows.slice(0, 8) : [];
+    if (!rows.length) return d.message ? '<div class="note">' + esc(d.message) + '</div>' : "";
+    return '<div class="meter-group' + (d.compact ? " compact" : "") + (rows.length > 6 ? " many" : "") + '">' +
+      rows.map(function (row) {
+        if (!row) return "";
+        var value = row.value;
+        var known = typeof value === "number" && isFinite(value) && value >= 0 && value <= 100;
+        var reading = known ? String(d.compact ? Math.round(value * 10) / 10 : Math.round(value)) : "—";
+        var header = d.compact
+          ? '<span class="k">' + esc(row.label) + '</span><span class="v">' + reading + (known ? "%" : "") + '</span>'
+          : '<span class="big">' + reading + '<small>' + esc(row.unit || "%") + '</small></span>';
+        return '<div class="meter-reading"><div class="row">' + header + '</div>' + segmentBar(known ? value : 0) +
+          (row.note ? '<div class="note">' + esc(row.note) + '</div>' : "") + '</div>';
+      }).join("") + (Array.isArray(d.status) && d.status.length ? statusTiles(d.status) : "") + '</div>';
+  }
+
   var typed = {};   // id -> {full, shown}
   function generic(w) {
     var el = panel(w.id, w.title || w.id, w.icon);
@@ -279,19 +311,17 @@
         (d.note ? '<div class="note">' + esc(d.note) + "</div>" : "") + ((d.history || []).length > 2 ? '<canvas class="spark"></canvas>' : "");
     } else if (t === "gauge") {
       var max = d.max || 100, min = d.min || 0, pct = Math.max(0, Math.min(100, 100 * ((+d.value || 0) - min) / (max - min || 1)));
-      html = '<div class="row"><span class="big" style="font-size:2.2rem">' + num(d.value) + "<small>" + esc(unit) + '</small></span></div><div class="seg" style="height:.8rem"><i style="width:' + pct.toFixed(1) + '%"></i></div>' +
+      html = '<div class="row"><span class="big" style="font-size:2.2rem">' + num(d.value) + "<small>" + esc(unit) + '</small></span></div>' + segmentBar(pct) +
         (d.note ? '<div class="note">' + esc(d.note) + "</div>" : "");
+    } else if (t === "meters") {
+      html = meterGroup(d);
     } else if (t === "list") {
       html = '<ul class="items">' + (d.items || []).slice(0, w.slot === "center" ? 4 : 6).map(function (it) {
         return '<li><span class="dot ' + (it.level ? "lv-" + it.level : "") + '"></span><div style="min-width:0"><div class="t">' + esc(it.title) + "</div>" +
           (it.text ? '<div class="s">' + esc(it.text) + "</div>" : "") + '</div><span class="r">' + esc(it.right || ago(it.t) || (it.value != null ? it.value + (it.unit || "") : "")) + "</span></li>";
       }).join("") + "</ul>" + (d.note ? '<div class="note">' + esc(d.note) + "</div>" : "");
     } else if (t === "status") {
-      // long names (problems, alerts) get one tile per line instead of being cut in two columns
-      var wide = (d.items || []).some(function (it) { return String(it.title || "").length > 15; });
-      html = '<div class="tiles' + (wide ? " one" : "") + '">' + (d.items || []).slice(0, wide ? 6 : 12).map(function (it) {
-        return '<div class="tile ' + (it.level || "") + '" data-i="' + (d.items || []).indexOf(it) + '"><span class="dot ' + (it.level ? "lv-" + it.level : "") + '"></span><span class="n">' + esc(it.title) + '</span><span class="m">' + esc(it.note || "") + "</span></div>";
-      }).join("") + "</div>";
+      html = statusTiles(d.items || []);
     } else if (t === "kv") {
       html = '<table class="kv">' + (d.rows || []).slice(0, 8).map(function (r) { return "<tr><td>" + esc(r[0]) + "</td><td>" + esc(r[1]) + "</td></tr>"; }).join("") + "</table>";
     } else if (t === "image") {
@@ -348,7 +378,13 @@
     el.classList.toggle("warn", w.level === "warn");
     el.classList.toggle("crit", w.level === "crit");
     el.classList.toggle("private", !!w.private);
-    setHTML(el.querySelector(".corner"), w.updated && w.type !== "image" ? ago(w.updated) === "now" ? "" : ago(w.updated) : "");
+    var uptime = w.data && w.data.uptime;
+    var corner = w.updated && w.type !== "image" ? ago(w.updated) : "";
+    if (w.type === "meters") {
+      corner = typeof uptime === "number" && isFinite(uptime) && uptime >= 0
+        ? "up " + upt(uptime) + " " + Math.floor(uptime % 60) + "s" : "";
+    }
+    setHTML(el.querySelector(".corner"), corner === "now" ? "" : corner);
     setHTML(el.querySelector(".err"), w.error ? "⚠ " + esc(w.error) : "");
     return el;
   }
