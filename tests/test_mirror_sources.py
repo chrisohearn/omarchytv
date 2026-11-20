@@ -3,7 +3,7 @@ from pathlib import Path
 import threading
 import unittest
 
-spec = importlib.util.spec_from_file_location("mirror_sources", Path(__file__).parents[1] / "mirror_sources.py")
+spec = importlib.util.spec_from_file_location("mirror_sources", Path(__file__).parents[1] / "tools" / "mirror_sources.py")
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 

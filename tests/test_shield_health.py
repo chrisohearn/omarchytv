@@ -3,7 +3,7 @@ from pathlib import Path
 import unittest
 
 
-spec = importlib.util.spec_from_file_location("shield_health", Path(__file__).resolve().parents[1] / "shield_health.py")
+spec = importlib.util.spec_from_file_location("shield_health", Path(__file__).resolve().parents[1] / "tools" / "shield_health.py")
 health = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(health)
 
