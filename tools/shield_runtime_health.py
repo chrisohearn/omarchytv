@@ -35,7 +35,7 @@ def streaming():
             continue
         if any(arg.endswith("/mirror_sources.py") for arg in args):
             return True
-        if "cast" in args and "--screen" in args and any(arg.endswith("/omarchy-link") for arg in args):
+        if "cast" in args and "--screen" in args and any(arg.endswith(("/omarchy-link", "/omarchy-link/lib")) for arg in args):
             return True
     return False
 

@@ -23,7 +23,8 @@ def sources(cfg):
         command = source.get("command")
         if not isinstance(ident, str) or not re.fullmatch(r"[a-z0-9-]{1,32}", ident):
             raise ValueError("invalid screen source id")
-        if not isinstance(label, str) or not label.strip() or len(label) > 24 or label == "Cancel":
+        if (not isinstance(label, str) or not label or label != label.strip()
+                or not all(ch.isprintable() for ch in label) or len(label) > 24 or label == "Cancel"):
             raise ValueError("invalid screen source label")
         if command is not None and (not isinstance(command, list) or not command
                                     or any(not isinstance(x, str) or not x for x in command)):

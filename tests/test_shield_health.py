@@ -8,6 +8,11 @@ health = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(health)
 
 
+def session(name, active, state):
+    return (f"    {name} com.example/{name} (userId=0)\n"
+            f"      active={active}\n      state={state}\n")
+
+
 class FakeShell:
     def __init__(self):
         self.clock = "24"
@@ -73,11 +78,43 @@ class HealthTests(unittest.TestCase):
     def test_known_nonplaying_sessions_and_sleep(self):
         self.shell.power = "mWakefulness=Asleep"
         self.shell.activity = "mResumedActivity: null"
-        self.shell.media = "Sessions Stack - have 4 sessions:\n" + "\n".join(
-            f"state=PlaybackState {{state={state}, position=0}}" for state in (0, 1, 2, 7))
+        self.shell.media = "  Sessions Stack - have 4 sessions:\n" + "".join(
+            session(f"Session{state}", "true", f"PlaybackState {{state={state}, position=0}}")
+            for state in (0, 1, 2, 7))
         self.assertTrue(health.inspect(self.shell)["idle"])
         self.shell.media = "Sessions Stack - have 0 sessions"
         self.assertTrue(health.inspect(self.shell)["idle"])
+
+    def test_paused_and_inactive_null_session_from_device_format(self):
+        self.shell.media = (
+            "MEDIA SESSION SERVICE (dumpsys media_session)\nUser Records:\n"
+            "Record for full_user=0\n  Sessions Stack - have 2 sessions:\n"
+            + session("spotify", "true", "PlaybackState {state=2, position=123, error=null}")
+            + session("netflix", "false", "null")
+            + "Audio playback (lastly played comes first)\n")
+        result = health.reconcile(self.shell, apply=True)
+        self.assertEqual(result["status"], "restored")
+        self.assertEqual(len(self.shell.writes()), 2)
+        self.shell.media = self.shell.media.replace("state=2, position=123", "state=3, position=123")
+        self.shell.commands.clear()
+        self.assertEqual(health.reconcile(self.shell, apply=True)["status"], "deferred")
+        self.assertFalse(self.shell.writes())
+
+    def test_ambiguous_media_sessions_fail_closed(self):
+        for body in (
+            session("bad", "true", "null"),
+            session("bad", "unknown", "null"),
+            session("bad", "false", "PlaybackState {state=unknown}"),
+            session("bad", "false", "null") + "      active=true\n",
+            "    bad com.example/bad (userId=0)\n      state=null\n",
+            session("bad", "false", "null") + "      state=null\n",
+            session("one", "false", "null") + session("two", "true", "PlaybackState {state=2, position=0}"),
+        ):
+            with self.subTest(body=body):
+                shell = FakeShell()
+                shell.media = "  Sessions Stack - have 1 sessions:\n" + body
+                self.assertEqual(health.reconcile(shell, apply=True)["status"], "failed")
+                self.assertFalse(shell.writes())
 
     def test_power_states_require_stable_power_and_safe_foreground(self):
         for wake in ("Asleep", "Dreaming", "Dozing"):
@@ -128,7 +165,7 @@ class HealthTests(unittest.TestCase):
             with self.subTest(cause=cause):
                 shell = FakeShell()
                 if cause == "media":
-                    shell.media = "Sessions Stack - have 1 sessions:\nstate=PlaybackState {state=3, position=0}"
+                    shell.media = "  Sessions Stack - have 1 sessions:\n" + session("Playing", "true", "PlaybackState {state=3, position=0}")
                 if cause == "activity":
                     shell.activity = "topResumedActivity=ActivityRecord{abc u0 com.omarchytv.home/.CastPlayerActivity t1}"
                 result = health.reconcile(shell, apply=True, external_busy=cause == "external")
@@ -158,7 +195,7 @@ class HealthTests(unittest.TestCase):
             if command == "dumpsys media_session":
                 reads += 1
                 if reads == 2:
-                    shell.media = "Sessions Stack - have 1 sessions:\nstate=PlaybackState {state=3, position=0}"
+                    shell.media = "  Sessions Stack - have 1 sessions:\n" + session("Playing", "true", "PlaybackState {state=3, position=0}")
             return original(shell, command)
         result = health.reconcile(changing, apply=True)
         self.assertEqual(result["status"], "deferred")
@@ -170,7 +207,7 @@ class HealthTests(unittest.TestCase):
         def changing(command):
             output = original(shell, command)
             if command == "settings put system time_12_24 12":
-                shell.media = "Sessions Stack - have 1 sessions:\nstate=PlaybackState {state=3, position=0}"
+                shell.media = "  Sessions Stack - have 1 sessions:\n" + session("Playing", "true", "PlaybackState {state=3, position=0}")
             return output
         result = health.reconcile(changing, apply=True)
         self.assertEqual(result["status"], "deferred")

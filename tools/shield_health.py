@@ -22,6 +22,44 @@ def _wakefulness(shell):
     return wake[0]
 
 
+def _media_states(media):
+    lines = media.splitlines()
+    headers = [(i, match) for i, line in enumerate(lines)
+               if (match := re.fullmatch(r"( *)Sessions Stack - have (\d+) sessions?:?\s*", line))]
+    if not headers:
+        raise ValueError("unknown media sessions or playback state")
+    states = []
+    for start, header in headers:
+        stack_indent = len(header.group(1))
+        blocks = []
+        for line in lines[start + 1:]:
+            if not line.strip():
+                continue
+            indent = len(line) - len(line.lstrip(" "))
+            if indent <= stack_indent:
+                break
+            if indent == stack_indent + 2 and re.fullmatch(r".+ \(userId=\d+\)", line.strip()):
+                blocks.append([])
+            elif indent > stack_indent + 2 and blocks:
+                blocks[-1].append(line.strip())
+            else:
+                raise ValueError("unknown media session structure")
+        if len(blocks) != int(header.group(2)):
+            raise ValueError("unknown media session count")
+        for block in blocks:
+            active = [line for line in block if line.startswith("active=")]
+            state = [line for line in block if line.startswith("state=")]
+            if len(active) != 1 or active[0] not in ("active=true", "active=false") or len(state) != 1:
+                raise ValueError("unknown media session activity or playback state")
+            if state[0] == "state=null" and active[0] == "active=false":
+                continue
+            match = re.fullmatch(r"state=PlaybackState \{state=(\d+)(?:,.*)?\}", state[0])
+            if not match:
+                raise ValueError("unknown media session playback state")
+            states.append(int(match.group(1)))
+    return states
+
+
 def inspect(shell, external_busy=False):
     """Read state; unknown or failed evidence is never treated as idle."""
     result = {"idle": False, "clock": None, "size": None, "boot_id": None,
@@ -59,17 +97,11 @@ def inspect(shell, external_busy=False):
                 raise ValueError("unknown foreground activity")
         if not foreground:
             raise ValueError("unknown foreground activity")
-        media = shell("dumpsys media_session")
-        counts = re.findall(r"^\s*Sessions Stack - have (\d+) sessions?:?\s*$", media, re.M)
-        states = re.findall(r"\bstate=PlaybackState\s*\{\s*state=(\d+)\b", media)
-        if not counts or sum(map(int, counts)) != len(states) or re.search(
-            r"\bstate=PlaybackState\s*\{\s*state=(?!\d+\b)", media
-        ):
-            raise ValueError("unknown media sessions or playback state")
+        states = _media_states(shell("dumpsys media_session"))
         wake_after = _wakefulness(shell)
         if (wake != wake_after or external_busy
                 or any(activity is not None and activity not in _HOME for activity in foreground)
-                or any(int(state) not in (0, 1, 2, 7) for state in states)):
+                or any(state not in (0, 1, 2, 7) for state in states)):
             result["status"] = "deferred"
         elif len(set(foreground)) != 1 or (wake == "Awake" and foreground[0] is None):
             raise ValueError("unknown foreground activity")

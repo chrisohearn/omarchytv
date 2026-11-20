@@ -288,6 +288,7 @@ class FileServer:
         self.active = 0
         self.sent = 0
         self.proc: subprocess.Popen | None = None
+        self.live_lock = threading.Lock()
         self.closed = threading.Event()
         server = self
 
@@ -327,7 +328,7 @@ class FileServer:
                     if server.live_argv:
                         return self._live(head)
                     return self._file(head)
-                except (BrokenPipeError, ConnectionResetError):
+                except (CastError, BrokenPipeError, ConnectionResetError):
                     pass
                 finally:
                     server.active -= 1
@@ -410,10 +411,13 @@ class FileServer:
         threading.Thread(target=self._watchdog, daemon=True).start()
 
     def start_live(self) -> subprocess.Popen:
-        if self.proc is None or self.proc.poll() is not None:
-            self.proc = subprocess.Popen(self.live_argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                         stderr=subprocess.DEVNULL, start_new_session=True)
-        return self.proc
+        with self.live_lock:
+            if self.closed.is_set():
+                raise CastError("screen stream has closed", "closed")
+            if self.proc is None or self.proc.poll() is not None:
+                self.proc = subprocess.Popen(self.live_argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                             stderr=subprocess.DEVNULL, start_new_session=True)
+            return self.proc
 
     def _watchdog(self):
         while not self.closed.wait(1):
@@ -422,15 +426,17 @@ class FileServer:
                 self.close()
 
     def close(self):
-        if self.closed.is_set():
-            return
-        self.closed.set()
-        if self.proc and self.proc.poll() is None:
-            self.proc.terminate()
+        with self.live_lock:
+            if self.closed.is_set():
+                return
+            self.closed.set()
+            proc = self.proc
+        if proc and proc.poll() is None:
+            proc.terminate()
             try:
-                self.proc.wait(3)
+                proc.wait(3)
             except subprocess.TimeoutExpired:
-                self.proc.kill()
+                proc.kill()
         # Finish the accept loop before releasing the fixed port. Otherwise a
         # rapid source switch can race the thread still selecting this socket.
         self.httpd.shutdown()

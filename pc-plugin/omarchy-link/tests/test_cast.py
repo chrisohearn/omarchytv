@@ -42,6 +42,17 @@ sys.exit({exit_code})
 
 
 class Classify(unittest.TestCase):
+    def test_closed_stream_never_starts_recorder(self):
+        with mock.patch.object(cast, "local_ip_for", return_value="127.0.0.1"), \
+                mock.patch.object(cast.netcheck, "is_lan_address", return_value=True), \
+                mock.patch.object(cast.config, "load_config", return_value={"castPort": 0}):
+            server = cast.FileServer("127.0.0.1", "test.ts", "video/mp2t", live_argv=["unused"])
+            server.close()
+            with mock.patch.object(cast.subprocess, "Popen") as spawn:
+                with self.assertRaises(cast.CastError):
+                    server.start_live()
+                spawn.assert_not_called()
+
     def test_fixed_port_reopens_after_stream_closes(self):
         with socket.socket() as reservation:
             reservation.bind(("127.0.0.1", 0))
