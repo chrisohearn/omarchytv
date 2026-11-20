@@ -14,6 +14,7 @@ _HOME = {
     "com.omarchytv.home/android.service.dreams.DreamActivity",
 }
 _SIZE = re.compile(r"[1-9][0-9]*x[1-9][0-9]*\Z")
+_FOREGROUND = r"\b(?:mResumedActivity|topResumedActivity|ResumedActivity|Resumed)\s*[:=]"
 
 
 def _wakefulness(shell):
@@ -86,13 +87,13 @@ def inspect(shell, external_busy=False):
         wake = _wakefulness(shell)
         activities = shell("dumpsys activity activities")
         foreground_lines = [line for line in activities.splitlines()
-                            if re.search(r"\b(?:mResumedActivity|topResumedActivity)\s*[:=]", line)]
+                            if re.search(_FOREGROUND, line)]
         foreground = []
         for line in foreground_lines:
             components = re.findall(r"\b[\w.]+/[\w.$]+", line)
             if len(components) == 1:
                 foreground.append(components[0])
-            elif not components and re.search(r"(?:mResumedActivity|topResumedActivity)\s*[:=]\s*null\s*$", line):
+            elif not components and re.search(_FOREGROUND + r"\s*null\s*$", line):
                 foreground.append(None)
             else:
                 raise ValueError("unknown foreground activity")
