@@ -394,7 +394,9 @@ class FileServer:
 
         class S(http.server.ThreadingHTTPServer):
             daemon_threads = True
-            allow_reuse_address = False
+            # A fixed castPort must be immediately reusable after Back. This
+            # permits TIME_WAIT reuse, not a second listener on an active port.
+            allow_reuse_address = True
             address_family = socket.AF_INET6 if ":" in bind else socket.AF_INET
 
         listen_port = config.load_config().get("castPort", 0)
@@ -429,7 +431,9 @@ class FileServer:
                 self.proc.wait(3)
             except subprocess.TimeoutExpired:
                 self.proc.kill()
-        threading.Thread(target=self.httpd.shutdown, daemon=True).start()
+        # Finish the accept loop before releasing the fixed port. Otherwise a
+        # rapid source switch can race the thread still selecting this socket.
+        self.httpd.shutdown()
         self.httpd.server_close()
 
 
