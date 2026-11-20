@@ -49,8 +49,10 @@ def run_health(apply=False):
         previous = {}
     if previous.get("last_boot_change"):
         result["last_boot_change"] = previous["last_boot_change"]
-    if previous.get("boot_id") and result.get("boot_id") and previous["boot_id"] != result["boot_id"]:
-        result["last_boot_change"] = {"from": previous["boot_id"], "to": result["boot_id"],
+    last_boot = previous.get("last_good_boot_id") or previous.get("boot_id")
+    result["last_good_boot_id"] = result.get("boot_id") or last_boot
+    if last_boot and result.get("boot_id") and last_boot != result["boot_id"]:
+        result["last_boot_change"] = {"from": last_boot, "to": result["boot_id"],
                                       "at": result["observed_at"]}
     STATUS.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     import tempfile

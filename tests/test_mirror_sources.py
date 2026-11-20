@@ -2,6 +2,8 @@ import importlib.util
 from pathlib import Path
 import threading
 import unittest
+from types import SimpleNamespace
+from unittest import mock
 
 spec = importlib.util.spec_from_file_location("mirror_sources", Path(__file__).parents[1] / "tools" / "mirror_sources.py")
 module = importlib.util.module_from_spec(spec)
@@ -44,6 +46,19 @@ class Sources(unittest.TestCase):
                     [{"id": "pc", "label": "PC"}, {"id": "mac", "label": "PC"}]):
             with self.assertRaises(ValueError):
                 module.sources({"screenSources": bad})
+
+    def test_stop_keeps_old_process_until_replacement_waits(self):
+        process = mock.Mock()
+        process.poll.return_value = None
+        session = SimpleNamespace(_mirror=process, cfg={"screenMirrorFromTv": "allow", "screenSources": [
+            {"id": "pc", "label": "PC"}]})
+        selector = module.MirrorSelector(session)
+        selector.handle("stop")
+        self.assertIs(session._mirror, process)
+        process.terminate.assert_called_once()
+        with mock.patch.object(module.threading, "Thread") as thread:
+            selector.handle("start")
+            self.assertIs(thread.call_args.kwargs["args"][2], process)
 
 
 if __name__ == "__main__":

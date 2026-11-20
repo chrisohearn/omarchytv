@@ -14,6 +14,7 @@ APK and pairing remain unchanged.
    {
      "screenMirrorFromTv": "allow",
      "screenAudio": true,
+     "screenPickerDialog": true,
      "screenSources": [
        {"id": "pc", "label": "PC"},
        {"id": "laptop", "label": "Laptop", "command": ["/path/to/recorder"]}
@@ -21,11 +22,15 @@ APK and pairing remain unchanged.
    }
    ```
 
-3. Delegate `handle_screen_mirror(action)` in the custom `Session` subclass to
+3. For the optional question dialog, verify that **AI agent alerts while you
+   watch** is already enabled on the TV. Do not enable that setting implicitly.
+   Without it, keep the existing Mirror action and expose source commands through
+   the launcher's existing PC shortcuts instead.
+4. Delegate `handle_screen_mirror(action)` in the custom `Session` subclass to
    one `MirrorSelector(self)` instance. Keep the original handler when
    `screenSources` is absent.
-4. Restart that companion while no stream is active.
-5. On the TV, open **PC screen → Mirror screen** and choose a computer.
+5. Restart that companion while no stream is active.
+6. On the TV, open **PC screen → Mirror screen** and choose a computer.
    **Cancel** leaves the desktop untouched. **Back** stops the selected stream.
 
 Configure direct mirroring only after the desktop owner approves it. The TV

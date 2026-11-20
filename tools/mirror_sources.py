@@ -65,23 +65,26 @@ class MirrorSelector:
                 proc = getattr(self.session, "_mirror", None)
                 if proc and proc.poll() is None:
                     proc.terminate()
-                self.session._mirror = None
             return
         if action != "start" or self.session.cfg.get("screenMirrorFromTv") != "allow":
             return
         with self.lock:
             proc = getattr(self.session, "_mirror", None)
-            if self.pending or (proc and proc.poll() is None):
+            if self.pending or (proc and proc.poll() is None and not self.cancelled.is_set()):
                 return
             configured = sources(self.session.cfg)
             if not configured:
                 return
             self.pending = True
             self.cancelled = threading.Event()
-            threading.Thread(target=self._choose, args=(configured, self.cancelled), daemon=True).start()
+            threading.Thread(target=self._choose, args=(configured, self.cancelled, proc), daemon=True).start()
 
-    def _choose(self, configured, cancelled):
+    def _choose(self, configured, cancelled, previous=None):
         try:
+            if previous and previous.poll() is None:
+                previous.wait(timeout=6)
+            if cancelled.is_set():
+                return
             selected = choose_source(self.session._client(), configured, cancelled)
             with self.lock:
                 if selected and not cancelled.is_set():
@@ -107,7 +110,12 @@ def stream(source_id):
         raise ValueError("direct desktop mirroring is not enabled")
     pairing = config.Pairing.load()
     c = client.Client(pairing.tv, pairing.pc_id, not cfg.get("allowOtherSubnets"))
-    item = cast.screen_item({**cfg, **({"screenCommand": selected["command"]} if selected["command"] else {})})
+    recorder = dict(cfg)
+    if selected["command"]:
+        recorder["screenCommand"] = selected["command"]
+    else:
+        recorder.pop("screenCommand", None)
+    item = cast.screen_item(recorder)
     item["title"] = selected["label"] + " screen"
     # Let via_link's finally close the private listener and recorder on Back,
     # service shutdown, or an explicit stop from the session adapter.

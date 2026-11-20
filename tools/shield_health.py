@@ -15,6 +15,13 @@ _HOME = {
 _SIZE = re.compile(r"[1-9][0-9]*x[1-9][0-9]*\Z")
 
 
+def _wakefulness(shell):
+    wake = re.findall(r"\bmWakefulness=(\w+)", shell("dumpsys power"))
+    if len(set(wake)) != 1 or wake[0] not in ("Awake", "Asleep", "Dreaming", "Dozing"):
+        raise ValueError("unknown wakefulness")
+    return wake[0]
+
+
 def inspect(shell, external_busy=False):
     """Read state; unknown or failed evidence is never treated as idle."""
     result = {"idle": False, "clock": None, "size": None, "boot_id": None,
@@ -37,16 +44,20 @@ def inspect(shell, external_busy=False):
         ):
             raise ValueError("unknown display size")
         result["size"] = override[0] if override else physical[0]
-        power = shell("dumpsys power")
-        wake = re.findall(r"\bmWakefulness=(\w+)", power)
-        if len(set(wake)) != 1 or wake[0] not in ("Awake", "Asleep"):
-            raise ValueError("unknown wakefulness")
+        wake = _wakefulness(shell)
         activities = shell("dumpsys activity activities")
         foreground_lines = [line for line in activities.splitlines()
                             if re.search(r"\b(?:mResumedActivity|topResumedActivity)\s*[:=]", line)]
-        foreground = [re.findall(r"\b[\w.]+/[\w.$]+", line) for line in foreground_lines]
-        if wake[0] == "Awake" and (not foreground or any(len(line) != 1 for line in foreground)
-                                      or len({line[0] for line in foreground}) != 1):
+        foreground = []
+        for line in foreground_lines:
+            components = re.findall(r"\b[\w.]+/[\w.$]+", line)
+            if len(components) == 1:
+                foreground.append(components[0])
+            elif not components and re.search(r"(?:mResumedActivity|topResumedActivity)\s*[:=]\s*null\s*$", line):
+                foreground.append(None)
+            else:
+                raise ValueError("unknown foreground activity")
+        if not foreground:
             raise ValueError("unknown foreground activity")
         media = shell("dumpsys media_session")
         counts = re.findall(r"^\s*Sessions Stack - have (\d+) sessions?:?\s*$", media, re.M)
@@ -55,10 +66,13 @@ def inspect(shell, external_busy=False):
             r"\bstate=PlaybackState\s*\{\s*state=(?!\d+\b)", media
         ):
             raise ValueError("unknown media sessions or playback state")
-        if any(int(state) not in (0, 1, 2, 7) for state in states):
+        wake_after = _wakefulness(shell)
+        if (wake != wake_after or external_busy
+                or any(activity is not None and activity not in _HOME for activity in foreground)
+                or any(int(state) not in (0, 1, 2, 7) for state in states)):
             result["status"] = "deferred"
-        elif external_busy or (wake[0] == "Awake" and foreground[0][0] not in _HOME):
-            result["status"] = "deferred"
+        elif len(set(foreground)) != 1 or (wake == "Awake" and foreground[0] is None):
+            raise ValueError("unknown foreground activity")
         else:
             result["idle"] = True
             result["status"] = "idle"

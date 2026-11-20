@@ -15,6 +15,7 @@ The wrapper requires the existing transport; it adds no service or scheduled job
 Call `run_health(apply=True)` from the existing companion's reconnect and return-to-idle
 hooks, and before the nightly APK update. Use `inspect(shell, external_busy=streaming())`
 as a fresh guard immediately before either APK installation or PC plugin replacement.
+Check `streaming()` again after that native probe, immediately before the write.
 Keep the existing nightly timers. Include `shield-health.json` failures in the
 existing release-watch report.
 

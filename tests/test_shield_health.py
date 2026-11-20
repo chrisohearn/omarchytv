@@ -72,12 +72,56 @@ class HealthTests(unittest.TestCase):
 
     def test_known_nonplaying_sessions_and_sleep(self):
         self.shell.power = "mWakefulness=Asleep"
-        self.shell.activity = ""
+        self.shell.activity = "mResumedActivity: null"
         self.shell.media = "Sessions Stack - have 4 sessions:\n" + "\n".join(
             f"state=PlaybackState {{state={state}, position=0}}" for state in (0, 1, 2, 7))
         self.assertTrue(health.inspect(self.shell)["idle"])
         self.shell.media = "Sessions Stack - have 0 sessions"
         self.assertTrue(health.inspect(self.shell)["idle"])
+
+    def test_power_states_require_stable_power_and_safe_foreground(self):
+        for wake in ("Asleep", "Dreaming", "Dozing"):
+            for activity in ("mResumedActivity: null", self.shell.activity,
+                             "mResumedActivity: ActivityRecord{abc u0 com.omarchytv.home/.DreamActivity t1}"):
+                with self.subTest(wake=wake, activity=activity):
+                    shell = FakeShell()
+                    shell.power = "mWakefulness=" + wake
+                    shell.activity = activity
+                    self.assertTrue(health.inspect(shell)["idle"])
+            for activity in ("com.omarchytv.home/.CastPlayerActivity", "org.example/.Browser"):
+                with self.subTest(wake=wake, activity=activity):
+                    shell = FakeShell()
+                    shell.power = "mWakefulness=" + wake
+                    shell.activity = "mResumedActivity: ActivityRecord{abc u0 " + activity + " t1}"
+                    self.assertEqual(health.reconcile(shell, apply=True)["status"], "deferred")
+                    self.assertFalse(shell.writes())
+            shell = FakeShell()
+            shell.power = "mWakefulness=" + wake
+            shell.activity = ("mResumedActivity: null\n"
+                              "topResumedActivity=ActivityRecord{abc u0 org.example/.Browser t1}")
+            self.assertEqual(health.reconcile(shell, apply=True)["status"], "deferred")
+            self.assertFalse(shell.writes())
+
+    def test_power_transition_or_failed_second_read_prevents_writes(self):
+        for second in ("mWakefulness=Awake", "mWakefulness=Unknown", None):
+            with self.subTest(second=second):
+                shell = FakeShell()
+                shell.power = "mWakefulness=Dozing"
+                shell.activity = "mResumedActivity: null"
+                original = shell.__class__.__call__
+                reads = 0
+                def changing(command):
+                    nonlocal reads
+                    if command == "dumpsys power":
+                        reads += 1
+                        if reads == 2:
+                            if second is None:
+                                raise RuntimeError("power read failed")
+                            shell.power = second
+                    return original(shell, command)
+                result = health.reconcile(changing, apply=True)
+                self.assertEqual(result["status"], "deferred" if second == "mWakefulness=Awake" else "failed")
+                self.assertFalse(shell.writes())
 
     def test_busy_player_browser_or_external_stream_never_write(self):
         for cause in ("media", "activity", "external"):
@@ -93,7 +137,7 @@ class HealthTests(unittest.TestCase):
 
     def test_ambiguous_or_failed_reads_never_write(self):
         for field, value in (("boot", "bad"), ("clock", "garbage"), ("size", "bad"),
-                             ("power", "mWakefulness=Dozing"), ("activity", ""),
+                             ("power", "mWakefulness=Unknown"), ("activity", ""),
                              ("activity", "mResumedActivity: ActivityRecord{abc u0 com.omarchytv.home/.MainActivity t1}\ntopResumedActivity=null"),
                              ("media", ""), ("media", "Sessions Stack - have 1 sessions:\nstate=null"),
                              ("media", "Sessions Stack - have 1 sessions:\nstate=PlaybackState {state=unknown}"),
