@@ -97,7 +97,17 @@ def inspect(shell, external_busy=False):
                 raise ValueError("unknown foreground activity")
         if not foreground:
             raise ValueError("unknown foreground activity")
-        states = _media_states(shell("dumpsys media_session"))
+        media = shell("dumpsys media_session")
+        global_sessions = [line.strip() for line in media.splitlines()
+                           if line.strip().startswith("Global priority session")]
+        if len(global_sessions) > 1 or any(
+            not re.fullmatch(r"Global priority session is .+", line) for line in global_sessions
+        ):
+            raise ValueError("unknown global priority session")
+        if global_sessions and global_sessions[0] != "Global priority session is null":
+            result["status"] = "deferred"
+            return result
+        states = _media_states(media)
         wake_after = _wakefulness(shell)
         if (wake != wake_after or external_busy
                 or any(activity is not None and activity not in _HOME for activity in foreground)

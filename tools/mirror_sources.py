@@ -12,6 +12,8 @@ import signal
 import subprocess
 import sys
 import threading
+import errno
+import time
 
 
 def sources(cfg):
@@ -121,7 +123,17 @@ def stream(source_id):
     # Let via_link's finally close the private listener and recorder on Back,
     # service shutdown, or an explicit stop from the session adapter.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    result = cast.via_link(c, item, wait=True, out=lambda text: print(text, flush=True))
+    deadline = time.monotonic() + 6
+    while True:
+        try:
+            result = cast.via_link(c, item, wait=True, out=lambda text: print(text, flush=True))
+            break
+        except OSError as exc:
+            # The prior source may still be closing after Back. No cast request
+            # has been sent when the listener bind itself returns EADDRINUSE.
+            if exc.errno != errno.EADDRINUSE or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.2)
     print(result, flush=True)
     return 0 if result.get("state") in ("stopped", "ended") else 1
 

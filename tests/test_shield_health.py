@@ -100,6 +100,26 @@ class HealthTests(unittest.TestCase):
         self.assertEqual(health.reconcile(self.shell, apply=True)["status"], "deferred")
         self.assertFalse(self.shell.writes())
 
+    def test_global_priority_session_defers_before_stack_parsing(self):
+        for stack in ("  Sessions Stack - have 0 sessions:\n",
+                      "  Sessions Stack - have 1 sessions:\n"
+                      + session("paused", "true", "PlaybackState {state=2, position=0}"),
+                      "unrecognized stack"):
+            with self.subTest(stack=stack):
+                shell = FakeShell()
+                shell.media = "Global priority session is MediaSessionRecord{player}\n" + stack
+                self.assertEqual(health.reconcile(shell, apply=True)["status"], "deferred")
+                self.assertFalse(shell.writes())
+        shell = FakeShell()
+        shell.media = "Global priority session is null\n  Sessions Stack - have 0 sessions:\n"
+        self.assertTrue(health.inspect(shell)["idle"])
+        for malformed in ("Global priority session is", "Global priority session unknown",
+                          "Global priority session is null\nGlobal priority session is null"):
+            shell = FakeShell()
+            shell.media = malformed + "\n  Sessions Stack - have 0 sessions:\n"
+            self.assertEqual(health.reconcile(shell, apply=True)["status"], "failed")
+            self.assertFalse(shell.writes())
+
     def test_ambiguous_media_sessions_fail_closed(self):
         for body in (
             session("bad", "true", "null"),
