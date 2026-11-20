@@ -159,6 +159,17 @@ class HealthTests(unittest.TestCase):
             self.assertEqual(health.reconcile(shell, apply=True)["status"], "deferred")
             self.assertFalse(shell.writes())
 
+    def test_observed_shield_dream_activity_is_idle_without_playback(self):
+        self.shell.power = "mWakefulness=Dreaming"
+        self.shell.activity = "mResumedActivity: ActivityRecord{abc u0 com.omarchytv.home/android.service.dreams.DreamActivity t1}"
+        self.assertTrue(health.inspect(self.shell)["idle"])
+        self.shell.media = "  Sessions Stack - have 1 sessions:\n" + session("spotify", "true", "PlaybackState {state=3, position=0}")
+        self.assertFalse(health.inspect(self.shell)["idle"])
+        self.shell.media = "Sessions Stack - have 0 sessions:"
+        self.assertFalse(health.inspect(self.shell, external_busy=True)["idle"])
+        self.shell.activity = self.shell.activity.replace("com.omarchytv.home/", "com.other.app/")
+        self.assertFalse(health.inspect(self.shell)["idle"])
+
     def test_power_transition_or_failed_second_read_prevents_writes(self):
         for second in ("mWakefulness=Awake", "mWakefulness=Unknown", None):
             with self.subTest(second=second):
