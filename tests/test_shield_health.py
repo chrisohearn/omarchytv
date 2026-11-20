@@ -75,6 +75,33 @@ class HealthTests(unittest.TestCase):
         self.assertEqual(health.reconcile(self.shell, apply=True)["status"], "ok")
         self.assertFalse(self.shell.writes())
 
+    def test_foreground_labels_reported_by_shield_after_reboot(self):
+        for label in ("mResumedActivity", "topResumedActivity", "ResumedActivity", "Resumed"):
+            with self.subTest(label=label):
+                shell = FakeShell()
+                shell.activity = label + ": ActivityRecord{abc u0 com.omarchytv.home/.MainActivity t1}"
+                self.assertEqual(health.reconcile(shell, apply=True)["status"], "restored")
+                self.assertEqual(len(shell.writes()), 2)
+
+                shell = FakeShell()
+                shell.activity = label + ": ActivityRecord{abc u0 com.player/.Player t1}"
+                self.assertEqual(health.reconcile(shell, apply=True)["status"], "deferred")
+                self.assertFalse(shell.writes())
+
+                shell = FakeShell()
+                shell.power = "mWakefulness=Asleep"
+                shell.activity = label + ": null"
+                self.assertTrue(health.inspect(shell)["idle"])
+
+        shell = FakeShell()
+        shell.activity = ("Resumed: ActivityRecord{abc u0 com.omarchytv.home/.MainActivity t1}\n"
+                          "ResumedActivity: ActivityRecord{abc u0 com.player/.Player t2}")
+        self.assertEqual(health.reconcile(shell, apply=True)["status"], "deferred")
+        self.assertFalse(shell.writes())
+        shell.activity = "mLastPausedActivity: ActivityRecord{abc u0 com.omarchytv.home/.MainActivity t1}"
+        self.assertEqual(health.reconcile(shell, apply=True)["status"], "failed")
+        self.assertFalse(shell.writes())
+
     def test_known_nonplaying_sessions_and_sleep(self):
         self.shell.power = "mWakefulness=Asleep"
         self.shell.activity = "mResumedActivity: null"
