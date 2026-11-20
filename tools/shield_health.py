@@ -11,6 +11,7 @@ _HOME = {
     "com.omarchytv.home/com.omarchytv.home.DreamActivity",
     "com.omarchytv.home/.OmarchyDream",
     "com.omarchytv.home/com.omarchytv.home.OmarchyDream",
+    "com.omarchytv.home/android.service.dreams.DreamActivity",
 }
 _SIZE = re.compile(r"[1-9][0-9]*x[1-9][0-9]*\Z")
 
