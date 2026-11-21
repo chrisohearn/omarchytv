@@ -192,6 +192,29 @@ class WebOSDevices(unittest.TestCase):
                     ["/cli/ares-launch", "--device", "living room", "com.omarchytv.home"],
                 ])
 
+    def test_unknown_peer_is_refused_even_with_a_default_device(self):
+        self.set_listing(json.dumps([
+            {"name": "default-tv", "default": True, "deviceinfo": {"ip": "192.0.2.50"}},
+        ]))
+        self.assert_refused("unknown_device")
+        self.assertEqual([call.args[0] for call in self.run_cli.call_args_list], [self.list_args])
+
+    def test_two_aliases_matching_the_same_literal_peer_ip_are_refused(self):
+        self.set_listing(json.dumps([
+            {"name": "living-room", "deviceinfo": {"ip": self.peer}},
+            {"name": "second-alias", "deviceinfo": {"ip": self.peer}},
+        ]))
+        self.assert_refused("ambiguous_device")
+        self.assertEqual([call.args[0] for call in self.run_cli.call_args_list], [self.list_args])
+
+    def test_configured_alias_for_another_device_is_refused(self):
+        self.set_listing(json.dumps([
+            {"name": "living-room", "deviceinfo": {"ip": self.peer}},
+            {"name": "other-tv", "deviceinfo": {"ip": "192.0.2.50"}},
+        ]))
+        self.assert_refused("device_mismatch", {"webosDevice": "other-tv"})
+        self.assertEqual([call.args[0] for call in self.run_cli.call_args_list], [self.list_args])
+
     def test_list_errors_do_not_disclose_cli_output(self):
         for error in (
             subprocess.CompletedProcess(self.list_args, 1, "fixture-passphrase", "fixture-passphrase"),
