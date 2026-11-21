@@ -2,7 +2,10 @@ import json, os, sys, tempfile, threading, unittest, urllib.error, urllib.reques
 from unittest import mock
 from http.server import HTTPServer
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "omarchy-link", "lib"))
 from omarchy_tv import webos
+from omarchy_link import assistant, office as link_office
+from omarchy_link.assistant.providers import openai_api
 
 
 class WebOSBridgeTest(unittest.TestCase):
@@ -304,6 +307,51 @@ class AiAgentsBridgeTest(unittest.TestCase):
         self.assertEqual(self.asst.asked, [("ciao", "hermes-cli", "it-IT")])
         self.assertEqual(self.post("/v1/ai/ask", {"text": "x", "provider": "nope"}, tok)[0], 404)
         self.assertEqual(self.post("/v1/ai/ask", {"text": ""}, tok)[0], 400)
+
+
+class OfficeAssistantBridgeTest(unittest.TestCase):
+    post = GrokbotBridgeTest.post
+
+    def test_hire_refreshes_a_warm_registry_before_the_next_ask(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = webos.Path(td)
+            settings = root / "assistant.json"
+            settings.write_text(json.dumps({"autoDetect": False, "minIntervalSeconds": 0,
+                                            "providers": [{"id": "existing", "type": "openai_api"}]}))
+            with mock.patch.object(assistant, "ASSISTANT_FILE", settings), \
+                 mock.patch.object(link_office, "check_key"), \
+                 mock.patch.object(openai_api, "available", return_value={"model": "test-model"}), \
+                 mock.patch.object(openai_api, "ask", side_effect=["first reply", "new bot reply"]) as ask, \
+                 mock.patch.object(webos, "_assistant_obj", None), \
+                 mock.patch.object(webos, "_last_ask", 0.0), \
+                 mock.patch.object(webos, "TOKEN_FILE", root / "token"), \
+                 mock.patch.object(webos, "link_cfg", return_value={}), \
+                 mock.patch.object(webos, "build_office_payload", side_effect=lambda: {"bots": link_office.bots()}), \
+                 HTTPServer(("127.0.0.1", 0), webos.WebOSHandler) as srv:
+                self.base = f"http://127.0.0.1:{srv.server_port}"
+                threading.Thread(target=srv.serve_forever, daemon=True).start()
+                try:
+                    token = webos.bridge_token()
+                    status, reply = self.post("/v1/ai/ask", {"text": "first", "provider": "existing"}, token)
+                    self.assertEqual((status, reply["text"]), (200, "first reply"))
+                    asst = webos._assistant()[1]
+                    self.assertEqual([p["id"] for p in asst.providers()], ["existing"])
+
+                    status, hire = self.post("/v1/office/hire", {"name": "Scout", "provider": "chatgpt"}, token)
+                    self.assertEqual(status, 200)
+                    bot_id = hire["bot"]["assistant"]
+                    status, followup = self.post("/v1/ai/ask", {"text": "second", "provider": bot_id,
+                                                                  "session": reply["session"]}, token)
+                    self.assertEqual((status, followup.get("provider"), followup.get("text")),
+                                     (200, bot_id, "new bot reply"))
+                    self.assertEqual(followup["session"], reply["session"])
+                    self.assertIs(webos._assistant()[1], asst)
+                    self.assertEqual(ask.call_args.args[1].history, [
+                        {"role": "user", "content": "first"},
+                        {"role": "assistant", "content": "first reply"},
+                    ])
+                finally:
+                    srv.shutdown()
 
 
 class LiveThemePathTest(unittest.TestCase):

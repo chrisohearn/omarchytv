@@ -512,6 +512,11 @@ class WebOSHandler(BaseHTTPRequestHandler):
         except (OSError, ValueError) as e:
             self._send_json({"ok": False, "error": "pc_error", "message": str(e)[:200]}, 500)
             return
+        with _assistant_lock:
+            if _assistant_obj is not None:
+                invalidate = getattr(_assistant_obj[1], "invalidate_providers", None)
+                if invalidate is not None:  # omarchy-link may be installed separately
+                    invalidate()
         self._send_json({"ok": True, "bot": bot, "office": build_office_payload()})
 
     def _ai(self, path: str, body: dict) -> None:
