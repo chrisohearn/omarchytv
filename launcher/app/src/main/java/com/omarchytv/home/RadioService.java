@@ -91,7 +91,7 @@ public class RadioService extends Service {
                 default: break;
             }
         }
-        if (p == null || p.current() == null) {
+        if (p == null || !p.hasPlayer()) {
             running = false;
             stopSelf();
         }
