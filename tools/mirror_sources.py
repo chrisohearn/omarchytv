@@ -37,19 +37,19 @@ def sources(cfg):
     return result
 
 
-def choose_source(client, configured, cancelled):
+def choose_source(client, configured):
     """Only an explicit answer to this request can select a recorder."""
     result = client.request("POST", "/v1/ask", {
         "question": "Which desktop would you like to mirror?",
         "choices": [x["label"] for x in configured] + ["Cancel"],
         "from": "PC screen", "timeout": 60,
     })
-    while result.get("state") == "pending" and not cancelled.is_set():
+    while result.get("state") == "pending":
         ident = result.get("id", "")
         if not isinstance(ident, str) or not re.fullmatch(r"[0-9a-f]{16}", ident):
             raise ValueError("invalid TV question id")
         result = client.request("GET", f"/v1/ask/{ident}?wait=25", timeout=35)
-    if cancelled.is_set() or result.get("state") != "answered":
+    if result.get("state") != "answered":
         return None
     return next((x for x in configured if x["label"] == result.get("answer")), None)
 
@@ -58,42 +58,33 @@ class MirrorSelector:
     def __init__(self, session):
         self.session = session
         self.lock = threading.Lock()
-        self.cancelled = threading.Event()
         self.pending = False
 
     def handle(self, action):
-        if action == "stop":
-            with self.lock:
-                self.cancelled.set()
-                proc = getattr(self.session, "_mirror", None)
-                if proc and proc.poll() is None:
-                    proc.terminate()
-            return
         if action != "start" or self.session.cfg.get("screenMirrorFromTv") != "allow":
             return
         with self.lock:
-            proc = getattr(self.session, "_mirror", None)
-            if self.pending or (proc and proc.poll() is None and not self.cancelled.is_set()):
+            if self.pending:
                 return
             configured = sources(self.session.cfg)
             if not configured:
                 return
+            previous = getattr(self.session, "_mirror", None)
             self.pending = True
-            self.cancelled = threading.Event()
-            threading.Thread(target=self._choose, args=(configured, self.cancelled, proc), daemon=True).start()
+            threading.Thread(target=self._choose, args=(configured, previous), daemon=True).start()
 
-    def _choose(self, configured, cancelled, previous=None):
+    def _choose(self, configured, previous):
         try:
+            selected = choose_source(self.session._client(), configured)
+            if selected is None:
+                return
+            # Back ends the old stream by cast ID. Give it time to release a fixed cast port.
             if previous and previous.poll() is None:
                 previous.wait(timeout=6)
-            if cancelled.is_set():
-                return
-            selected = choose_source(self.session._client(), configured, cancelled)
             with self.lock:
-                if selected and not cancelled.is_set():
-                    self.session._mirror = subprocess.Popen(
-                        [sys.executable, str(Path(__file__).resolve()), selected["id"]],
-                        stdin=subprocess.DEVNULL, start_new_session=True)
+                self.session._mirror = subprocess.Popen(
+                    [sys.executable, str(Path(__file__).resolve()), selected["id"]],
+                    stdin=subprocess.DEVNULL, start_new_session=True)
         except Exception as exc:
             self.session.log(f"Desktop selection failed: {exc}")
         finally:
@@ -120,8 +111,7 @@ def stream(source_id):
         recorder.pop("screenCommand", None)
     item = cast.screen_item(recorder)
     item["title"] = selected["label"] + " screen"
-    # Let via_link's finally close the private listener and recorder on Back,
-    # service shutdown, or an explicit stop from the session adapter.
+    # Let via_link's finally close the private listener and recorder on service shutdown.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     deadline = time.monotonic() + 6
     while True:

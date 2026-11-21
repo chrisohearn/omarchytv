@@ -321,12 +321,12 @@ public final class OmarchyLink implements LinkServer.Host {
         bg.execute(r.server::agentSnapshot);
     }
 
-    static void screenMirror(boolean start) {
+    static void requestScreenMirror() {
         OmarchyLink r = runtime;
         if (r == null || !r.live()) return;
         bg.execute(() -> {
             try {
-                r.server.screenMirror(start);
+                r.server.requestScreenMirror();
             } catch (Exception ignored) {
             }
         });

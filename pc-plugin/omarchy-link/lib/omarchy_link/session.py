@@ -199,7 +199,9 @@ class Session:
         elif kind == "tv_power":
             power.tv_power(data.get("state"), self.cfg, self.log)
         elif kind == "screen_mirror":
-            self.handle_screen_mirror(str(data.get("action", "")))
+            # Legacy stops carry no cast ID. The streamer handles its own terminal cast_state.
+            if data.get("action") == "start":
+                self.handle_screen_mirror("start")
         elif kind == "unpaired":
             self.pairing.forget()
             self.client = None
@@ -490,23 +492,18 @@ class Session:
     # ------------------------------------------------------------ "Schermo PC" (TV asks to mirror this screen)
     def handle_screen_mirror(self, action: str) -> None:
         """TV top bar monitor icon. start: the PC asks first (desktop notification, click to confirm) unless
-        config "screenMirrorFromTv" is "allow"; "off" refuses. Then it runs the existing experimental
-        `omarchy-link cast --screen`. stop: ends that process and stops playback on the TV."""
-        exe = os.environ.get("OMARCHY_LINK_BIN", sys.argv[0])
+        config "screenMirrorFromTv" is "allow"; "off" refuses. The existing screen caster owns
+        its recorder and closes it when it receives the terminal state for its cast ID."""
+        if action != "start":
+            return
         mode = self.cfg.get("screenMirrorFromTv", "confirm")
         proc = getattr(self, "_mirror", None)
-        if action == "stop":
-            if proc and proc.poll() is None:
-                proc.terminate()
-            self._mirror = None
-            subprocess.Popen([exe, "cast", "--stop", "--via", "link"], stdin=subprocess.DEVNULL,
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-            return
-        if action != "start" or mode == "off":
+        if mode == "off":
             self.log(f"TV screen mirror request {action!r} ignored (screenMirrorFromTv={mode})")
             return
         if proc and proc.poll() is None:
             return
+        exe = os.environ.get("OMARCHY_LINK_BIN", sys.argv[0])
         argv = [exe, "cast", "--screen", "--via", "link", "--notify"]
         if mode != "allow":
             if shutil.which("omarchy-notification-send"):

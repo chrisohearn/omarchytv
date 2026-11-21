@@ -2516,12 +2516,12 @@ public final class LinkServer {
         }
     }
 
-    /** A "pc" shortcut was pressed: tell the PCs (they run only commands from their own config). */
-    /** v2.9 top bar "Schermo PC": ask the PC to start/stop its experimental screen cast (PC confirms). */
-    public void screenMirror(boolean start) throws JSONException {
-        broadcast("screen_mirror", new JSONObject().put("action", start ? "start" : "stop"));
+    /** Ask the PC to start mirroring. The streamer ends playback on its own cast_state event. */
+    public void requestScreenMirror() throws JSONException {
+        broadcast("screen_mirror", new JSONObject().put("action", "start"));
     }
 
+    /** A "pc" shortcut was pressed: tell the PCs (they run only commands from their own config). */
     public void shortcut(String command) throws JSONException {
         broadcast("shortcut", new JSONObject().put("command", command));
     }

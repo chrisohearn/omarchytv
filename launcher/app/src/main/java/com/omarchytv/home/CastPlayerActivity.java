@@ -687,7 +687,6 @@ public final class CastPlayerActivity extends Activity implements CastRouter.Sur
     @Override
     protected void onDestroy() {
         if (!done && !replaced) report("stopped", false);
-        if (live && !replaced) OmarchyLink.screenMirror(false);   // v2.9: Back ends "Schermo PC" on the PC too
         release();
         CastRouter.detach(this);
         super.onDestroy();
