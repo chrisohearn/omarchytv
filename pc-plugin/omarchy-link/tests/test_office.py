@@ -3,7 +3,9 @@ No real API call: Context.http_json is mocked everywhere."""
 import json
 import os
 import stat
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
 
 import helpers  # noqa: F401  (isolated HOME, no real keys)
@@ -92,6 +94,78 @@ class OfficeHire(unittest.TestCase):
         with self.assertRaises(office.HireError) as c:
             office.hire("trimmer", "chatgpt", path=self.path)
         self.assertEqual(c.exception.code, "exists")
+
+    def test_sixteenth_hire_survives_the_cap_and_seventeenth_is_refused(self):
+        entries = [{"type": "openai_api", "id": f"api-{i}"} for i in range(15)]
+        placeholder = {"type": "claude_code", "id": "placeholder", "enabled": False}
+        config.write_json_private(self.path, {"providers": [*entries, placeholder]})
+        initial = assistant.configured(assistant.load_settings(self.path))
+        self.assertEqual([p["id"] for p in initial if p.get("auto")], ["claude-code"])
+
+        bot = office.hire("Last Slot", " GPT ", path=self.path)
+        listing = assistant.Assistant(self.path).listing()
+        self.assertEqual([p["id"] for p in listing["providers"]], [p["id"] for p in entries] + [bot["assistant"]])
+        self.assertEqual(bot["assistant"], "office-last-slot")
+        self.assertEqual(assistant.load_settings(self.path)["providers"][:-1], [*entries, placeholder])
+
+        saved = self.path.read_bytes()
+        with mock.patch.object(config, "write_json_private") as write:
+            with self.assertRaises(office.HireError) as c:
+                office.hire("Over Limit", "claude", path=self.path)
+            write.assert_not_called()
+        self.assertEqual(c.exception.code, "full")
+        self.assertIn("Assistant registry", str(c.exception))
+        self.assertEqual(self.path.read_bytes(), saved)
+        self.assertEqual(len(self.calls), 1)
+
+    def test_office_limit_still_counts_disabled_bots(self):
+        entries = [{"type": "openai_api", "id": f"office-{i}", "office": {}, "enabled": False}
+                   for i in range(11)]
+        config.write_json_private(self.path, {"providers": entries})
+        office.hire("Twelfth", "chatgpt", path=self.path)
+        saved = self.path.read_bytes()
+        with self.assertRaises(office.HireError) as c:
+            office.hire("Thirteenth", "chatgpt", path=self.path)
+        self.assertEqual(c.exception.code, "full")
+        self.assertIn("12 hired bots", str(c.exception))
+        self.assertEqual(self.path.read_bytes(), saved)
+        self.assertEqual(len(self.calls), 1)
+
+    def test_hire_rejects_id_collisions_with_existing_configs(self):
+        for entry in ({"type": "openai_api", "id": "office-night-watch", "enabled": False},
+                      {"type": "office_night_watch"}):
+            with self.subTest(entry=entry):
+                config.write_json_private(self.path, {"providers": [entry]})
+                saved = self.path.read_bytes()
+                with self.assertRaises(office.HireError) as c:
+                    office.hire(" <Night>   Watch! ", "chatgpt", path=self.path)
+                self.assertEqual(c.exception.code, "exists")
+                self.assertEqual(self.path.read_bytes(), saved)
+        self.assertEqual(self.calls, [])
+
+    def test_concurrent_hires_keep_each_success_and_respect_capacity(self):
+        for count, expected in ((14, ["hired", "hired"]), (15, ["full", "hired"])):
+            with self.subTest(count=count):
+                entries = [{"type": "openai_api", "id": f"api-{i}"} for i in range(count)]
+                config.write_json_private(self.path, {"providers": entries})
+                self.calls.clear()
+                start = threading.Barrier(2, timeout=5)
+
+                def hire(name):
+                    start.wait()
+                    try:
+                        return "hired", office.hire(name, "chatgpt", path=self.path)["assistant"]
+                    except office.HireError as e:
+                        return e.code, None
+
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    outcomes = list(pool.map(hire, ("First", "Second")))
+                self.assertEqual(sorted(status for status, _ in outcomes), expected)
+                saved = assistant.load_settings(self.path)["providers"]
+                self.assertEqual(saved[:count], entries)
+                self.assertEqual(len(saved), 16)
+                self.assertCountEqual([p["id"] for p in saved[count:]], [pid for status, pid in outcomes if status == "hired"])
+                self.assertEqual(len(self.calls), 16 - count)
 
     def test_hired_bot_is_an_assistant_provider_with_its_role_as_system_prompt(self):
         office.hire("Trimmer", "claude", "Cuts token use", path=self.path)

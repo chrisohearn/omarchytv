@@ -357,18 +357,20 @@ class AiAgentsBridgeTest(unittest.TestCase):
 class OfficeAssistantBridgeTest(unittest.TestCase):
     post = GrokbotBridgeTest.post
 
-    def test_hire_refreshes_a_warm_registry_before_the_next_ask(self):
+    def test_last_slot_hire_refreshes_the_registry_and_the_next_hire_is_refused(self):
         with tempfile.TemporaryDirectory() as td:
             root = webos.Path(td)
             settings = root / "assistant.json"
+            ids = [f"existing-{i}" for i in range(15)]
             settings.write_text(json.dumps({"autoDetect": False, "minIntervalSeconds": 0,
-                                            "providers": [{"id": "existing", "type": "openai_api"}]}))
+                                            "providers": [{"id": pid, "type": "openai_api"} for pid in ids]}))
             with mock.patch.object(assistant, "ASSISTANT_FILE", settings), \
-                 mock.patch.object(link_office, "check_key"), \
+                 mock.patch.object(link_office, "check_key") as check_key, \
                  mock.patch.object(openai_api, "available", return_value={"model": "test-model"}), \
                  mock.patch.object(openai_api, "ask", side_effect=["first reply", "new bot reply"]) as ask, \
                  mock.patch.object(webos, "_assistant_obj", None), \
                  mock.patch.object(webos, "_last_ask", 0.0), \
+                 mock.patch.object(webos, "ASK_GAP_S", 0), \
                  mock.patch.object(webos, "TOKEN_FILE", root / "token"), \
                  mock.patch.object(webos, "link_cfg", return_value={}), \
                  mock.patch.object(webos, "build_office_payload", side_effect=lambda: {"bots": link_office.bots()}), \
@@ -377,10 +379,10 @@ class OfficeAssistantBridgeTest(unittest.TestCase):
                 threading.Thread(target=srv.serve_forever, daemon=True).start()
                 try:
                     token = webos.bridge_token()
-                    status, reply = self.post("/v1/ai/ask", {"text": "first", "provider": "existing"}, token)
+                    status, reply = self.post("/v1/ai/ask", {"text": "first", "provider": ids[0]}, token)
                     self.assertEqual((status, reply["text"]), (200, "first reply"))
                     asst = webos._assistant()[1]
-                    self.assertEqual([p["id"] for p in asst.providers()], ["existing"])
+                    self.assertEqual([p["id"] for p in asst.providers()], ids)
 
                     status, hire = self.post("/v1/office/hire", {"name": "Scout", "provider": "chatgpt"}, token)
                     self.assertEqual(status, 200)
@@ -395,6 +397,13 @@ class OfficeAssistantBridgeTest(unittest.TestCase):
                         {"role": "user", "content": "first"},
                         {"role": "assistant", "content": "first reply"},
                     ])
+                    self.assertEqual([p["id"] for p in asst.providers()], [*ids, bot_id])
+                    saved = settings.read_bytes()
+                    status, refused = self.post("/v1/office/hire", {"name": "Over Limit", "provider": "chatgpt"}, token)
+                    self.assertEqual((status, refused.get("ok"), refused.get("error")), (400, False, "full"))
+                    self.assertNotIn("bot", refused)
+                    self.assertEqual(settings.read_bytes(), saved)
+                    check_key.assert_called_once()
                 finally:
                     srv.shutdown()
 

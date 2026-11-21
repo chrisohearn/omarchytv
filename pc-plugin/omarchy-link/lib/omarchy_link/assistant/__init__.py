@@ -40,6 +40,7 @@ ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,31}$")
 CONV_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 MAX_TEXT = 2000
 MAX_ANSWER = 16 * 1024          # bytes of answer text per question (TV limit)
+MAX_PROVIDERS = 16
 MIN_INTERVAL = 3.0              # seconds between questions (TV sends at most 1 per 3 s)
 AUTO_ORDER = ["claude_code", "codex", "grok_cli", "grok_bot", "hermes_cli", "gemini_cli", "ollama"]
 
@@ -149,12 +150,19 @@ def load_settings(path: Path | None = None) -> dict:
     return s if isinstance(s, dict) else {}
 
 
+def explicit_providers(settings: dict) -> list[dict]:
+    return [p for p in settings.get("providers", []) if isinstance(p, dict) and p.get("enabled") is not False]
+
+
+def configured_id(entry: dict):
+    kind = entry.get("type", "")
+    return entry.get("id", kind.replace("_", "-") if isinstance(kind, str) else "")
+
+
 def configured(settings: dict) -> list[dict]:
     """Provider configs in priority order: explicit entries (CLI types first, then
     API), then auto-detected signed-in CLIs not already listed."""
-    entries = [dict(p) for p in settings.get("providers", []) if isinstance(p, dict) and p.get("enabled") is not False]
-    for p in entries:
-        p.setdefault("id", p.get("type", "").replace("_", "-"))
+    entries = [dict(p, id=configured_id(p)) for p in explicit_providers(settings)]
     if settings.get("autoDetect", True):
         have = {p.get("type") for p in entries}
         for t in AUTO_ORDER:
@@ -166,7 +174,7 @@ def configured(settings: dict) -> list[dict]:
             return {"cli": 0, "local": 1, "api": 2}.get(load_type(p.get("type", "")).KIND, 3)
         except ProviderError:
             return 3
-    return sorted(entries[:16], key=rank)
+    return sorted(entries[:MAX_PROVIDERS], key=rank)
 
 
 def available(settings: dict) -> list[dict]:
