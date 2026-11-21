@@ -52,6 +52,7 @@ import os
 import platform
 import shutil
 import socket
+import stat
 import subprocess
 import time
 import hmac
@@ -61,9 +62,6 @@ from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from pathlib import Path
 
 from . import VERSION, themes, ui
-
-AI_CFG = Path.home() / ".config/omarchy-link/ai.json"
-LINK_CFG = Path.home() / ".config/omarchy-link/config.json"
 
 _last_cpu: tuple[int, int] | None = None
 
@@ -137,7 +135,7 @@ def _living_collector():
         return None
     with _living_lock:
         if _living_obj is None:
-            _living_obj = mod.Living(link_cfg, lambda m: ui.say(m))
+            _living_obj = mod.Living(_living_config, lambda m: ui.say(m))
         return _living_obj
 
 
@@ -171,31 +169,67 @@ def _assistant():
         return _assistant_obj
 
 
+class ConfigUnavailable(ValueError):
+    pass
+
+
+def _invalid_constant(value: str):
+    raise ValueError(f"invalid JSON value: {value}")
+
+
+def _standalone_link_dir() -> Path:
+    return Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config")) / "omarchy-link"
+
+
 def link_cfg() -> dict:
+    """Read the selected Link settings, including with older Link installs or without Link."""
+    mod = _link_mod("config")
     try:
-        d = json.loads(LINK_CFG.read_text(encoding="utf-8"))
-        return d if isinstance(d, dict) else {}
-    except (OSError, ValueError):
-        return {}
+        if mod and hasattr(mod, "read_config"):
+            return mod.read_config()
+        # Older Link loaders may treat a non-object as defaults. Use their path, with strict parsing.
+        path = Path(getattr(mod, "CONFIG_FILE", None) or _standalone_link_dir() / "config.json")
+        try:
+            if not stat.S_ISREG(path.stat().st_mode):
+                raise ValueError("expected a regular file")
+            user = json.loads(path.read_text(encoding="utf-8"), parse_constant=_invalid_constant)
+        except FileNotFoundError:
+            if path.is_symlink():
+                raise
+            return {}
+        if not isinstance(user, dict):
+            raise ValueError("expected a JSON object")
+        return user
+    except (OSError, ValueError, RecursionError) as e:
+        raise ConfigUnavailable from e
 
 
-def build_office_payload() -> dict:
+def _living_config() -> dict:
+    try:
+        return link_cfg()
+    except ConfigUnavailable:
+        # Older collectors also honor this setting, and their threads can keep checking for recovery.
+        return {"livingToTv": False}
+
+
+def build_office_payload(cfg: dict | None = None) -> dict:
     from omarchy_tv import office   # noqa: PLC0415
     roster = None
     if office.load() is None:
+        if cfg is None:
+            cfg = link_cfg()
         try:
-            g = build_grokbot_payload()
+            g = build_grokbot_payload(cfg)
             roster = g.get("roster") if g.get("available") else None
         except Exception:
             roster = None
     return office.payload(roster)
 
 
-def build_grokbot_payload() -> dict:
+def build_grokbot_payload(cfg: dict) -> dict:
     g = _grokbot()
     if not g:
         return {"available": False, "reason": "omarchy-link is not installed"}
-    cfg = link_cfg()
     cur = g.current(cfg)
     if not cur:
         return {"available": False, "reason": "Agent Desktop (Grok Bot Desktop Companion) is not installed on this PC"}
@@ -288,9 +322,11 @@ def now_playing() -> dict | None:
 
 
 def read_ai_credits() -> dict:
+    mod = _link_mod("config")
+    path = Path(getattr(mod, "AI_FILE", None) or _standalone_link_dir() / "ai.json")
     try:
-        if AI_CFG.is_file():
-            data = json.loads(AI_CFG.read_text())
+        if path.is_file():
+            data = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(data, dict):
                 return data
     except (OSError, ValueError):
@@ -373,6 +409,9 @@ class WebOSHandler(BaseHTTPRequestHandler):
         got = (self.headers.get("X-Omarchy-Token") or "").strip().upper()
         return bool(got) and hmac.compare_digest(got.encode(), bridge_token().upper().encode())
 
+    def _config_unavailable(self) -> None:
+        self._send_json({"error": "config_unavailable", "message": "Cannot read PC Link settings"}, 503)
+
     def do_POST(self):
         global _last_ask
         path = self.path.split("?", 1)[0]
@@ -397,28 +436,37 @@ class WebOSHandler(BaseHTTPRequestHandler):
         if not isinstance(body, dict):
             self._send_json({"error": "bad_request"}, 400)
             return
-        if path.startswith("/v1/ai/"):
-            self._ai(path, body)
-            return
-        if path == "/v1/theme/set":
-            self._theme_set(body)
-            return
-        if path == "/v1/office/hire":
-            self._office_hire(body)
-            return
-        if path == "/v1/update/tv":
-            self._update_tv(body)
-            return
-        if path == "/v1/power":
-            self._power(body)
-            return
-        if path == "/v1/living":
-            self._living(body)
-            return
         if path == "/v1/pulse":   # 2.15 Pulse on the TV: this PC's Pulse state, private parts removed
             ps = _link_mod("pulse_state")
             st = ps.read() if ps else None
             self._send_json(st if st else {"error": "pulse_off"}, 200 if st else 404)
+            return
+        try:
+            cfg = link_cfg()
+        except ConfigUnavailable:
+            if path == "/v1/power" and body.get("state") == "on":
+                # The power backend handles cancellation before consulting settings.
+                self._power(body, {})
+            else:
+                self._config_unavailable()
+            return
+        if path.startswith("/v1/ai/"):
+            self._ai(path, body, cfg)
+            return
+        if path == "/v1/theme/set":
+            self._theme_set(body, cfg)
+            return
+        if path == "/v1/office/hire":
+            self._office_hire(body, cfg)
+            return
+        if path == "/v1/update/tv":
+            self._update_tv(body, cfg)
+            return
+        if path == "/v1/power":
+            self._power(body, cfg)
+            return
+        if path == "/v1/living":
+            self._living(body, cfg)
             return
         g = _grokbot()
         if not g:
@@ -430,32 +478,30 @@ class WebOSHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "busy", "message": "one question every 3 seconds"}, 429)
                 return
             _last_ask = now
-        cfg = link_cfg()
         try:
             if path == "/v1/grokbot/sync":
                 res = g.sync_roster(cfg)
-                self._send_json({**res, **build_grokbot_payload()})
+                self._send_json({**res, **build_grokbot_payload(cfg)})
             else:
                 bot = body.get("bot")
                 self._send_json(g.ask(cfg, body.get("text"), str(bot) if bot else None))
         except g.GrokbotError as e:
             self._send_json({"error": e.code, "message": str(e)[:200]}, 400 if e.code in ("empty", "unknown_bot") else 502)
 
-    def _theme_set(self, body: dict) -> None:
+    def _theme_set(self, body: dict, cfg: dict) -> None:
         th = _link_theme()
         if not th:
             self._send_json({"error": "not_installed", "message": "omarchy-link is not installed"}, 503)
             return
-        if link_cfg().get("themeFromTv", True) is False:
+        if cfg.get("themeFromTv", True) is False:
             self._send_json({"error": "disabled", "message": "themeFromTv is off on the PC"}, 403)
             return
         res = th.set_theme(body.get("name"))
         code = {"ok": 200, "same": 200, "unknown": 404, "busy": 429}.get(res, 502)
         self._send_json({"result": res}, code)
 
-    def _update_tv(self, body: dict) -> None:
+    def _update_tv(self, body: dict, cfg: dict) -> None:
         from . import tvupdate   # noqa: PLC0415
-        cfg = link_cfg()
         if cfg.get("updateFromTv", True) is False:
             self._send_json({"error": "disabled", "message": "updateFromTv is off on the PC"}, 403)
             return
@@ -470,26 +516,26 @@ class WebOSHandler(BaseHTTPRequestHandler):
             bad = e.code in ("bad_platform", "bad_request", "changed")
             self._send_json({"error": e.code, "message": str(e)[:200]}, 400 if bad else 502)
 
-    def _living(self, body: dict) -> None:
+    def _living(self, body: dict, cfg: dict) -> None:
         lv = _living_collector()
         if not lv:
             self._send_json({"error": "not_installed", "message": "omarchy-link is not installed"}, 503)
             return
-        if link_cfg().get("livingToTv", True) is False:
+        if cfg.get("livingToTv", True) is False:
             self._send_json({"error": "disabled", "message": "livingToTv is off on the PC"}, 403)
             return
         lv.set_prefs(body)
         lv.touch()
         self._send_json(lv.payload())
 
-    def _power(self, body: dict) -> None:
+    def _power(self, body: dict, cfg: dict) -> None:
         pw = _link_mod("power")
         if not pw:
             self._send_json({"error": "not_installed", "message": "omarchy-link is not installed"}, 503)
             return
-        self._send_json({"result": pw.tv_power(body.get("state"), link_cfg(), lambda m: ui.say(m))})
+        self._send_json({"result": pw.tv_power(body.get("state"), cfg, lambda m: ui.say(m))})
 
-    def _office_hire(self, body: dict) -> None:
+    def _office_hire(self, body: dict, cfg: dict) -> None:
         """2.20 GrokBot Office: hire a Claude / ChatGPT bot on this PC (omarchy-link office). The key stays here and is
         checked with the provider first; the answer says what really happened."""
         global _last_ask
@@ -497,7 +543,7 @@ class WebOSHandler(BaseHTTPRequestHandler):
         if not lo:
             self._send_json({"error": "not_installed", "message": "omarchy-link is not installed on the PC"}, 503)
             return
-        if link_cfg().get("assistant", True) is False:
+        if cfg.get("assistant", True) is False:
             self._send_json({"error": "disabled", "message": "the assistant is off on the PC"}, 403)
             return
         with _ask_lock:
@@ -519,15 +565,15 @@ class WebOSHandler(BaseHTTPRequestHandler):
                 invalidate = getattr(_assistant_obj[1], "invalidate_providers", None)
                 if invalidate is not None:  # omarchy-link may be installed separately
                     invalidate()
-        self._send_json({"ok": True, "bot": bot, "office": build_office_payload()})
+        self._send_json({"ok": True, "bot": bot, "office": build_office_payload(cfg)})
 
-    def _ai(self, path: str, body: dict) -> None:
+    def _ai(self, path: str, body: dict, cfg: dict) -> None:
         a = _assistant()
         if not a:
             self._send_json({"error": "not_installed", "message": "omarchy-link is not installed"}, 503)
             return
         mod, asst = a
-        if link_cfg().get("assistant", True) is False:
+        if cfg.get("assistant", True) is False:
             self._send_json({"error": "disabled", "message": "the assistant is off on the PC"}, 403)
             return
         try:
@@ -554,11 +600,13 @@ class WebOSHandler(BaseHTTPRequestHandler):
         if path in ("/v1/status", "/status.json", "/"):
             self._send_json(build_status_payload())
             return
-        if path == "/v1/grokbot":
-            self._send_json(build_grokbot_payload())
-            return
-        if path == "/v1/office":   # 2.20 GrokBot Office: the pushed bots (omarchy-tv office push), else the Agent Desktop roster
-            self._send_json(build_office_payload())
+        if path in ("/v1/grokbot", "/v1/office"):
+            try:
+                data = build_grokbot_payload(link_cfg()) if path == "/v1/grokbot" else build_office_payload()
+            except ConfigUnavailable:
+                self._config_unavailable()
+            else:
+                self._send_json(data)
             return
         if path == "/v1/themes":
             self._send_json(build_themes_payload())
@@ -589,11 +637,10 @@ class WebOSHandler(BaseHTTPRequestHandler):
 
     # ---- Cinemarchy: the PC's media folders (read-only) ----
     def _media_enabled(self) -> bool:
-        cfg = _link_mod("config")
         try:
-            settings = cfg.load_config() if cfg else link_cfg()
-        except (OSError, ValueError):
-            self._send_json({"error": "config_unavailable", "message": "Cannot read PC media settings"}, 503)
+            settings = link_cfg()
+        except ConfigUnavailable:
+            self._config_unavailable()
             return False
         if settings.get("mediaFromTv", True) is False:
             self._send_json({"error": "disabled", "message": "mediaFromTv is off on the PC"}, 403)

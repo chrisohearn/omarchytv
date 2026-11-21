@@ -1,13 +1,15 @@
 """Living screensaver feed: notifications from D-Bus, GitHub events, X (notifications or API, with a budget)."""
 import signal
 import sys
+import tempfile
 import threading
 import time
 import unittest
+from pathlib import Path
 from unittest import mock
 
 import helpers  # noqa: F401  (hermetic env + sys.path)
-from omarchy_link import living, session
+from omarchy_link import config, living, omastorm, session
 
 BLOCK = '''method call time=1730563200.1 sender=:1.45 -> destination=org.freedesktop.Notifications serial=7 path=/org/freedesktop/Notifications; interface=org.freedesktop.Notifications; member=Notify
    string "Slack"
@@ -154,6 +156,56 @@ class GitHub(unittest.TestCase):
         with mock.patch.object(living, "_gh_json", return_value=[]) as g, mock.patch.object(living.shutil, "which", return_value=None):
             living.github_items({"githubUser": "bad/../user", "githubRepos": ["ok/repo", "../etc"]})
         self.assertEqual([c[0][0] for c in g.call_args_list], ["repos/ok/repo/events?per_page=20"])
+
+
+class CollectionSettings(unittest.TestCase):
+    def test_each_background_action_checks_settings_and_collection_recovers(self):
+        def bridge_settings():
+            try:
+                return config.read_config()
+            except ValueError:
+                return {"livingToTv": False}
+
+        lv = living.Living(bridge_settings)
+        with mock.patch.object(lv, "ensure"):
+            lv.set_prefs({"github": True, "radar": True, "x": "api"})
+            lv.touch()
+
+        def tick():
+            with mock.patch.object(lv.stop, "wait", side_effect=(False, True)):
+                lv._loop()
+
+        with tempfile.TemporaryDirectory() as temporary:
+            settings = Path(temporary) / "config.json"
+            settings.write_text('{"githubUser": "before"}', encoding="utf-8")
+
+            def invalidate(_cfg):
+                settings.write_text("[]", encoding="utf-8")
+                return []
+
+            with mock.patch.object(config, "CONFIG_FILE", settings), \
+                 mock.patch.object(living, "github_items", side_effect=invalidate) as github, \
+                 mock.patch.object(omastorm, "snapshot", return_value=None) as radar, \
+                 mock.patch.object(living, "x_mentions", return_value=([], "")) as x:
+                tick()
+                github.assert_called_once_with({"githubUser": "before"})
+                lv.last_gh = 0
+                tick()
+                github.assert_called_once()
+                radar.assert_not_called()
+                x.assert_not_called()
+
+                restored = '{"githubUser": "after", "xApi": false}'
+                settings.write_text(restored, encoding="utf-8")
+                github.side_effect = None
+                github.return_value = []
+                tick()
+                github.assert_called_with({"githubUser": "after", "xApi": False})
+                radar.assert_called_once_with({"githubUser": "after", "xApi": False})
+                x.assert_not_called()
+                settings.write_text('{"xApi": true, "xMonthlyUsd": 0.25}', encoding="utf-8")
+                tick()
+                x.assert_called_once_with({"xApi": True, "xMonthlyUsd": 0.25})
 
 
 class XApi(unittest.TestCase):
