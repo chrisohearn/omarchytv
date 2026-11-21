@@ -102,7 +102,8 @@ journalctl --user -u omarchy-link.service -f     # the same JSON lines the widge
 
 ## Configure (all optional)
 
-Files live in `~/.config/omarchy-link/`. See `examples/`.
+Files live in `$XDG_CONFIG_HOME/omarchy-link/` when `XDG_CONFIG_HOME` is nonempty,
+or in `~/.config/omarchy-link/` otherwise. See `examples/`.
 
 | File | What |
 |---|---|
@@ -110,6 +111,17 @@ Files live in `~/.config/omarchy-link/`. See `examples/`.
 | `widgets.json` | extra panes and shortcuts for the TV |
 | `ai.json` | AI credits: which bar widget to mirror (`omarchy-link ai setup`), manual entries, API fallbacks, auto-detection. See [docs/AI-CREDITS.md](docs/AI-CREDITS.md). |
 | `assistant.json` | voice assistant providers, default, memory, API fallbacks. See [docs/ASSISTANT.md](docs/ASSISTANT.md). |
+
+The LG/Samsung HTTP bridge uses that same `config.json`, including when run without
+Link installed. If the selected file is missing, the bridge uses defaults. With a
+custom config directory, settings in `~/.config/omarchy-link/` are ignored.
+If the selected file cannot be read or does not contain a valid JSON object,
+requests that depend on it return HTTP 503 (`config_unavailable`) and Living
+pauses new collection. Bridge status still works, and an authenticated TV
+power-on can still cancel a pending suspend.
+Restore read access or correct the selected file, keeping any explicit opt-outs
+you want. Retry the request after fixing it. The bridge reads settings again
+without a restart.
 
 For LG “Update via PC”, register the TV in the webOS CLI with a unique alias and its literal
 IP address. The bridge uses the address it observes on the authenticated request to select a

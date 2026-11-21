@@ -411,20 +411,26 @@ class Living:
             if notes:
                 self.notes.appendleft(n)
 
+    def _collection_config(self) -> dict | None:
+        if self.active() and not self.stop.is_set():
+            cfg = self.cfg_get()
+            if cfg.get("livingToTv", True) is not False:
+                return cfg
+        return None
+
     def _loop(self) -> None:
         while not self.stop.wait(2):
-            cfg = self.cfg_get()
-            if not self.wanted():
-                continue
             p = self.prefs
             now = time.time()
-            if p["github"] and now - self.last_gh > GH_EVERY_S and self.active():
+            if (p["github"] and now - self.last_gh > GH_EVERY_S
+                    and (cfg := self._collection_config()) is not None):
                 self.last_gh = now
                 try:
                     self.github = github_items(cfg)
                 except Exception as e:   # noqa: BLE001 - a network hiccup must not stop the feed
                     self.log(f"living: github: {e}")
-            if p["radar"] and self.active() and now - self.last_radar > RADAR_EVERY_S:
+            if (p["radar"] and now - self.last_radar > RADAR_EVERY_S
+                    and (cfg := self._collection_config()) is not None):
                 self.last_radar = now
                 from . import omastorm   # noqa: PLC0415
                 img = omastorm.snapshot(cfg)
@@ -434,14 +440,15 @@ class Living:
                                   "at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
             elif not p["radar"]:
                 self.radar = None
-            every = max(60, int(cfg.get("xPollMinutes", 3)) * 60)
-            if p["x"] == "api" and cfg.get("xApi", True) is not False and self.active() and now - self.last_x > every:
-                self.last_x = now
-                items, err = x_mentions(cfg)
-                self.x_error = err
-                with self.changed:
-                    for it in reversed(items):
-                        self.x.appendleft(it)
+            if p["x"] == "api" and (cfg := self._collection_config()) is not None and cfg.get("xApi", True) is not False:
+                every = max(60, int(cfg.get("xPollMinutes", 3)) * 60)
+                if now - self.last_x > every:
+                    self.last_x = now
+                    items, err = x_mentions(cfg)
+                    self.x_error = err
+                    with self.changed:
+                        for it in reversed(items):
+                            self.x.appendleft(it)
 
     def payload(self) -> dict:
         with self.changed:

@@ -103,6 +103,27 @@ def is_private_file(path: Path) -> bool:
     return st.st_uid == os.getuid() and not st.st_mode & (stat.S_IRWXG | stat.S_IRWXO)
 
 
+def _invalid_constant(value: str):
+    raise ValueError(f"invalid JSON value: {value}")
+
+
+def read_config() -> dict:
+    """Read the selected settings file. Only an absent file supplies empty overrides."""
+    try:
+        if not stat.S_ISREG(CONFIG_FILE.stat().st_mode):
+            raise ValueError("expected a regular file")
+        user = json.loads(CONFIG_FILE.read_text(encoding="utf-8"), parse_constant=_invalid_constant)
+        if not isinstance(user, dict):
+            raise ValueError("expected a JSON object")
+        return user
+    except FileNotFoundError as e:
+        if not CONFIG_FILE.is_symlink():
+            return {}
+        raise ValueError(f"cannot read {CONFIG_FILE}: {e}") from e
+    except (OSError, ValueError, RecursionError) as e:
+        raise ValueError(f"cannot read {CONFIG_FILE}: {e}") from e
+
+
 def load_config() -> dict:
     cfg = dict(DEFAULTS)
     user = read_json(CONFIG_FILE, {})

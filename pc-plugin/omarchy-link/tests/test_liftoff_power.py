@@ -86,7 +86,7 @@ class Power(unittest.TestCase):
             self.assertEqual(power.tv_power("on", {}), "cancelled")
             return {}
 
-        with mock.patch.object(power.config, "load_config", side_effect=read_config), \
+        with mock.patch.object(power.config, "read_config", side_effect=read_config), \
              mock.patch.object(power.threading, "Timer") as timer, \
              mock.patch.object(power, "_suspend") as suspend:
             self.assertEqual(power.tv_power("standby", {}), "scheduled")
@@ -102,6 +102,13 @@ class Power(unittest.TestCase):
             self.assertEqual(power.tv_power("standby", session.config.load_config()), "scheduled")
             session.config.save_config({"powerFromTv": False})
             timer.call_args.args[1](*timer.call_args.kwargs.get("args", ()))
+            self.assertFalse(power.pending())
+            suspend.assert_not_called()
+
+            session.config.save_config({"powerFromTv": True})
+            self.assertEqual(power.tv_power("standby", session.config.load_config()), "scheduled")
+            session.config.CONFIG_FILE.write_text("[]", encoding="utf-8")
+            timer.call_args.args[1]()
             self.assertFalse(power.pending())
             suspend.assert_not_called()
 

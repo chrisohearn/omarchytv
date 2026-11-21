@@ -110,7 +110,7 @@ def tv_power(state: object, cfg: dict, log=lambda m: None) -> str:
             if _timer is not timer:
                 return
         try:
-            current = config.load_config()
+            current = config.read_config()
         except (OSError, ValueError):
             current = None
         with _lock:
