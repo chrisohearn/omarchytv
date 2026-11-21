@@ -1,5 +1,7 @@
 """Living screensaver feed: notifications from D-Bus, GitHub events, X (notifications or API, with a budget)."""
-import json
+import signal
+import sys
+import threading
 import time
 import unittest
 from unittest import mock
@@ -20,6 +22,82 @@ seconda <b>riga</b>"
 
 
 class Notes(unittest.TestCase):
+    def test_monitor_reaps_at_lease_expiry_without_polling(self):
+        lv = living.Living()
+        popen = living.subprocess.Popen
+        children = []
+        github_started = threading.Event()
+        github_release = threading.Event()
+        block = "\n".join(BLOCK)
+
+        def launch(_args, **kwargs):
+            script = (f"import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                      f"print({block!r}, flush=True); time.sleep(30)")
+            proc = popen([sys.executable, "-c", script], **kwargs)
+            children.append(proc)
+            return proc
+
+        def github_items(_cfg):
+            github_started.set()
+            github_release.wait(10)
+            return []
+
+        def wait_for(predicate):
+            deadline = time.monotonic() + 3
+            while not predicate() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            return predicate()
+
+        prefs = {"notes": True, "x": "notify"}
+        late = {"app": "Chromium", "title": "X", "body": "Synthetic late notification from x.com"}
+        with mock.patch.object(living.shutil, "which", return_value="synthetic-monitor"), \
+             mock.patch.object(living.subprocess, "Popen", side_effect=launch), \
+             mock.patch.object(living, "github_items", side_effect=github_items):
+            try:
+                lv.set_prefs(prefs)
+                self.assertIsNone(lv.notes_thread)
+                lv.touch()
+                self.assertTrue(wait_for(lambda: lv.notes))
+                old = children[0]
+                self.assertTrue(github_started.wait(3))
+                lv._on_note(old, late)
+                self.assertEqual(len(lv.payload()["x"]), 1)
+
+                lv.touch(0.25)
+                lv.touch()
+                time.sleep(0.3)
+                self.assertEqual(children, [old])
+                self.assertIsNone(old.returncode)
+
+                lv.touch(0.1)
+                self.assertTrue(wait_for(lambda: old.returncode is not None),
+                                "the monitor must be reaped without a TV poll")
+                self.assertEqual(old.returncode, -signal.SIGKILL)
+                self.assertTrue(wait_for(lambda: lv.notes_thread is None))
+                lv._on_note(old, late)
+                self.assertEqual((list(lv.notes), list(lv.x)), ([], []))
+
+                lv.set_prefs(prefs)
+                lv.touch()
+                self.assertTrue(wait_for(lambda: lv.notes))
+                self.assertEqual(len(children), 2)
+                lv._on_note(old, late)
+                pub = lv.payload()
+                self.assertEqual(([n["title"] for n in pub["notes"]], pub["x"]), (["Ola"], []))
+                lv.set_active(False)
+                self.assertIsNotNone(children[1].returncode)
+                self.assertEqual(lv.payload()["notes"], [])
+            finally:
+                github_release.set()
+                lv.stop.set()
+                lv.ensure()
+                for thread in (lv.thread, lv.notes_thread):
+                    if thread is not None:
+                        thread.join(timeout=3)
+                for proc in children:
+                    proc.kill()
+                    proc.wait(timeout=3)
+
     def test_parse_notify_multiline_and_markup(self):
         self.assertEqual(living.parse_notify(BLOCK), {"app": "Slack", "title": "Ola", "body": "ci sei? seconda riga"})
         self.assertIsNone(living.parse_notify(BLOCK[:3]))
@@ -31,16 +109,29 @@ class Notes(unittest.TestCase):
         self.assertIsNone(living.x_from_note({"app": "Slack", "title": "X", "body": "x.com link"}))
 
     def test_collector_keeps_what_the_tv_asked(self):
-        lv = living.Living()
-        lv.prefs = living.parse_prefs({"notes": False, "x": "notify", "github": False})
-        lv._on_note({"app": "Slack", "title": "Ola", "body": "ciao"})
-        lv._on_note({"app": "Chromium", "title": "X", "body": "@ana replied on x.com"})
-        p = lv.payload()
-        self.assertEqual((p["notes"], len(p["x"]), p["xMode"]), ([], 1, "notify"))
-        lv.prefs = living.parse_prefs({"notes": True, "x": "off"})
-        lv._on_note({"app": "Slack", "title": "Ola", "body": "ciao"})
-        p = lv.payload()
-        self.assertEqual((p["notes"][0]["title"], p["x"]), ("Ola", []))
+        cfg = {}
+        lv = living.Living(lambda: cfg)
+        note = {"app": "Slack", "title": "Ola", "body": "ciao"}
+        with mock.patch.object(lv, "ensure"):
+            lv.set_prefs({"notes": False, "x": "notify", "github": False})
+            lv.touch()
+            proc = lv.monitor.proc = mock.Mock()
+            lv._on_note(proc, note)
+            lv._on_note(proc, {"app": "Chromium", "title": "X", "body": "@ana replied on x.com"})
+            p = lv.payload()
+            self.assertEqual((p["notes"], len(p["x"]), p["xMode"]), ([], 1, "notify"))
+            lv.set_prefs({"notes": True, "x": "off"})
+            lv._on_note(proc, note)
+            p = lv.payload()
+            self.assertEqual((p["notes"][0]["title"], p["x"]), ("Ola", []))
+
+            cfg["livingToTv"] = False
+            lv._on_note(proc, note)
+            self.assertEqual(len(lv.notes), 1)
+            self.assertEqual(lv.payload()["notes"], [])
+            lv.set_prefs({"notes": False, "github": False})
+            proc.wait.assert_called_once()
+            self.assertEqual(list(lv.notes), [])
 
     def test_prefs(self):
         self.assertEqual(living.parse_prefs(None), {"notes": False, "github": True, "x": "off", "radar": False})
@@ -108,7 +199,9 @@ class SessionLiving(unittest.TestCase):
         s.stream = mock.Mock()
         with mock.patch.object(living.Living, "ensure"):
             s.handle_event({"type": "living_prefs", "data": {"notes": True, "github": False}})
-            s.living._on_note({"app": "Slack", "title": "Ola", "body": "ciao"})
+            s.living.set_active(True)
+            proc = s.living.monitor.proc = mock.Mock()
+            s.living._on_note(proc, {"app": "Slack", "title": "Ola", "body": "ciao"})
             s.push_living()
             s.push_living()
         self.assertEqual(s.stream.send.call_count, 1)

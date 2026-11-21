@@ -121,25 +121,32 @@ class NoteMonitor:
         return True
 
     def stop(self) -> None:
-        if self.proc and self.proc.poll() is None:
-            self.proc.terminate()
-        self.proc = None
+        proc, self.proc = self.proc, None
+        if proc is None:
+            return
+        proc.terminate()
+        try:
+            proc.wait(timeout=0.5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
 
     def _read(self, proc) -> None:
         block: list[str] = []
         done = True
-        for line in proc.stdout:
-            line = line.rstrip("\n")
-            if line.startswith(("method call", "signal", "method return", "error")):
-                block, done = [line], "member=Notify" not in line
-                continue
-            if done:
-                continue
-            block.append(line)
-            n = parse_notify(block)   # emit as soon as the 5 fields are complete, not at the next message
-            if n:
-                done = True
-                self.on_note(n)
+        with proc.stdout as stdout:
+            for line in stdout:
+                line = line.rstrip("\n")
+                if line.startswith(("method call", "signal", "method return", "error")):
+                    block, done = [line], "member=Notify" not in line
+                    continue
+                if done:
+                    continue
+                block.append(line)
+                n = parse_notify(block)   # emit as soon as the 5 fields are complete, not at the next message
+                if n:
+                    done = True
+                    self.on_note(proc, n)
 
 
 # ------------------------------------------------------------------ GitHub
@@ -309,65 +316,107 @@ class Living:
         self.active_until = 0.0
         self.last_gh = 0.0
         self.last_x = 0.0
-        self.lock = threading.Lock()
+        self.changed = threading.Condition()
         self.monitor = NoteMonitor(self._on_note)
         self.stop = threading.Event()
         self.thread = None
+        self.notes_thread = None
 
     def set_prefs(self, p: object) -> None:
         new = parse_prefs(p)
-        if new != self.prefs:
-            self.prefs = new
-            self.last_gh = 0.0
-            if new["x"] != "api":
-                self.x_error = ""
+        with self.changed:
+            if new != self.prefs:
+                self.prefs = new
+                self.last_gh = 0.0
+                if new["x"] != "api":
+                    self.x_error = ""
+                self._discard_notes(*self._note_prefs())
         self.ensure()
 
     def touch(self, seconds: float = 20) -> None:
         """The TV screensaver is on (bridge: every poll; Android: from its status)."""
-        self.active_until = time.time() + seconds
-        self.ensure()
+        self._set_lease(seconds)
 
     def set_active(self, on: bool) -> None:
-        self.active_until = time.time() + 3600 * 24 if on else 0.0
+        self._set_lease(3600 * 24 if on else 0)
+
+    def _set_lease(self, seconds: float) -> None:
+        with self.changed:
+            now = time.monotonic()
+            if seconds <= 0 or now >= self.active_until:
+                self._discard_notes(False, False)
+            self.active_until = now + seconds
         self.ensure()
 
     def active(self) -> bool:
-        return time.time() < self.active_until
+        return time.monotonic() < self.active_until
 
     def wanted(self) -> bool:
         p = self.prefs
         return self.cfg_get().get("livingToTv", True) is not False and (p["notes"] or p["github"] or p["x"] != "off" or p["radar"])
 
     def ensure(self) -> None:
-        if self.thread is None and self.wanted():
-            self.thread = threading.Thread(target=self._loop, daemon=True)
-            self.thread.start()
+        with self.changed:
+            p = self.prefs
+            if self.thread is None and (p["github"] or p["x"] == "api" or p["radar"]) and self.wanted():
+                self.thread = threading.Thread(target=self._loop, daemon=True)
+                self.thread.start()
+            if self.notes_thread is None and any(self._note_prefs()):
+                self.notes_thread = threading.Thread(target=self._watch_notes, daemon=True)
+                self.notes_thread.start()
+            self.changed.notify()
 
-    def _on_note(self, n: dict) -> None:
-        n = dict(n, at=dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
-        with self.lock:
-            if self.prefs["x"] == "notify":
+    def _note_prefs(self) -> tuple[bool, bool]:
+        notes, x_notify = self.prefs["notes"], self.prefs["x"] == "notify"
+        if (notes or x_notify) and self.cfg_get().get("livingToTv", True) is not False:
+            if self.active() and not self.stop.is_set():
+                return notes, x_notify
+        return False, False
+
+    def _discard_notes(self, notes: bool, x_notify: bool) -> None:
+        if not notes:
+            self.notes.clear()
+        if not x_notify and self.x:
+            self.x = deque((item for item in self.x if item["kind"] != "notify"), maxlen=self.x.maxlen)
+        if not (notes or x_notify):
+            self.monitor.stop()
+
+    def _watch_notes(self) -> None:
+        # The deadline must still be enforced while the other feeds wait on network calls.
+        with self.changed:
+            try:
+                while True:
+                    notes, x_notify = self._note_prefs()
+                    self._discard_notes(notes, x_notify)
+                    if not (notes or x_notify):
+                        return
+                    self.monitor.start()
+                    delay = max(0, min(2, self.active_until - time.monotonic()))
+                    self.changed.wait(delay)
+            finally:
+                self.notes_thread = None
+
+    def _on_note(self, proc, n: dict) -> None:
+        with self.changed:
+            if proc is not self.monitor.proc:
+                return
+            notes, x_notify = self._note_prefs()
+            if not (notes or x_notify):
+                return
+            n = dict(n, at=dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+            if x_notify:
                 xi = x_from_note(n)
                 if xi:
                     self.x.appendleft(dict(xi, at=n["at"]))
-            if self.prefs["notes"]:
+            if notes:
                 self.notes.appendleft(n)
 
     def _loop(self) -> None:
         while not self.stop.wait(2):
             cfg = self.cfg_get()
             if not self.wanted():
-                self.monitor.stop()
                 continue
             p = self.prefs
-            if p["notes"] or p["x"] == "notify":
-                if not self.monitor.start():
-                    pass
-            else:
-                self.monitor.stop()
-                with self.lock:
-                    self.notes.clear()
             now = time.time()
             if p["github"] and now - self.last_gh > GH_EVERY_S and self.active():
                 self.last_gh = now
@@ -390,15 +439,17 @@ class Living:
                 self.last_x = now
                 items, err = x_mentions(cfg)
                 self.x_error = err
-                with self.lock:
+                with self.changed:
                     for it in reversed(items):
                         self.x.appendleft(it)
 
     def payload(self) -> dict:
-        p = self.prefs
-        with self.lock:
-            out = {"github": self.github if p["github"] else [], "notes": list(self.notes) if p["notes"] else [],
-                   "x": list(self.x) if p["x"] != "off" else [], "xMode": p["x"]}
+        with self.changed:
+            p = self.prefs
+            notes, x_notify = self._note_prefs()
+            out = {"github": self.github if p["github"] else [], "notes": list(self.notes) if notes else [],
+                   "x": [item for item in self.x if x_notify or item["kind"] != "notify"] if p["x"] != "off" else [],
+                   "xMode": p["x"]}
         if p["radar"] and self.radar:
             out["radar"] = self.radar
         if self.x_error and p["x"] == "api":
