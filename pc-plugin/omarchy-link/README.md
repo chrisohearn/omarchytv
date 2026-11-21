@@ -106,10 +106,17 @@ Files live in `~/.config/omarchy-link/`. See `examples/`.
 
 | File | What |
 |---|---|
-| `config.json` | `themeSync`, `screensaverSync` (push `~/.config/omarchy/branding/screensaver.txt` to the TV screensaver, default on), `themeFromTv` (TV may switch the PC theme, default on; the TV side is off until enabled there), `powerFromTv` / `powerGraceS` (TV off → PC suspends after 60 s; TV on wakes it), `updateFromTv` (LG/Samsung "Update via PC"), `liftoffToTv`, `livingToTv` / `githubUser` / `githubRepos` / `xApi` / `xPollMinutes` / `xMonthlyUsd` (Living screensaver), `tizenProfile` / `webosDevice` (where the TV update installs), `wallpaperSync`, `pcPane`, `aiCredits`, `aiRefreshMinutes`, `aiSourcesFromTv`, `agentMonitor`, `agentControlFromTv`, `agentConfirm`, `agentToolApprovalFromTv`, `prompt`, `castPrefer` (`cast`\|`link`), `castDevice`, `castServe`, `screenCommand`, `assistant`, `allowOtherSubnets`, `actions` (PC commands a TV shortcut may run: `{"lock": {"label": "Lock PC", "exec": ["omarchy-system-lock"], "confirm": true}}`) |
+| `config.json` | `themeSync`, `screensaverSync` (push `~/.config/omarchy/branding/screensaver.txt` to the TV screensaver, default on), `themeFromTv` (TV may switch the PC theme, default on; the TV side is off until enabled there), `powerFromTv` / `powerGraceS` (TV off → PC suspends after 60 s; TV on wakes it), `updateFromTv` (LG/Samsung "Update via PC"), `liftoffToTv`, `livingToTv` / `githubUser` / `githubRepos` / `xApi` / `xPollMinutes` / `xMonthlyUsd` (Living screensaver), `tizenProfile` (Samsung signing profile) / `webosDevice` (optional LG device alias), `wallpaperSync`, `pcPane`, `aiCredits`, `aiRefreshMinutes`, `aiSourcesFromTv`, `agentMonitor`, `agentControlFromTv`, `agentConfirm`, `agentToolApprovalFromTv`, `prompt`, `castPrefer` (`cast`\|`link`), `castDevice`, `castServe`, `screenCommand`, `assistant`, `allowOtherSubnets`, `actions` (PC commands a TV shortcut may run: `{"lock": {"label": "Lock PC", "exec": ["omarchy-system-lock"], "confirm": true}}`) |
 | `widgets.json` | extra panes and shortcuts for the TV |
 | `ai.json` | AI credits: which bar widget to mirror (`omarchy-link ai setup`), manual entries, API fallbacks, auto-detection. See [docs/AI-CREDITS.md](docs/AI-CREDITS.md). |
 | `assistant.json` | voice assistant providers, default, memory, API fallbacks. See [docs/ASSISTANT.md](docs/ASSISTANT.md). |
+
+For LG “Update via PC”, register the TV in the webOS CLI with a unique alias and its literal
+IP address. The bridge uses the address it observes on the authenticated request to select a
+single registered device for installation and launch. Omit `webosDevice` to let each registered
+TV update itself. If you set it, use the exact, case-sensitive alias of the requesting TV. The
+update stops if the listing is invalid, the requesting address has zero or multiple matches,
+or the configured alias differs.
 
 Keys, when you choose to use API providers, are referenced (`env:NAME`, `file:PATH` with chmod 600,
 `cmd:pass show …`) rather than pasted into the files.

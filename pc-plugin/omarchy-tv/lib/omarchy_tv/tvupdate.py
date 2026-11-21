@@ -114,6 +114,72 @@ def _fail(r: subprocess.CompletedProcess, what: str) -> None:
         raise UpdateError("install_failed", f"{what}: {last[0][:160]}")
 
 
+def _literal_address(value: object) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
+    if not isinstance(value, str) or "%" in value:
+        raise ValueError("expected an unscoped IP address")
+    address = ipaddress.ip_address(value)
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        return address.ipv4_mapped
+    return address
+
+
+def _unique_fields(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    fields = dict(pairs)
+    if len(fields) != len(pairs):
+        raise ValueError("duplicate JSON field")
+    return fields
+
+
+def _reject_json_constant(_: str) -> None:
+    raise ValueError("invalid JSON constant")
+
+
+def _webos_device(tv_ip: str, cfg: dict) -> str:
+    try:
+        peer = _literal_address(tv_ip)
+    except ValueError:
+        raise UpdateError("bad_request", "TV address must be a literal IP address") from None
+
+    setup = shutil.which("ares-setup-device")
+    if not setup:
+        raise UpdateError("no_tool", "ares-setup-device not found (npm install -g @webos-tools/cli)")
+    # The listing may include passwords and passphrases. Keep CLI output out of errors.
+    try:
+        result = _run([setup, "--listfull"], timeout=15)
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        raise UpdateError("device_list_failed", "cannot read the registered webOS devices") from None
+    if result.returncode != 0:
+        raise UpdateError("device_list_failed", "cannot read the registered webOS devices")
+
+    names = set()
+    matches = []
+    try:
+        devices = json.loads(result.stdout, object_pairs_hook=_unique_fields, parse_constant=_reject_json_constant)
+        if not isinstance(devices, list):
+            raise ValueError("expected a device list")
+        for device in devices:
+            name = device["name"]
+            # The CLI option parser trims strings and treats false and null as unset.
+            if (not isinstance(name, str) or not name or not name.isprintable() or name != name.strip()
+                    or name.startswith(("-", "$", "%")) or name in {"false", "null"} or name in names):
+                raise ValueError("invalid or repeated device name")
+            address = _literal_address(device["deviceinfo"]["ip"])
+            names.add(name)
+            if address == peer:
+                matches.append(name)
+    except (KeyError, TypeError, ValueError, RecursionError):
+        raise UpdateError("bad_device_list", "invalid webOS device listing; check the CLI registrations") from None
+
+    if not matches:
+        raise UpdateError("unknown_device", "no registered webOS device matches the requesting TV's IP address")
+    if len(matches) > 1:
+        raise UpdateError("ambiguous_device", "multiple registered webOS devices match the requesting TV's IP address")
+    device = matches[0]
+    if "webosDevice" in cfg and cfg["webosDevice"] != device:
+        raise UpdateError("device_mismatch", "webosDevice must match the registered alias of the requesting TV")
+    return device
+
+
 def install_webos(pkg: Path, cfg: dict, tv_ip: str, tracker) -> None:
     why = update.check_ipk(update.ipk_info(str(pkg)))
     if why:
@@ -121,14 +187,13 @@ def install_webos(pkg: Path, cfg: dict, tv_ip: str, tracker) -> None:
     tool = shutil.which("ares-install")
     if not tool:
         raise UpdateError("no_tool", "ares-install not found (npm install -g @webos-tools/cli)")
-    dev = cfg.get("webosDevice")
-    dev_args = ["--device", str(dev)] if dev else []
+    device = _webos_device(tv_ip, cfg)
     tracker.stage("install", 70)
-    _fail(_run([tool, *dev_args, str(pkg)]), "ares-install")
+    _fail(_run([tool, "--device", device, str(pkg)]), "ares-install")
     tracker.stage("launch", 95)
     launch = shutil.which("ares-launch")
     if launch:
-        _run([launch, *dev_args, update.PACKAGE], timeout=60)
+        _run([launch, "--device", device, update.PACKAGE], timeout=60)
 
 
 def _unpack_wgt(pkg: Path, stage: Path) -> None:
