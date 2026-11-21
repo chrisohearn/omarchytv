@@ -23,3 +23,52 @@ test('production supervisor survives more than five crashes, keeps one instance,
   assert.throws(()=>process.kill(servicePid,0));
  }finally{if(child.exitCode===null)child.kill('SIGTERM');if(servicePid){try{process.kill(servicePid,'SIGKILL');}catch(e){}}fs.rmSync(root,{recursive:true,force:true});}
 });
+
+for (const phase of ['server', 'retry']) {
+ for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
+  test(`supervisor reaps the ${phase} child before exiting on ${signal}`, {skip:noFlock, timeout:5000}, async()=>{
+   const root=fs.mkdtempSync(path.join(os.tmpdir(),'remote-supervisor-signal-'));
+   fs.mkdirSync(root+'/app');
+   const node="'"+process.execPath.replace(/'/g,"'\\''")+"'";
+   // Exercise the trap with a child that takes time to stop after receiving TERM.
+   const slowChild=`
+    process.on('SIGTERM',()=>setTimeout(()=>process.exit(0),150));
+    require('fs').writeFileSync(process.env.OMARCHY_REMOTE_ROOT+'/ready',String(process.pid)+'\\n');
+    setInterval(()=>{},1000);
+   `;
+   const script=fs.readFileSync(require.resolve('../iphone-remote/start'),'utf8')
+    .replace('/usr/bin/node',node)
+    .replace('sleep "$retry_delay"',node+' "$ROOT/app/retry.js" "$retry_delay"');
+   fs.writeFileSync(root+'/app/start',script);
+   fs.writeFileSync(root+'/app/server.js',phase==='server'?slowChild:'process.exit(1);');
+   fs.writeFileSync(root+'/app/retry.js',slowChild);
+   const supervisor=cp.spawn('sh',[root+'/app/start'],{
+    env:{...process.env,OMARCHY_REMOTE_ROOT:root},stdio:'ignore'
+   });
+   let stopped=false;
+   const exited=new Promise(resolve=>supervisor.once('exit',(code,signal)=>{
+    stopped=true;
+    resolve({code,signal});
+   }));
+   let childPid;
+   try {
+    for (let n=0;n<100;n++) {
+     const ready=fs.existsSync(root+'/ready')&&fs.readFileSync(root+'/ready','utf8');
+     if (ready&&ready.endsWith('\n')) { childPid=Number(ready); break; }
+     await delay(10);
+    }
+    assert.ok(childPid>0,'child reached the active phase');
+    assert.ok(supervisor.kill(signal));
+    assert.deepEqual(await exited,{code:0,signal:null});
+    assert.throws(()=>process.kill(childPid,0),{code:'ESRCH'});
+   } finally {
+    if (!stopped) supervisor.kill('SIGTERM');
+    if (childPid) {
+     try { process.kill(childPid,'SIGKILL'); } catch (e) { if (e.code!=='ESRCH') throw e; }
+    }
+    await exited;
+    fs.rmSync(root,{recursive:true,force:true});
+   }
+  });
+ }
+}
