@@ -3,7 +3,12 @@ const test = require("node:test");
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
-const C = (() => { const ctx = {}; require("vm").runInNewContext(fs.readFileSync(path.join(__dirname, "../app/cinemarchy.js"), "utf8"), Object.assign(ctx, { window: ctx })); return ctx.OmarchyCinemarchy; })();
+const source = fs.readFileSync(path.join(__dirname, "../app/cinemarchy.js"), "utf8");
+function loadCinemarchy(ctx = {}) {
+  require("vm").runInNewContext(source, Object.assign(ctx, { window: ctx }));
+  return ctx.OmarchyCinemarchy;
+}
+const C = loadCinemarchy();
 
 test("M3U playlists: names, groups, logos, only real stream lines", () => {
   const m3u = '#EXTM3U\n#EXTINF:-1 tvg-id="a" tvg-logo="http://l/a.png" group-title="News",Channel A\nhttps://s/a.m3u8\n' +
@@ -66,6 +71,93 @@ test("remote keys: colours, channels, digits; letters typed in the URL field sta
   assert.strictEqual(k(50, { target: { tagName: "INPUT" } }), "");
   assert.strictEqual(k(8, { target: { tagName: "INPUT" } }), "");
   assert.strictEqual(k(8), "back");
+});
+
+function openRoulette() {
+  let plays = 0, exits = 0, timerId = 0;
+  const playing = [];
+  const intervals = new Map();
+  function element() {
+    return {
+      style: {},
+      querySelector(selector) {
+        if (selector === "video" || selector === ".pl video") return video;
+        if (selector === ".zap") return staticOverlay;
+        return placeholder;
+      },
+      appendChild(child) { child.parentNode = this; },
+      removeChild(child) { child.parentNode = null; },
+      insertBefore(child) { this.firstChild = child; },
+      addEventListener() {},
+      removeAttribute(key) { delete this[key]; }
+    };
+  }
+  const placeholder = element();
+  const staticOverlay = element();
+  const video = Object.assign(element(), { play() { plays++; }, pause() {}, load() {} });
+  const root = element();
+  root.ownerDocument = { createElement: element, createTextNode: nodeValue => ({ nodeType: 3, nodeValue }) };
+  const cine = loadCinemarchy({
+    setInterval(fn, ms) { intervals.set(++timerId, { fn, ms }); return timerId; },
+    clearInterval(id) { intervals.delete(id); },
+    setTimeout() {},
+    clearTimeout() {}
+  });
+  const ui = cine.open(root, {
+    tr: key => key, theme: {}, cfg: {}, store: { getItem: () => null },
+    dhh: { status: () => "", list: () => [] },
+    onPlay: value => playing.push(value), onExit: () => { exits++; }
+  });
+  ui.key("right");
+  ui.key("blue");
+  return {
+    ui, playing, staticOverlay,
+    plays: () => plays,
+    exits: () => exits,
+    activeRoulette: () => [...intervals.values()].filter(timer => timer.ms === 70).length,
+    tick() {
+      for (const { fn, ms } of [...intervals.values()]) if (ms === 70) fn();
+    }
+  };
+}
+
+test("leaving Cinemarchy with Back cancels roulette before playback", () => {
+  const roulette = openRoulette();
+  assert.strictEqual(roulette.activeRoulette(), 1);
+  roulette.tick();
+  roulette.ui.key("back");
+  roulette.ui.key("back");
+  const pending = roulette.activeRoulette();
+  for (let i = 0; i < 7; i++) roulette.tick();
+  assert.strictEqual(roulette.exits(), 1);
+  assert.strictEqual(roulette.plays(), 0);
+  assert.strictEqual(pending, 0);
+  assert.deepStrictEqual(roulette.playing, [false]);
+});
+
+test("destroy cancels roulette even after pressing Blue again", () => {
+  const roulette = openRoulette();
+  roulette.tick();
+  roulette.ui.key("blue");
+  roulette.ui.destroy();
+  const pending = roulette.activeRoulette();
+  for (let i = 0; i < 7; i++) roulette.tick();
+  assert.strictEqual(roulette.plays(), 0);
+  assert.strictEqual(pending, 0);
+  assert.deepStrictEqual(roulette.playing, [false]);
+});
+
+test("roulette left open starts playback after its animation", () => {
+  const roulette = openRoulette();
+  for (let i = 0; i < 6; i++) roulette.tick();
+  assert.strictEqual(roulette.plays(), 0);
+  assert.strictEqual(roulette.staticOverlay.style.display, "block");
+  roulette.tick();
+  assert.strictEqual(roulette.activeRoulette(), 0);
+  assert.strictEqual(roulette.staticOverlay.style.display, "none");
+  assert.strictEqual(roulette.plays(), 1);
+  assert.deepStrictEqual(roulette.playing, [true]);
+  roulette.ui.destroy();
 });
 
 test("strings in every language, the page loads it, the open movies are labelled as demo", () => {

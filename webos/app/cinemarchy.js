@@ -444,6 +444,7 @@
       toast(n ? t("cine_sleep").replace("%s", n + " min") : t("cine_sleep_off"));
     }
     // ---- a surprise channel: static, then a random channel from your playlists (or an open movie) ----
+    var rouletteT = 0;
     function roulette() {
       var pool = (S.iptv || []).map(function (c) { return { title: c.name, sub: c.group, badge: "[🎲]", kind: "stream", live: true, url: c.url, chan: true }; });
       if (!pool.length) pool = itemsFor(5).filter(function (x) { return x.url; });
@@ -451,10 +452,17 @@
       var pick = Math.floor(Math.random() * pool.length), z = q(".zap"), noise = "  ░░▒▓", n = 0;
       z.style.display = "block";
       z.querySelector("b").textContent = "🎲 CH " + (pick + 1 < 10 ? "0" : "") + (pick + 1);
-      var zt = setInterval(function () {
+      clearInterval(rouletteT);
+      rouletteT = setInterval(function () {
         var s2 = ""; for (var r = 0; r < 40; r++) { for (var c2 = 0; c2 < 110; c2++) s2 += noise.charAt(Math.floor(Math.random() * noise.length)); s2 += "\n"; }
         z.firstChild && z.firstChild.nodeType === 3 ? (z.firstChild.nodeValue = s2) : z.insertBefore(doc.createTextNode(s2), z.firstChild);
-        if (++n > 6) { clearInterval(zt); z.style.display = "none"; if (S.player) stop(true); play(pool, pick); }
+        if (++n > 6) {
+          clearInterval(rouletteT);
+          rouletteT = 0;
+          z.style.display = "none";
+          if (S.player) stop(true);
+          play(pool, pick);
+        }
       }, 70);
     }
     function next(d, auto) {
@@ -531,6 +539,7 @@
     }
     function close() { destroy(); if (api.onExit) api.onExit(); }
     function destroy() {
+      clearInterval(rouletteT); rouletteT = 0;
       stop(true);
       clearInterval(clockT); clearInterval(osdTick); clearInterval(vcrT); clearInterval(ascT); clearTimeout(S.toastT);
       if (w.parentNode) w.parentNode.removeChild(w);
