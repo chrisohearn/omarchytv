@@ -312,6 +312,23 @@ public class LinkServerTest {
 
     // ---- cast (PROTOCOL.md §6 Cast)
 
+    @Test
+    public void delayedBackAndScopedStopCannotCloseAReplacementCast() throws Exception {
+        host.castPlay = false;
+        pair("123456");
+        for (String id : new String[]{"A", "B"}) {
+            String body = new JSONObject().put("id", id).put("kind", "video").put("live", true)
+                    .put("url", "https://example.invalid/screen.ts").toString();
+            assertEquals(200, signed("POST", "/v1/cast", body).status);
+        }
+        server.castState("A", "stopped", -1, -1, null);
+        server.castState("A", "stopped", -1, -1, null);
+        assertEquals(409, signed("POST", "/v1/cast/control", "{\"action\":\"stop\",\"id\":\"A\"}").status);
+        assertEquals("B", server.currentCast());
+        server.castState("B", "stopped", -1, -1, null);
+        assertNull(server.currentCast());
+    }
+
     Resp signedBytes(String method, String target, byte[] b, String contentType) throws Exception {
         String nonce = LinkCrypto.b64u(LinkCrypto.randomBytes(16));
         long ts = System.currentTimeMillis() / 1000;

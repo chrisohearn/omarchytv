@@ -705,7 +705,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             p.hint(str(R.string.v29_pc_off));
         } else {
             p.add(str(R.string.v29_screen_start), null, r -> {
-                OmarchyLink.screenMirror(true);
+                OmarchyLink.requestScreenMirror();
                 Toast.makeText(this, R.string.v29_screen_asked, Toast.LENGTH_LONG).show();
                 return false;
             });

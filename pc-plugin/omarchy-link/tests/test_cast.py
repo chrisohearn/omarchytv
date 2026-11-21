@@ -15,7 +15,7 @@ import urllib.request
 import helpers
 from helpers import cli
 from mock_tv import MockTV
-from omarchy_link import cast, client, config
+from omarchy_link import cast, client, config, session
 from omarchy_link import cli as cli_mod
 
 BIN = helpers.TMP / "castbin"
@@ -119,6 +119,68 @@ class Classify(unittest.TestCase):
         finally:
             os.environ["PATH"] = old
             shutil.rmtree(BIN, ignore_errors=True)
+
+
+class ScreenMirrorLifecycle(unittest.TestCase):
+    def test_legacy_stop_cannot_kill_the_current_process_or_launch_cast_stop(self):
+        companion = session.Session()
+        companion.cfg = {"screenMirrorFromTv": "allow"}
+        first = mock.Mock()
+        first.poll.side_effect = [None, 0]
+        second = mock.Mock()
+        second.poll.return_value = None
+        start = {"type": "screen_mirror", "data": {"action": "start"}}
+        legacy_stop = {"type": "screen_mirror", "data": {"action": "stop"}}
+        with mock.patch.object(session.subprocess, "Popen", side_effect=[first, second]) as spawn:
+            companion.handle_event(start)
+            companion.handle_event(start)  # An active mirror already exists.
+            companion.handle_event(start)  # The first streamer has now exited.
+            companion.handle_event(legacy_stop)
+            companion.handle_event(legacy_stop)
+            companion.handle_screen_mirror("stop")
+        self.assertEqual(spawn.call_count, 2)
+        for call in spawn.call_args_list:
+            self.assertEqual(call.args[0][1:], ["cast", "--screen", "--via", "link", "--notify"])
+        self.assertIs(companion._mirror, second)
+        first.terminate.assert_not_called()
+        second.terminate.assert_not_called()
+
+    def test_legacy_stop_is_filtered_before_a_custom_handler(self):
+        companion = session.Session()
+        with mock.patch.object(companion, "handle_screen_mirror") as handle:
+            for action in ("start", "stop", "stop"):
+                companion.handle_event({"type": "screen_mirror", "data": {"action": action}})
+        handle.assert_called_once_with("start")
+
+    def test_streamer_waits_for_its_own_terminal_state(self):
+        link = mock.Mock(host="paired-tv")
+        link.status.return_value = {"capabilities": ["cast"]}
+        link.request.return_value = {"state": "opening"}
+        item = {"kind": "video", "mime": "video/mp2t", "live": True, "title": "Desktop", "screen": ["unused"]}
+        for rid in ("A", "B"):
+            with self.subTest(rid=rid), mock.patch.object(cast, "FileServer") as files, \
+                    mock.patch.object(cast.secrets, "token_hex", return_value=rid):
+                listener = files.return_value
+                listener.closed.is_set.return_value = False
+                listener.url = "http://test.invalid/stream.ts"
+                events = mock.Mock()
+                link.events.return_value = events
+                events.recv.side_effect = [
+                    {"type": "cast_state", "data": {"id": "A", "state": "stopped"}},
+                    {"type": "screen_mirror", "data": {"action": "stop"}},
+                    {"type": "cast_state", "data": {"id": "A", "state": "stopped"}},
+                    {"type": "cast_state", "data": {"id": "B", "state": "playing"}},
+                    {"type": "cast_state", "data": {"id": "B", "state": "stopped"}},
+                ]
+                output = []
+                result = cast.via_link(link, item, wait=True, out=output.append)
+                method, path, body = link.request.call_args.args
+                self.assertEqual((method, path, body["id"]), ("POST", "/v1/cast", rid))
+                self.assertEqual((result["id"], result["state"]), (rid, "stopped"))
+                self.assertEqual(output[1:], ["TV: stopped"] if rid == "A" else ["TV: playing", "TV: stopped"])
+                listener.close.assert_called_once_with()
+                events.close.assert_called_once_with()
+        self.assertEqual(link.request.call_count, 2)
 
 
 class CastE2E(unittest.TestCase):
