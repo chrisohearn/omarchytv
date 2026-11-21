@@ -357,7 +357,9 @@ public final class CinemarchyActivity extends Activity implements OmarchyLink.Li
     public void onLinkEvent(String type, JSONObject data) {
         if (!"media_list".equals(type) || pcPath == null) return;
         String p = data.optString("path", "");
-        if (!p.equals(pcPath) && !data.has("error")) return;
+        // Link reports its global media opt-out at the root, even for a folder request.
+        boolean disabled = p.isEmpty() && "disabled".equals(data.optString("error"));
+        if (!p.equals(pcPath) && !disabled) return;
         pcListing = data;
         if (activeSource == SRC_PC_MEDIA) selectSource(SRC_PC_MEDIA, true);
     }
