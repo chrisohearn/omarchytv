@@ -589,7 +589,13 @@ class WebOSHandler(BaseHTTPRequestHandler):
 
     # ---- Cinemarchy: the PC's media folders (read-only) ----
     def _media_enabled(self) -> bool:
-        if link_cfg().get("mediaFromTv", True) is False:
+        cfg = _link_mod("config")
+        try:
+            settings = cfg.load_config() if cfg else link_cfg()
+        except (OSError, ValueError):
+            self._send_json({"error": "config_unavailable", "message": "Cannot read PC media settings"}, 503)
+            return False
+        if settings.get("mediaFromTv", True) is False:
             self._send_json({"error": "disabled", "message": "mediaFromTv is off on the PC"}, 403)
             return False
         return True
