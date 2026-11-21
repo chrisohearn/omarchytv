@@ -445,6 +445,12 @@
     }
     // ---- a surprise channel: static, then a random channel from your playlists (or an open movie) ----
     var rouletteT = 0;
+    function cancelRoulette() {
+      if (!rouletteT) return;
+      clearInterval(rouletteT);
+      rouletteT = 0;
+      q(".zap").style.display = "none";
+    }
     function roulette() {
       var pool = (S.iptv || []).map(function (c) { return { title: c.name, sub: c.group, badge: "[🎲]", kind: "stream", live: true, url: c.url, chan: true }; });
       if (!pool.length) pool = itemsFor(5).filter(function (x) { return x.url; });
@@ -457,9 +463,7 @@
         var s2 = ""; for (var r = 0; r < 40; r++) { for (var c2 = 0; c2 < 110; c2++) s2 += noise.charAt(Math.floor(Math.random() * noise.length)); s2 += "\n"; }
         z.firstChild && z.firstChild.nodeType === 3 ? (z.firstChild.nodeValue = s2) : z.insertBefore(doc.createTextNode(s2), z.firstChild);
         if (++n > 6) {
-          clearInterval(rouletteT);
-          rouletteT = 0;
-          z.style.display = "none";
+          cancelRoulette();
           if (S.player) stop(true);
           play(pool, pick);
         }
@@ -471,6 +475,7 @@
       if (auto) stop();
     }
     function stop(keep) {
+      cancelRoulette();
       var P = S.player; if (!P) return;
       save(); clearInterval(P.saveT); clearTimeout(P.osdT); clearInterval(ascT);
       q(".asc").style.display = "none"; q(".vhs").style.display = "none";
@@ -539,7 +544,6 @@
     }
     function close() { destroy(); if (api.onExit) api.onExit(); }
     function destroy() {
-      clearInterval(rouletteT); rouletteT = 0;
       stop(true);
       clearInterval(clockT); clearInterval(osdTick); clearInterval(vcrT); clearInterval(ascT); clearTimeout(S.toastT);
       if (w.parentNode) w.parentNode.removeChild(w);
