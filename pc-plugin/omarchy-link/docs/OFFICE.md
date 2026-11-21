@@ -30,9 +30,13 @@ Or from the TV: **Hire** in the office, with Claude or ChatGPT on the provider c
 `office_hire` event over the encrypted link; LG/Samsung `POST /v1/office/hire` to `omarchy-tv webos-serve` with the
 bridge's ask code).
 
-Hiring first checks the key with the provider (`GET /v1/models`: free, no tokens). No key, a rejected key or no
-network: the hire fails with the reason (`no_key`, `key_rejected`, `exists`, `full`, …) and nothing is saved or
-shown. When it works, `assistant.json` (mode 600) gets an entry:
+The PC allows up to 12 hired Office bots and reserves up to 16 Assistant registry slots for enabled entries
+in `assistant.json`. Disabled entries use no slots, and auto-detected providers fill only the remaining slots.
+At either limit, hiring returns `full` before contacting the provider or saving a bot.
+
+When there is room, hiring checks the key with the provider (`GET /v1/models`, free and uses no tokens).
+A missing or rejected key or a network failure ends the hire with an error. A successful hire adds an entry
+to `assistant.json` (mode 600):
 
 ```json
 { "type": "anthropic_api", "id": "office-trimmer", "name": "Trimmer", "key": "env:ANTHROPIC_API_KEY", "model": "…",

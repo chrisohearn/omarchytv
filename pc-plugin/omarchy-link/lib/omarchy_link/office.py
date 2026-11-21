@@ -7,8 +7,8 @@ name, provider type, model and its role as a system prompt. It then answers like
 by default, or the key reference of an existing entry of the same type (env:, file: chmod 600, cmd:). Nothing
 about a key ever goes to the TV or into a log.
 
-Hiring checks the key with the provider first (GET /v1/models: free, no tokens). No key, a wrong key, no
-network: the hire fails and says why. Nothing is saved, nothing is shown as hired.
+Hiring checks for room in the Assistant registry, then checks the key with the provider (GET /v1/models:
+free, no tokens). A full registry, missing or wrong key, or no network fails the hire with a reason.
 
 Usage per provider comes from the Admin APIs (the same collectors as the AI pane: ai/providers/anthropic.py and
 openai.py) when an admin key is set (ai.json entries, or env:ANTHROPIC_ADMIN_KEY / env:OPENAI_ADMIN_KEY). Without
@@ -16,10 +16,12 @@ one there is no number, and the TV shows no usage for that provider.
 """
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from . import ai, assistant, config
@@ -69,6 +71,17 @@ def _slug(s: str) -> str:
 
 def _settings(path: Path | None) -> dict:
     return assistant.load_settings(path)
+
+
+@contextmanager
+def _settings_lock(path: Path):
+    # The directory lock survives the atomic replacement of assistant.json.
+    fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
 
 
 def hired(path: Path | None = None) -> list[dict]:
@@ -131,40 +144,48 @@ def hire(name, provider, role="", description="", model=None, path: Path | None 
         raise HireError("bad_request", "the new bot needs a name")
     role, description = _clean(role, 40), _clean(description, 600)
     kind = PROVIDERS[prov][0]
-    settings = _settings(path)
-    entries = [p for p in settings.get("providers", []) if isinstance(p, dict)]
-    if len([p for p in entries if isinstance(p.get("office"), dict)]) >= MAX_HIRED:
-        raise HireError("full", f"at most {MAX_HIRED} hired bots on the PC: fire one first (omarchy-link office fire)")
     pid = "office-" + (_slug(name) or "bot")
-    if any(str(p.get("id")) == pid for p in entries):
-        raise HireError("exists", f"there is already a bot called {name}")
-    cfg = {"type": kind, "id": pid, "name": name, "key": assistant.load_type(kind).DEFAULTS["key"], **_inherit(settings, kind)}
-    if model:
-        cfg["model"] = _clean(model, 64)
-    private = path.exists() and config.is_private_file(path)
-    check_key(kind, cfg, ctx or ai.Context(ai_file_private=private, timeout=15.0))
     system = f"You are {name}, a bot in the user's GrokBot Office" + (f". Your role: {role}" if role else "") + "."
     if description and description != role:
         system += " " + description
-    cfg["system"] = system[:1500]
-    cfg["office"] = {"role": role, "color": COLORS[prov], "hiredAt": int(time.time())}
-    settings["providers"] = entries + [cfg]
-    config.write_json_private(path, settings)
-    return next(b for b in bots(path) if b["id"] == pid)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with _settings_lock(path):
+        settings = _settings(path)
+        entries = [p for p in settings.get("providers", []) if isinstance(p, dict)]
+        if sum(isinstance(p.get("office"), dict) for p in entries) >= MAX_HIRED:
+            raise HireError("full", f"at most {MAX_HIRED} hired bots on the PC: fire one first (omarchy-link office fire)")
+        if len(assistant.explicit_providers(settings)) >= assistant.MAX_PROVIDERS:
+            raise HireError("full", f"the Assistant registry is full ({assistant.MAX_PROVIDERS} providers): "
+                            "disable or remove an entry in assistant.json or fire a bot first")
+        if any(assistant.configured_id(p) == pid for p in entries):
+            raise HireError("exists", f"the Assistant provider ID {pid} is already configured")
+        cfg = {"type": kind, "id": pid, "name": name, "key": assistant.load_type(kind).DEFAULTS["key"], **_inherit(settings, kind)}
+        if model:
+            cfg["model"] = _clean(model, 64)
+        private = path.exists() and config.is_private_file(path)
+        check_key(kind, cfg, ctx or ai.Context(ai_file_private=private, timeout=15.0))
+        cfg["system"] = system[:1500]
+        cfg["office"] = {"role": role, "color": COLORS[prov], "hiredAt": int(time.time())}
+        settings["providers"] = entries + [cfg]
+        config.write_json_private(path, settings)
+        return next(b for b in bots(path) if b["id"] == pid)
 
 
 def fire(name, path: Path | None = None) -> bool:
     path = path or assistant.ASSISTANT_FILE
-    settings = _settings(path)
-    entries = [p for p in settings.get("providers", []) if isinstance(p, dict)]
-    want = str(name or "").strip().lower()
-    keep = [p for p in entries if not (isinstance(p.get("office"), dict)
-                                       and want in (str(p.get("name", "")).lower(), str(p.get("id", "")).lower()))]
-    if len(keep) == len(entries):
+    if not path.parent.exists():
         return False
-    settings["providers"] = keep
-    config.write_json_private(path, settings)
-    return True
+    want = str(name or "").strip().lower()
+    with _settings_lock(path):
+        settings = _settings(path)
+        entries = [p for p in settings.get("providers", []) if isinstance(p, dict)]
+        keep = [p for p in entries if not (isinstance(p.get("office"), dict)
+                                           and want in (str(p.get("name", "")).lower(), str(p.get("id", "")).lower()))]
+        if len(keep) == len(entries):
+            return False
+        settings["providers"] = keep
+        config.write_json_private(path, settings)
+        return True
 
 
 def usage(ai_file: Path | None = None) -> list[dict]:
