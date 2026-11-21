@@ -1,5 +1,6 @@
 package com.omarchytv.home;
 
+import android.annotation.SuppressLint;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -9,6 +10,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
+import android.media.session.MediaSession;
 import android.os.Build;
 import android.os.IBinder;
 import android.view.KeyEvent;
@@ -49,12 +51,18 @@ public class RadioService extends Service {
         }
     }
 
+    @SuppressLint("NotificationPermission") // Android 13 exempts notifications tied to a media session.
     static void refresh(Context c) {
         if (!running) return;
         NotificationManager nm = c.getSystemService(NotificationManager.class);
         if (nm != null) {
             try {
-                nm.notify(ID, build(c));
+                Notification notification = build(c);
+                if (Build.VERSION.SDK_INT >= 33
+                        && notification.extras.getParcelable(Notification.EXTRA_MEDIA_SESSION, MediaSession.Token.class) == null) {
+                    return;
+                }
+                nm.notify(ID, notification);
             } catch (Exception ignored) {
             }
         }
