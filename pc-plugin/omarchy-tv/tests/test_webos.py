@@ -34,6 +34,45 @@ class WebOSBridgeTest(unittest.TestCase):
             srv.server_close()
 
 
+    def test_media_opt_out_stops_at_the_request_boundary(self):
+        handler = webos.WebOSHandler.__new__(webos.WebOSHandler)
+        handler._authorized = mock.Mock(return_value=True)
+        handler._send_json = mock.Mock()
+        handler.command = "GET"
+        handler.path = "/v1/media/list"
+        media = mock.Mock()
+        with mock.patch.object(webos, "link_cfg", return_value={"mediaFromTv": False}), \
+             mock.patch.object(webos, "_link_mod", return_value=media):
+            handler.do_GET()
+            for route in ("/v1/media/f/fixture/example", "/v1/media/s/fixture/example"):
+                handler.path = route
+                handler.do_GET()
+            handler.command = "HEAD"
+            handler.path = "/v1/media/f/fixture/example"
+            handler.do_HEAD()
+        self.assertEqual([call.args[1] for call in handler._send_json.call_args_list], [403] * 4)
+        self.assertEqual(media.mock_calls, [])
+
+    def test_media_listing_keeps_enabled_defaults_and_token_requirement(self):
+        handler = webos.WebOSHandler.__new__(webos.WebOSHandler)
+        handler.command = "GET"
+        handler.path = "/v1/media/list"
+        handler._authorized = mock.Mock(return_value=True)
+        handler._send_json = mock.Mock()
+        media = mock.Mock()
+        media.listing.return_value = {"files": []}
+        with mock.patch.object(webos, "link_cfg", return_value={}), \
+             mock.patch.object(webos, "bridge_token", return_value="fixture"), \
+             mock.patch.object(webos, "_link_mod", return_value=media):
+            handler.do_GET()
+            handler._send_json.assert_called_once_with({"files": []})
+            handler._send_json.reset_mock()
+            handler._authorized.return_value = False
+            handler.do_GET()
+        self.assertEqual(handler._send_json.call_args.args[1], 401)
+        media.listing.assert_called_once_with("")
+
+
 class FakeGrokbot:
     UPSTREAM, UPSTREAM_REF = "https://github.com/tcballard/omarchy-plugin-grokbot-desktop", "v0.2.0"
     PALETTE = {"orange": "#FF6700"}
