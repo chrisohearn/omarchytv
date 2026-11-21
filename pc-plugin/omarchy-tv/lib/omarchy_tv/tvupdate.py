@@ -153,6 +153,7 @@ def _webos_device(tv_ip: str, cfg: dict) -> str:
 
     names = set()
     matches = []
+    has_localhost = False
     try:
         devices = json.loads(result.stdout, object_pairs_hook=_unique_fields, parse_constant=_reject_json_constant)
         if not isinstance(devices, list):
@@ -160,12 +161,16 @@ def _webos_device(tv_ip: str, cfg: dict) -> str:
         for device in devices:
             name = device["name"]
             # The CLI option parser trims strings and treats false and null as unset.
+            # Two or more hyphens by themselves are an option terminator, even with --device=.
             if (not isinstance(name, str) or not name or not name.isprintable() or name != name.strip()
-                    or name.startswith(("-", "$", "%")) or name in {"false", "null"} or name in names):
+                    or name.startswith(("$", "%")) or re.fullmatch(r"-{2,}", name)
+                    or name in {"false", "null"} or name in names):
                 raise ValueError("invalid or repeated device name")
-            address = _literal_address(device["deviceinfo"]["ip"])
             names.add(name)
-            if address == peer:
+            host = device["deviceinfo"]["ip"]
+            if host == "localhost":
+                has_localhost = True
+            elif _literal_address(host) == peer:
                 matches.append(name)
     except (KeyError, TypeError, ValueError, RecursionError):
         raise UpdateError("bad_device_list", "invalid webOS device listing; check the CLI registrations") from None
@@ -174,8 +179,10 @@ def _webos_device(tv_ip: str, cfg: dict) -> str:
         raise UpdateError("unknown_device", "no registered webOS device matches the requesting TV's IP address")
     if len(matches) > 1:
         raise UpdateError("ambiguous_device", "multiple registered webOS devices match the requesting TV's IP address")
+    if peer.is_loopback and has_localhost:
+        raise UpdateError("ambiguous_device", "a localhost registration makes the requesting TV's loopback address ambiguous")
     device = matches[0]
-    if "webosDevice" in cfg and cfg["webosDevice"] != device:
+    if cfg.get("webosDevice") not in (None, "", device):
         raise UpdateError("device_mismatch", "webosDevice must match the registered alias of the requesting TV")
     return device
 
@@ -188,12 +195,13 @@ def install_webos(pkg: Path, cfg: dict, tv_ip: str, tracker) -> None:
     if not tool:
         raise UpdateError("no_tool", "ares-install not found (npm install -g @webos-tools/cli)")
     device = _webos_device(tv_ip, cfg)
+    device_args = [f"--device={device}"] if device.startswith("-") else ["--device", device]
     tracker.stage("install", 70)
-    _fail(_run([tool, "--device", device, str(pkg)]), "ares-install")
+    _fail(_run([tool, *device_args, str(pkg)]), "ares-install")
     tracker.stage("launch", 95)
     launch = shutil.which("ares-launch")
     if launch:
-        _run([launch, "--device", device, update.PACKAGE], timeout=60)
+        _run([launch, *device_args, update.PACKAGE], timeout=60)
 
 
 def _unpack_wgt(pkg: Path, stage: Path) -> None:

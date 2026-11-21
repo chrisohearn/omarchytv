@@ -10,6 +10,7 @@ import threading
 import unittest
 import zipfile
 from contextlib import ExitStack
+from contextlib import ExitStack
 from pathlib import Path
 from unittest import mock
 
@@ -252,7 +253,7 @@ class WebOSDevices(unittest.TestCase):
                 self.assertEqual([call.args[0] for call in self.run_cli.call_args_list], [self.list_args])
 
     def test_aliases_that_cannot_be_passed_verbatim_are_refused(self):
-        for alias in ("", "tv ", "-d", "--help", "$tv", "%tv", "false", "null", "tv\x00"):
+        for alias in ("", "tv ", "$tv", "%tv", "false", "null", "tv\x00"):
             with self.subTest(alias=alias):
                 self.set_listing(json.dumps([{"name": alias, "deviceinfo": {"ip": self.peer}}]))
                 self.assert_refused("bad_device_list")
@@ -267,6 +268,93 @@ class WebOSDevices(unittest.TestCase):
         tvupdate.shutil.which.side_effect = lambda name: None if name == "ares-setup-device" else f"/cli/{name}"
         self.assert_refused("no_tool")
         self.run_cli.assert_not_called()
+
+
+class WebOSCompatibility(unittest.TestCase):
+    peer = "192.0.2.30"
+    package = Path("synthetic.ipk")
+    list_args = ["/cli/ares-setup-device", "--listfull"]
+
+    def setUp(self):
+        self.tracker = mock.Mock()
+        patches = ExitStack()
+        self.addCleanup(patches.close)
+        self.run_cli = patches.enter_context(mock.patch.object(tvupdate, "_run"))
+        patches.enter_context(mock.patch.object(tvupdate.shutil, "which", side_effect=lambda name: f"/cli/{name}"))
+        patches.enter_context(mock.patch.object(tvupdate.update, "ipk_info", return_value={
+            "id": "com.omarchytv.home", "version": "2.13.12",
+        }))
+        for resolver in ("getaddrinfo", "gethostbyname", "gethostbyname_ex"):
+            patches.enter_context(mock.patch(f"socket.{resolver}", side_effect=AssertionError("unexpected DNS lookup")))
+
+    def install(self, registrations, cfg, peer):
+        listing = json.dumps([{"name": alias, "deviceinfo": {"ip": host}} for alias, host in registrations])
+        self.run_cli.reset_mock()
+        self.run_cli.side_effect = [
+            subprocess.CompletedProcess(self.list_args, 0, listing, ""),
+            subprocess.CompletedProcess([], 0, "", ""),
+            subprocess.CompletedProcess([], 0, "", ""),
+        ]
+        self.tracker.reset_mock()
+        tvupdate.install_webos(self.package, cfg, peer, self.tracker)
+
+    def assert_target(self, *device_args):
+        self.assertEqual(self.run_cli.call_args_list, [
+            mock.call(self.list_args, timeout=15),
+            mock.call(["/cli/ares-install", *device_args, str(self.package)]),
+            mock.call(["/cli/ares-launch", *device_args, "com.omarchytv.home"], timeout=60),
+        ])
+
+    def assert_refused(self, code, registrations, cfg, peer):
+        with self.assertRaises(tvupdate.UpdateError) as raised:
+            self.install(registrations, cfg, peer)
+        self.assertEqual(raised.exception.code, code)
+        self.run_cli.assert_called_once_with(self.list_args, timeout=15)
+        self.tracker.stage.assert_not_called()
+
+    def test_localhost_can_coexist_with_exact_nonloopback_match(self):
+        registrations = [("local", "localhost"), ("tv", self.peer)]
+        self.install(registrations, {}, self.peer)
+        self.assert_target("--device", "tv")
+
+    def test_localhost_cannot_supply_a_literal_match(self):
+        for peer in (self.peer, "127.0.0.1", "::1"):
+            with self.subTest(peer=peer):
+                self.assert_refused("unknown_device", [("local", "localhost")], {"webosDevice": "local"}, peer)
+
+    def test_localhost_makes_an_exact_loopback_match_ambiguous(self):
+        for peer in ("127.0.0.1", "::1", "::ffff:127.0.0.1"):
+            with self.subTest(peer=peer):
+                registrations = [("local", "localhost"), ("tv", peer)]
+                self.assert_refused("ambiguous_device", registrations, {"webosDevice": "tv"}, peer)
+
+    def test_unique_literal_loopback_match_is_allowed(self):
+        registrations = [("v4", "127.0.0.1"), ("v6", "::1")]
+        self.install(registrations, {}, "::1")
+        self.assert_target("--device", "v6")
+
+    def test_leading_hyphen_alias_is_attached_to_device_option(self):
+        for alias in ("-d", "--help", "--device=other", "-"):
+            with self.subTest(alias=alias):
+                self.install([(alias, self.peer), ("other", "192.0.2.31")], {"webosDevice": alias}, self.peer)
+                self.assert_target(f"--device={alias}")
+
+    def test_option_terminators_are_refused(self):
+        for alias in ("--", "---"):
+            with self.subTest(alias=alias):
+                registrations = [(alias, self.peer), ("true", "192.0.2.31")]
+                self.assert_refused("bad_device_list", registrations, {}, self.peer)
+
+    def test_null_and_empty_configured_alias_are_unset(self):
+        for cfg in ({}, {"webosDevice": None}, {"webosDevice": ""}):
+            with self.subTest(cfg=cfg):
+                self.install([("tv", self.peer)], cfg, self.peer)
+                self.assert_target("--device", "tv")
+
+    def test_only_null_and_empty_configured_alias_are_unset(self):
+        for alias in ("TV", " ", False, 0):
+            with self.subTest(alias=alias):
+                self.assert_refused("device_mismatch", [("tv", self.peer)], {"webosDevice": alias}, self.peer)
 
 
 if __name__ == "__main__":

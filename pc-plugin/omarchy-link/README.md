@@ -113,10 +113,14 @@ Files live in `~/.config/omarchy-link/`. See `examples/`.
 
 For LG “Update via PC”, register the TV in the webOS CLI with a unique alias and its literal
 IP address. The bridge uses the address it observes on the authenticated request to select a
-single registered device for installation and launch. Omit `webosDevice` to let each registered
-TV update itself. If you set it, use the exact, case-sensitive alias of the requesting TV. The
-update stops if the listing is invalid, the requesting address has zero or multiple matches,
-or the configured alias differs.
+single registered device for installation and launch. Omit `webosDevice` or set it to `null`
+or `""` to let each registered TV update itself. A nonempty value must match the requesting
+TV's exact, case-sensitive alias. Aliases such as `-living-room` work. Aliases made of two or
+more hyphens are invalid.
+
+A `localhost` registration can coexist with an exact nonloopback match. A loopback match
+is ambiguous if the list also contains a `localhost` registration. The update stops if the
+listing is invalid, the requesting address has no exact match, or the match is ambiguous.
 
 Keys, when you choose to use API providers, are referenced (`env:NAME`, `file:PATH` with chmod 600,
 `cmd:pass show …`) rather than pasted into the files.
