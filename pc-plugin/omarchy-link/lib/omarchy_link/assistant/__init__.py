@@ -212,6 +212,7 @@ class Assistant:
         self.settings_path = settings_path
         self.memory = Memory()
         self._providers: tuple[float, list] | None = None
+        self._providers_lock = threading.Lock()
         self.busy = threading.Semaphore(2)
         self.recent: collections.deque = collections.deque(maxlen=20)
 
@@ -223,9 +224,15 @@ class Assistant:
         return s
 
     def providers(self, fresh: bool = False) -> list[dict]:
-        if fresh or not self._providers or time.time() - self._providers[0] > 60:
-            self._providers = (time.time(), available(self.settings()))
-        return self._providers[1]
+        with self._providers_lock:
+            if fresh or not self._providers or time.time() - self._providers[0] > 60:
+                self._providers = (time.time(), available(self.settings()))
+            return self._providers[1]
+
+    def invalidate_providers(self) -> None:
+        """Read the provider registry again on the next lookup."""
+        with self._providers_lock:
+            self._providers = None
 
     def listing(self) -> dict:
         """Body of PUT /v1/ai/providers: {"providers":[{id,name,kind,model,streaming}], "default"}."""
