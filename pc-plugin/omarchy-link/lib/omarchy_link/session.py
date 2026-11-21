@@ -35,6 +35,10 @@ class Session:
         self.pairing = config.Pairing.load()
         self.client: link.Client | None = None
         self.stream: link.EventStream | None = None
+        self._mirror: subprocess.Popen | None = None
+        self._mirror_tracks_cast = False
+        self._mirror_lock = threading.Lock()
+        self._mirror_waiter: threading.Thread | None = None
         self.stop = threading.Event()
         self.wake = threading.Event()
         self.state = {
@@ -494,19 +498,48 @@ class Session:
         """TV top bar monitor icon. start: the PC asks first (desktop notification, click to confirm) unless
         config "screenMirrorFromTv" is "allow"; "off" refuses. The existing screen caster owns
         its recorder and closes it when it receives the terminal state for its cast ID."""
-        if action != "start":
+        if action != "start" or self.stop.is_set():
             return
-        mode = self.cfg.get("screenMirrorFromTv", "confirm")
-        proc = getattr(self, "_mirror", None)
-        if mode == "off":
-            self.log(f"TV screen mirror request {action!r} ignored (screenMirrorFromTv={mode})")
+        with self._mirror_lock:
+            mode = self.cfg.get("screenMirrorFromTv", "confirm")
+            if mode == "off":
+                self.log(f"TV screen mirror request {action!r} ignored (screenMirrorFromTv={mode})")
+                return
+            if self._mirror_waiter and self._mirror_waiter.is_alive():
+                return
+            proc = self._mirror
+            if proc and proc.poll() is None:
+                if self._mirror_tracks_cast:
+                    # After Back, the old caster may still be releasing its recorder and port.
+                    self._mirror_waiter = threading.Thread(
+                        target=self._restart_screen_mirror, args=(proc, self.pairing.tv, self.stream, mode), daemon=True)
+                    self._mirror_waiter.start()
+                return
+            self._start_screen_mirror(mode)
+
+    def _restart_screen_mirror(self, proc: subprocess.Popen, tv: dict | None,
+                               stream: link.EventStream | None, mode: str) -> None:
+        try:
+            exit_code = proc.wait(timeout=6)
+        except subprocess.TimeoutExpired:
+            self.log("screen mirror restart timed out waiting for the previous caster to exit")
             return
-        if proc and proc.poll() is None:
+        # A declined confirmation and a failed confirmation command both exit nonzero.
+        if mode != "allow" and exit_code != 0:
             return
+        with self._mirror_lock:
+            if (self._mirror is proc and self.pairing.tv is tv and self.stream is stream
+                    and not self.stop.is_set() and self.cfg.get("screenMirrorFromTv", "confirm") == mode):
+                self._start_screen_mirror(mode)
+
+    def _start_screen_mirror(self, mode: str) -> None:
         exe = os.environ.get("OMARCHY_LINK_BIN", sys.argv[0])
         argv = [exe, "cast", "--screen", "--via", "link", "--notify"]
+        tracks_cast = True
         if mode != "allow":
             if shutil.which("omarchy-notification-send"):
+                # This helper only sends the prompt. The shell starts the caster on click.
+                tracks_cast = False
                 argv = ["omarchy-notification-send", "-g", "󰍹", "OmarchyTV",
                         "The TV asks to mirror this screen. Click to start", "--exec", *argv]
             elif shutil.which("notify-send"):  # libnotify >= 0.7.9: action button, prints the action id
@@ -518,6 +551,7 @@ class Session:
         try:
             self._mirror = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                             stderr=subprocess.DEVNULL, start_new_session=True)
+            self._mirror_tracks_cast = tracks_cast
         except OSError:
             self.log("cannot start screen mirroring (omarchy-notification-send or omarchy-link missing)")
 
