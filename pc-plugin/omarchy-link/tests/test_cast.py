@@ -1,11 +1,14 @@
 """Share to TV: classify, route choice, Google Cast via a catt stub, the Link cast messages with the mock TV."""
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
+import io
 import json
 import os
 import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 import unittest
 from unittest import mock
@@ -122,18 +125,147 @@ class Classify(unittest.TestCase):
 
 
 class ScreenMirrorLifecycle(unittest.TestCase):
+    def test_immediate_restart_waits_for_cleanup_and_coalesces_concurrent_starts(self):
+        companion = session.Session()
+        companion.cfg = {"screenMirrorFromTv": "allow"}
+        start = {"type": "screen_mirror", "data": {"action": "start"}}
+        cleaning_up = threading.Event()
+        exited = threading.Event()
+        repeats = threading.Barrier(4)
+
+        def wait(timeout):
+            cleaning_up.set()
+            if not exited.wait(timeout):
+                raise subprocess.TimeoutExpired("cast", timeout)
+            return 0
+
+        def repeat_start(_):
+            repeats.wait(timeout=2)
+            companion.handle_event(start)
+
+        first = mock.Mock()
+        first.poll.side_effect = lambda: 0 if exited.is_set() else None
+        first.wait.side_effect = wait
+        second = mock.Mock()
+        with mock.patch.object(session.subprocess, "Popen", side_effect=[first, second]) as spawn:
+            companion.handle_event(start)
+            companion.handle_event(start)  # Back has ended playback, but the caster is still cleaning up.
+            try:
+                self.assertTrue(cleaning_up.wait(2))
+                with ThreadPoolExecutor(max_workers=4) as callers:
+                    list(callers.map(repeat_start, range(4)))
+                self.assertIs(companion._mirror, first)
+                spawn.assert_called_once()
+            finally:
+                exited.set()
+                if cleaning_up.is_set():
+                    companion._mirror_waiter.join(2)
+
+        self.assertFalse(companion._mirror_waiter.is_alive())
+        self.assertEqual(spawn.call_count, 2)
+        self.assertIs(companion._mirror, second)
+        first.wait.assert_called_once_with(timeout=6)
+        first.terminate.assert_not_called()
+        first.kill.assert_not_called()
+
+    def test_restart_timeout_keeps_current_process_and_allows_a_fresh_start(self):
+        output = io.StringIO()
+        companion = session.Session(out=output)
+        companion.cfg = {"screenMirrorFromTv": "allow"}
+        first = mock.Mock()
+        first.poll.side_effect = [None, 0]
+        first.wait.side_effect = subprocess.TimeoutExpired("cast", 6)
+        second = mock.Mock()
+        with mock.patch.object(session.subprocess, "Popen", side_effect=[first, second]) as spawn:
+            companion.handle_screen_mirror("start")
+            companion.handle_screen_mirror("start")
+            companion._mirror_waiter.join(2)
+            self.assertFalse(companion._mirror_waiter.is_alive())
+            self.assertIs(companion._mirror, first)
+            spawn.assert_called_once()
+            self.assertIn("timed out", output.getvalue())
+            companion.handle_screen_mirror("start")
+
+        self.assertEqual(spawn.call_count, 2)
+        first.terminate.assert_not_called()
+        first.kill.assert_not_called()
+        self.assertIs(companion._mirror, second)
+
+    def test_restart_is_discarded_when_its_request_context_changes(self):
+        changes = {
+            "off": lambda companion: companion.cfg.update(screenMirrorFromTv="off"),
+            "confirm": lambda companion: companion.cfg.clear(),
+            "caster replaced": lambda companion: setattr(companion, "_mirror", mock.Mock()),
+            "pairing changed": lambda companion: companion.pairing.data.update(tv={"id": "other"}),
+            "stream disconnected": lambda companion: setattr(companion, "stream", None),
+            "session stopped": lambda companion: companion.stop.set(),
+        }
+        for reason, change in changes.items():
+            with self.subTest(reason=reason):
+                companion = session.Session()
+                companion.cfg = {"screenMirrorFromTv": "allow"}
+                companion.stream = mock.Mock()
+                first = mock.Mock()
+                first.poll.return_value = None
+                first.wait.side_effect = lambda timeout: change(companion)
+                with mock.patch.object(session.subprocess, "Popen", return_value=first) as spawn:
+                    companion.handle_screen_mirror("start")
+                    companion.handle_screen_mirror("start")
+                    companion._mirror_waiter.join(2)
+                    self.assertFalse(companion._mirror_waiter.is_alive())
+                    spawn.assert_called_once()
+                first.terminate.assert_not_called()
+                first.kill.assert_not_called()
+
+    def test_confirmation_requires_a_prompt_and_off_refuses_to_spawn(self):
+        companion = session.Session(out=io.StringIO())
+        companion.cfg = {"screenMirrorFromTv": "off"}
+        with mock.patch.object(session.subprocess, "Popen") as spawn, \
+                mock.patch.object(session.shutil, "which", return_value="/fake/omarchy-notification-send"):
+            companion.handle_screen_mirror("start")
+            spawn.assert_not_called()
+            companion.cfg = {}  # Confirmation is the default.
+            spawn.return_value.poll.return_value = None
+            companion.handle_screen_mirror("start")
+            companion.handle_screen_mirror("start")  # The asynchronous sender owns no cast to wait for.
+            spawn.assert_called_once()
+            argv = spawn.call_args.args[0]
+            self.assertEqual(argv[0], "omarchy-notification-send")
+            self.assertEqual(argv[-7], "--exec")
+            self.assertEqual(argv[-5:], ["cast", "--screen", "--via", "link", "--notify"])
+            self.assertIs(companion._mirror, spawn.return_value)
+            self.assertIsNone(companion._mirror_waiter)
+
+    def test_confirmed_restart_prompts_again_but_declined_request_does_not(self):
+        for prior_exit in (0, 1):
+            with self.subTest(prior_exit=prior_exit):
+                companion = session.Session()
+                companion.cfg = {}
+                first, second = mock.Mock(), mock.Mock()
+                first.poll.return_value = None
+                first.wait.return_value = prior_exit
+                with mock.patch.object(session.subprocess, "Popen", side_effect=[first, second]) as spawn, \
+                        mock.patch.object(session.shutil, "which", side_effect=lambda n: "/fake/notify-send" if n == "notify-send" else None):
+                    companion.handle_screen_mirror("start")
+                    companion.handle_screen_mirror("start")
+                    companion._mirror_waiter.join(2)
+                    self.assertFalse(companion._mirror_waiter.is_alive())
+                    self.assertEqual(spawn.call_count, 2 if prior_exit == 0 else 1)
+                    self.assertTrue(all(call.args[0][:2] == ["sh", "-c"] and "notify-send" in call.args[0][2]
+                                        for call in spawn.call_args_list))
+                first.terminate.assert_not_called()
+
     def test_legacy_stop_cannot_kill_the_current_process_or_launch_cast_stop(self):
         companion = session.Session()
         companion.cfg = {"screenMirrorFromTv": "allow"}
         first = mock.Mock()
-        first.poll.side_effect = [None, 0]
+        first.poll.return_value = 0
         second = mock.Mock()
         second.poll.return_value = None
         start = {"type": "screen_mirror", "data": {"action": "start"}}
         legacy_stop = {"type": "screen_mirror", "data": {"action": "stop"}}
         with mock.patch.object(session.subprocess, "Popen", side_effect=[first, second]) as spawn:
             companion.handle_event(start)
-            companion.handle_event(start)  # An active mirror already exists.
             companion.handle_event(start)  # The first streamer has now exited.
             companion.handle_event(legacy_stop)
             companion.handle_event(legacy_stop)
