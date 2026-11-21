@@ -1,12 +1,15 @@
 """LG/Samsung "Update via PC": pick the right official asset, refuse anything else, install, report."""
+import hashlib
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import threading
 import unittest
 import zipfile
+from contextlib import ExitStack
 from pathlib import Path
 from unittest import mock
 
@@ -63,6 +66,9 @@ class Start(unittest.TestCase):
 
         def fake_run(argv, timeout=300):
             runs.append(argv)
+            if argv[0] == "/usr/bin/ares-setup-device":
+                listing = [{"name": "tv", "deviceinfo": {"ip": "192.168.1.50"}}]
+                return subprocess.CompletedProcess(argv, 0, json.dumps(listing), "")
             if argv[1:2] == ["package"]:
                 out = Path(argv[argv.index("-o") + 1])
                 (out / "OmarchyTV.wgt").write_bytes(b"x")
@@ -76,6 +82,8 @@ class Start(unittest.TestCase):
             res = tvupdate.start(platform, "2.13.11", "2.13.12", "192.168.1.50", cfg or {}, lambda k, n: t)
             if res == "started":
                 self.assertTrue(t.ev.wait(5))
+                self.assertTrue(tvupdate._job.acquire(timeout=5))
+                tvupdate._job.release()
         return res, t, runs
 
     def test_webos_checksum_mismatch_is_refused(self):
@@ -86,7 +94,6 @@ class Start(unittest.TestCase):
         self.assertEqual(runs, [])
 
     def test_webos_ok(self):
-        import hashlib
         payload = b"ipk"
         orig = RELS[0]["assets"][0]["digest"]
         RELS[0]["assets"][0]["digest"] = "sha256:" + hashlib.sha256(payload).hexdigest()
@@ -95,8 +102,9 @@ class Start(unittest.TestCase):
         finally:
             RELS[0]["assets"][0]["digest"] = orig
         self.assertEqual(t.result, (True, None))
-        self.assertEqual(runs[0][:3], ["/usr/bin/ares-install", "--device", "tv"])
-        self.assertEqual(runs[1][-1], "com.omarchytv.home")
+        self.assertEqual(runs[0], ["/usr/bin/ares-setup-device", "--listfull"])
+        self.assertEqual(runs[1][:3], ["/usr/bin/ares-install", "--device", "tv"])
+        self.assertEqual(runs[2], ["/usr/bin/ares-launch", "--device", "tv", "com.omarchytv.home"])
 
     def wgt(self, config=b'<widget><tizen:application package="OmarchyTV0"/></widget>', extra=None):
         b = io.BytesIO()
@@ -140,6 +148,102 @@ class Start(unittest.TestCase):
             finally:
                 tvupdate._job.release()
         self.assertFalse(tvupdate._job.locked())
+
+
+class WebOSDevices(unittest.TestCase):
+    def setUp(self):
+        self.pkg = Path("omarchytv-testing.ipk")
+        self.tracker = Tracker()
+        self.peer = "192.0.2.30"
+        patches = ExitStack()
+        self.addCleanup(patches.close)
+        patches.enter_context(mock.patch.object(tvupdate.shutil, "which", side_effect=lambda name: f"/cli/{name}"))
+        self.ipk_info = patches.enter_context(mock.patch.object(tvupdate.update, "ipk_info", return_value={
+            "id": "com.omarchytv.home", "version": "2.13.12",
+        }))
+        self.run_cli = patches.enter_context(mock.patch.object(tvupdate.subprocess, "run"))
+        self.list_args = ["/cli/ares-setup-device", "--listfull"]
+
+    def set_listing(self, listing):
+        def run(argv, **kwargs):
+            return subprocess.CompletedProcess(argv, 0, listing if argv == self.list_args else "", "")
+
+        self.run_cli.reset_mock(side_effect=True)
+        self.run_cli.side_effect = run
+
+    def assert_refused(self, code, cfg=None):
+        with self.assertRaises(tvupdate.UpdateError) as raised:
+            tvupdate.install_webos(self.pkg, cfg or {}, self.peer, self.tracker)
+        self.assertEqual(raised.exception.code, code)
+        self.assertNotIn("fixture-passphrase", str(raised.exception))
+        self.assertEqual(self.tracker.stages, [])
+
+    def test_normalizes_ipv6_and_ipv4_mapped_peer_addresses(self):
+        for peer, address in [("::ffff:192.0.2.30", "192.0.2.30"), ("2001:db8::a", "2001:0DB8:0:0:0:0:0:A")]:
+            with self.subTest(peer=peer):
+                self.set_listing(json.dumps([
+                    {"name": "default-tv", "default": True, "deviceinfo": {"ip": "192.0.2.50"}},
+                    {"name": "living room", "deviceinfo": {"ip": address}},
+                ]))
+                tvupdate.install_webos(self.pkg, {}, peer, self.tracker)
+                self.assertEqual([call.args[0] for call in self.run_cli.call_args_list], [
+                    self.list_args,
+                    ["/cli/ares-install", "--device", "living room", str(self.pkg)],
+                    ["/cli/ares-launch", "--device", "living room", "com.omarchytv.home"],
+                ])
+
+    def test_list_errors_do_not_disclose_cli_output(self):
+        for error in (
+            subprocess.CompletedProcess(self.list_args, 1, "fixture-passphrase", "fixture-passphrase"),
+            subprocess.TimeoutExpired(self.list_args, 15, output="fixture-passphrase"),
+            UnicodeDecodeError("utf-8", b"\xff", 0, 1, "fixture-passphrase"),
+            OSError("fixture-passphrase"),
+        ):
+            with self.subTest(error=type(error)):
+                self.run_cli.reset_mock(side_effect=True)
+                if isinstance(error, BaseException):
+                    self.run_cli.side_effect = error
+                else:
+                    self.run_cli.return_value = error
+                self.assert_refused("device_list_failed")
+                self.assertEqual([call.args[0] for call in self.run_cli.call_args_list], [self.list_args])
+
+    def test_invalid_listing_is_refused_even_after_a_match(self):
+        matched = {"name": "tv", "deviceinfo": {"ip": self.peer}, "details": {"passphrase": "fixture-passphrase"}}
+        for listing in (
+            "fixture-passphrase",
+            json.dumps(matched),
+            '[{"name":"other","name":"tv","deviceinfo":{"ip":"192.0.2.30"}}]',
+            '[{"name":"tv","deviceinfo":{"ip":"192.0.2.30"},"details":NaN}]',
+            *[json.dumps([matched, record]) for record in (
+                None,
+                {"name": "other"},
+                {"name": "other", "deviceinfo": {"ip": "tv.example"}},
+                {"name": "other", "deviceinfo": {"ip": 3221226014}},
+                {"name": "tv", "deviceinfo": {"ip": "192.0.2.50"}},
+            )],
+        ):
+            with self.subTest(listing=listing):
+                self.set_listing(listing)
+                self.assert_refused("bad_device_list")
+                self.assertEqual([call.args[0] for call in self.run_cli.call_args_list], [self.list_args])
+
+    def test_aliases_that_cannot_be_passed_verbatim_are_refused(self):
+        for alias in ("", "tv ", "-d", "--help", "$tv", "%tv", "false", "null", "tv\x00"):
+            with self.subTest(alias=alias):
+                self.set_listing(json.dumps([{"name": alias, "deviceinfo": {"ip": self.peer}}]))
+                self.assert_refused("bad_device_list")
+                self.assertEqual([call.args[0] for call in self.run_cli.call_args_list], [self.list_args])
+
+    def test_bad_package_is_refused_before_cli_lookup(self):
+        self.ipk_info.return_value = {"id": "com.foreign.app", "version": "2.13.12"}
+        self.assert_refused("bad_package")
+        self.run_cli.assert_not_called()
+
+    def test_missing_setup_tool_is_refused_without_installing(self):
+        tvupdate.shutil.which.side_effect = lambda name: None if name == "ares-setup-device" else f"/cli/{name}"
+        self.assert_refused("no_tool")
+        self.run_cli.assert_not_called()
 
 
 if __name__ == "__main__":
