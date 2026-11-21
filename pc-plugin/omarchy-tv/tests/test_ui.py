@@ -1,5 +1,5 @@
 """choose(): omarchy-menu-select (Omarchy 4.5+) > walker --dmenu > gum > plain, with fake binaries (no desktop needed)."""
-import builtins, os, sys, tempfile, unittest
+import builtins, os, shutil, sys, tempfile, unittest
 from pathlib import Path
 from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
@@ -18,7 +18,10 @@ class ChooseTest(unittest.TestCase):
         self.log = r / "log"
         self.obin = r / "omarchy-bin"; self.obin.mkdir()      # stands in for ~/.local/share/omarchy/bin
         self.pbin = r / "path-bin"; self.pbin.mkdir()         # stands in for the rest of PATH
-        self.env = {"PATH": f"{self.pbin}:/usr/bin:/bin", "HOME": str(r)}
+        head = shutil.which("head")
+        self.assertIsNotNone(head)
+        (self.pbin / "head").symlink_to(head)
+        self.env = {"PATH": str(self.pbin), "HOME": str(r)}
         self.p_bin = mock.patch.object(ui, "OMARCHY_BIN", self.obin)
         self.p_bin.start()
 
