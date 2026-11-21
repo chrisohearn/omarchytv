@@ -1,10 +1,11 @@
 import json, os, sys, tempfile, threading, unittest, urllib.error, urllib.request
 from unittest import mock
 from http.server import HTTPServer
+from pathlib import Path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "omarchy-link", "lib"))
 from omarchy_tv import webos
-from omarchy_link import assistant, office as link_office
+from omarchy_link import assistant, config as link_config, office as link_office
 from omarchy_link.assistant.providers import openai_api
 
 
@@ -32,6 +33,50 @@ class WebOSBridgeTest(unittest.TestCase):
         finally:
             srv.shutdown()
             srv.server_close()
+
+
+    def test_media_opt_out_stops_at_the_request_boundary(self):
+        handler = webos.WebOSHandler.__new__(webos.WebOSHandler)
+        handler._authorized = mock.Mock(return_value=True)
+        handler._send_json = mock.Mock()
+        handler.command = "GET"
+        handler.path = "/v1/media/list"
+        media = mock.Mock()
+        with tempfile.TemporaryDirectory() as temporary:
+            settings = Path(temporary) / "xdg/omarchy-link/config.json"
+            settings.parent.mkdir(parents=True)
+            settings.write_text('{"mediaFromTv": false}', encoding="utf-8")
+            modules = {"media": media, "config": link_config}
+            with mock.patch.object(link_config, "CONFIG_FILE", settings), \
+                 mock.patch.object(webos, "_link_mod", side_effect=modules.get):
+                handler.do_GET()
+                for route in ("/v1/media/f/fixture/example", "/v1/media/s/fixture/example"):
+                    handler.path = route
+                    handler.do_GET()
+                handler.command = "HEAD"
+                handler.path = "/v1/media/f/fixture/example"
+                handler.do_HEAD()
+        self.assertEqual([call.args[1] for call in handler._send_json.call_args_list], [403] * 4)
+        self.assertEqual(media.mock_calls, [])
+
+    def test_media_listing_keeps_enabled_defaults_and_token_requirement(self):
+        handler = webos.WebOSHandler.__new__(webos.WebOSHandler)
+        handler.command = "GET"
+        handler.path = "/v1/media/list"
+        handler._authorized = mock.Mock(return_value=True)
+        handler._send_json = mock.Mock()
+        media = mock.Mock()
+        media.listing.return_value = {"files": []}
+        with mock.patch.object(webos, "link_cfg", return_value={}), \
+             mock.patch.object(webos, "bridge_token", return_value="fixture"), \
+             mock.patch.object(webos, "_link_mod", side_effect={"media": media}.get):
+            handler.do_GET()
+            handler._send_json.assert_called_once_with({"files": []})
+            handler._send_json.reset_mock()
+            handler._authorized.return_value = False
+            handler.do_GET()
+        self.assertEqual(handler._send_json.call_args.args[1], 401)
+        media.listing.assert_called_once_with("")
 
 
 class FakeGrokbot:

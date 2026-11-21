@@ -40,6 +40,7 @@ AI credit balances, and desktop wallpaper over LAN HTTP with CORS enabled:
   GET /v1/media/f/<sig>/<path>     -> the file, with Range (seek), for the TV's own player; sig = HMAC of the path
                                    with the ask code, so only URLs from an authorised listing work.
   GET /v1/media/s/<sig>/<path>     -> the subtitle as WebVTT (an .srt converted on the fly).
+  Media routes return 403 while mediaFromTv is off on the PC.
   GET /v1/status also carries "liftoff": a running/just finished build or update (omarchy-link liftoff) or null.
 """
 from __future__ import annotations
@@ -358,7 +359,8 @@ class WebOSHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Omarchy-Token")   # Chrome 38 has no "*"
         self.end_headers()
-        self.wfile.write(raw)
+        if self.command != "HEAD":
+            self.wfile.write(raw)
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -586,6 +588,18 @@ class WebOSHandler(BaseHTTPRequestHandler):
 
 
     # ---- Cinemarchy: the PC's media folders (read-only) ----
+    def _media_enabled(self) -> bool:
+        cfg = _link_mod("config")
+        try:
+            settings = cfg.load_config() if cfg else link_cfg()
+        except (OSError, ValueError):
+            self._send_json({"error": "config_unavailable", "message": "Cannot read PC media settings"}, 503)
+            return False
+        if settings.get("mediaFromTv", True) is False:
+            self._send_json({"error": "disabled", "message": "mediaFromTv is off on the PC"}, 403)
+            return False
+        return True
+
     def _media_list(self) -> None:
         m = _link_mod("media")
         if not m:
@@ -593,6 +607,8 @@ class WebOSHandler(BaseHTTPRequestHandler):
             return
         if not self._authorized():
             self._send_json({"error": "unauthorized"}, 401)
+            return
+        if not self._media_enabled():
             return
         q = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
         res = m.listing((q.get("path") or [""])[0])
@@ -604,6 +620,8 @@ class WebOSHandler(BaseHTTPRequestHandler):
         self._send_json(res)
 
     def _media_file(self, path: str) -> None:
+        if not self._media_enabled():
+            return
         m = _link_mod("media")
         parts = path.split("/", 5)   # ["", "v1", "media", "f|s", sig, rel]
         if not m or len(parts) < 6:
