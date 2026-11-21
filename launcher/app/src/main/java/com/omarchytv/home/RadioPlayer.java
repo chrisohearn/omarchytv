@@ -39,6 +39,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Function;
 
 /**
  * v2.20 Radiomarchy: the one player behind the music app, the Home mini player, the media keys and the fractal
@@ -57,9 +58,11 @@ final class RadioPlayer {
     }
 
     static final int REPEAT_ALL = 0, REPEAT_ONE = 1, REPEAT_OFF = 2;
+    private static final long PAUSE_GRACE_MS = 30_000;
     private static RadioPlayer inst;
 
     private final Context app;
+    private final Function<RadioPlayer, ExoPlayer> createPlayer;
     private final Handler h = new Handler(Looper.getMainLooper());
     private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
     final AudioBands bands = new AudioBands();
@@ -71,17 +74,22 @@ final class RadioPlayer {
     private boolean shuffle;
     private int repeat = REPEAT_ALL;
     private String error = "";
+    private long pausedPositionMs = -1, pausedDurationMs;
     // the play clock the GL thread reads (written on the main thread)
     private volatile long clockPosMs, clockAtMs;
     private volatile boolean clockRunning, hasAudio;
     private final Runnable tick = new Runnable() {
         @Override
         public void run() {
+            if (!progressing()) return;
             syncClock();
             saveEpisode(false);
-            if (player != null) h.postDelayed(this, 250);
+            h.postDelayed(this, 250);
         }
     };
+    private boolean releasePending;
+    private final Runnable releasePaused = this::releasePausedPlayer;
+    private final Runnable retry = () -> advance(1, false);
     private long lastSave;
 
     static RadioPlayer get(Context c) {
@@ -91,7 +99,7 @@ final class RadioPlayer {
 
     /** Is there one, and is it playing (or about to)? Never creates the player. */
     static boolean active() {
-        return inst != null && inst.player != null && inst.player.getPlayWhenReady() && inst.current() != null;
+        return inst != null && inst.playing() && inst.current() != null;
     }
 
     static RadioPlayer peek() {
@@ -99,7 +107,12 @@ final class RadioPlayer {
     }
 
     private RadioPlayer(Context app) {
+        this(app, RadioPlayer::buildPlayer);
+    }
+
+    RadioPlayer(Context app, Function<RadioPlayer, ExoPlayer> createPlayer) {
         this.app = app;
+        this.createPlayer = createPlayer;
         SharedPreferences p = prefs();
         shuffle = p.getBoolean("shuffle", true);   // v2.20: random by default, like the fractals
         repeat = p.getInt("repeat", REPEAT_ALL);
@@ -119,14 +132,81 @@ final class RadioPlayer {
 
     private void changed() {
         syncClock();
+        updateTimers();
         updateSession();
         for (Listener l : listeners) l.onRadio();
     }
 
     // ---- the player -----------------------------------------------------------------------------------
 
+    private void updateTimers() {
+        h.removeCallbacks(tick);
+        if (progressing()) h.postDelayed(tick, 250);
+        // Buffering with playback requested still needs its player and foreground service.
+        if (player == null || playing()) {
+            h.removeCallbacks(releasePaused);
+            releasePending = false;
+        } else if (!releasePending) {
+            releasePending = true;
+            h.postDelayed(releasePaused, PAUSE_GRACE_MS);
+        }
+    }
+
+    private void releasePausedPlayer() {
+        releasePending = false;
+        if (player == null || playing()) return;
+        int state = player.getPlaybackState();
+        if (state == Player.STATE_READY || state == Player.STATE_BUFFERING) {
+            pausedPositionMs = position();
+            pausedDurationMs = duration();
+        }
+        releasePlayer();
+        // Keep the lightweight session usable by media keys while the app process lives.
+        changed();
+    }
+
     private ExoPlayer player() {
         if (player != null) return player;
+        player = createPlayer.apply(this);
+        player.addListener(new Player.Listener() {
+            @Override
+            public void onPlaybackStateChanged(int s) {
+                if (s == Player.STATE_ENDED) {
+                    saveEpisode(true);
+                    if (repeat == REPEAT_ONE) start(0);
+                    else if (!advance(1, false)) stopService();
+                }
+            }
+
+            @Override
+            public void onIsPlayingChanged(boolean playing) {
+                if (!playing) saveEpisode(true);
+            }
+
+            @Override
+            public void onEvents(Player source, Player.Events events) {
+                if (source != player) return;
+                if (!source.getPlayWhenReady()
+                        || source.getPlaybackSuppressionReason() != Player.PLAYBACK_SUPPRESSION_REASON_NONE) {
+                    h.removeCallbacks(retry);
+                }
+                if (events.containsAny(Player.EVENT_PLAYBACK_STATE_CHANGED, Player.EVENT_PLAY_WHEN_READY_CHANGED,
+                        Player.EVENT_PLAYBACK_SUPPRESSION_REASON_CHANGED, Player.EVENT_IS_PLAYING_CHANGED)) changed();
+            }
+
+            @Override
+            public void onPlayerError(PlaybackException e) {
+                error = e.getErrorCodeName();
+                // A song that will not play: on to the next one after a moment, at most the list once.
+                if (++errorsInARow < Math.max(2, order.size())) h.postDelayed(retry, 1500);
+                else errorsInARow = 0;
+                changed();
+            }
+        });
+        return player;
+    }
+
+    private ExoPlayer buildPlayer() {
         TeeAudioProcessor tee = new TeeAudioProcessor(new TeeAudioProcessor.AudioBufferSink() {
             private int channels = 2, encoding = C.ENCODING_PCM_16BIT;
             private short[] s16 = new short[0];
@@ -168,40 +248,12 @@ final class RadioPlayer {
         };
         DefaultHttpDataSource.Factory http = new DefaultHttpDataSource.Factory().setUserAgent("OmarchyTV-Radiomarchy")
                 .setConnectTimeoutMs(10_000).setReadTimeoutMs(20_000).setAllowCrossProtocolRedirects(false);
-        player = new ExoPlayer.Builder(app, rf)
+        return new ExoPlayer.Builder(app, rf)
                 .setMediaSourceFactory(new DefaultMediaSourceFactory(new DefaultDataSource.Factory(app, http)))
                 .setAudioAttributes(new AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
                 .setHandleAudioBecomingNoisy(true)
                 .setWakeMode(C.WAKE_MODE_NETWORK)
                 .build();
-        player.addListener(new Player.Listener() {
-            @Override
-            public void onPlaybackStateChanged(int s) {
-                if (s == Player.STATE_ENDED) {
-                    saveEpisode(true);
-                    if (repeat == REPEAT_ONE) start(0);
-                    else if (!advance(1, false)) stopService();
-                }
-                changed();
-            }
-
-            @Override
-            public void onIsPlayingChanged(boolean playing) {
-                if (!playing) saveEpisode(true);
-                changed();
-            }
-
-            @Override
-            public void onPlayerError(PlaybackException e) {
-                error = e.getErrorCodeName();
-                changed();
-                // a song that will not play: on to the next one after a moment (never a tight loop: at most the list once)
-                if (++errorsInARow < Math.max(2, order.size())) h.postDelayed(() -> advance(1, false), 1500);
-                else errorsInARow = 0;
-            }
-        });
-        h.post(tick);
-        return player;
     }
 
     private int errorsInARow;
@@ -239,6 +291,8 @@ final class RadioPlayer {
     private void start(long fromMs) {
         RadioCatalog.Track t = current();
         if (t == null) return;
+        h.removeCallbacks(retry);
+        pausedPositionMs = -1;
         error = "";
         ExoPlayer p = player();
         bands.startAt(fromMs * 1000);
@@ -252,7 +306,7 @@ final class RadioPlayer {
     /** Next (+1) or previous (-1); false at the end of a list that does not go round. */
     boolean advance(int dir, boolean user) {
         if (order.isEmpty()) return false;
-        if (dir < 0 && player != null && player.getCurrentPosition() > 4000) {   // "previous" first goes back to the start
+        if (dir < 0 && position() > 4000) {   // "previous" first goes back to the start
             seekTo(0);
             return true;
         }
@@ -272,26 +326,39 @@ final class RadioPlayer {
 
     void toggle() {
         if (current() == null) return;
-        ExoPlayer p = player();
-        if (p.getPlaybackState() == Player.STATE_IDLE || p.getPlaybackState() == Player.STATE_ENDED) {
-            start(resumeAt(current()));
-            return;
+        if (playing()) pause();
+        else resume();
+    }
+
+    private void resume() {
+        h.removeCallbacks(retry);
+        if (player == null || player.getPlaybackState() == Player.STATE_IDLE || player.getPlaybackState() == Player.STATE_ENDED) {
+            start(pausedPositionMs >= 0 ? pausedPositionMs : resumeAt(current()));
+        } else {
+            player.setPlayWhenReady(true);
+            startService();
+            changed();
         }
-        p.setPlayWhenReady(!p.getPlayWhenReady());
-        if (p.getPlayWhenReady()) startService();
-        changed();
     }
 
     void pause() {
-        if (player != null) player.setPlayWhenReady(false);
+        h.removeCallbacks(retry);
+        if (player != null) {
+            player.setPlayWhenReady(false);
+            changed();
+        }
     }
 
     void seekTo(long ms) {
-        if (player == null) return;
+        if (player == null && pausedPositionMs < 0) return;
         long d = duration();
         ms = Math.max(0, d > 0 ? Math.min(ms, d - 500) : ms);
-        bands.startAt(ms * 1000);
-        player.seekTo(ms);
+        if (player != null) {
+            bands.startAt(ms * 1000);
+            player.seekTo(ms);
+        } else {
+            pausedPositionMs = ms;
+        }
         changed();
     }
 
@@ -301,19 +368,26 @@ final class RadioPlayer {
 
     /** Stop and let go of the player (the notification goes too). */
     void stop() {
-        saveEpisode(true);
-        if (player != null) {
-            player.release();
-            player = null;
-        }
-        hasAudio = false;
-        stopService();
+        releasePlayer();
+        pausedPositionMs = -1;
         if (session != null) {
             session.setActive(false);
             session.release();
             session = null;
         }
         changed();
+    }
+
+    private void releasePlayer() {
+        h.removeCallbacks(retry);
+        saveEpisode(true);
+        if (player != null) {
+            ExoPlayer old = player;
+            player = null;
+            old.release();
+        }
+        hasAudio = false;
+        stopService();
     }
 
     // ---- state ----------------------------------------------------------------------------------------
@@ -337,19 +411,30 @@ final class RadioPlayer {
     }
 
     boolean playing() {
-        return player != null && player.getPlayWhenReady() && player.getPlaybackState() != Player.STATE_ENDED;
+        if (player == null || !player.getPlayWhenReady()
+                || player.getPlaybackSuppressionReason() != Player.PLAYBACK_SUPPRESSION_REASON_NONE) return false;
+        int state = player.getPlaybackState();
+        return state == Player.STATE_READY || state == Player.STATE_BUFFERING;
+    }
+
+    boolean progressing() {
+        return player != null && player.isPlaying();
+    }
+
+    boolean hasPlayer() {
+        return player != null;
     }
 
     boolean buffering() {
-        return player != null && player.getPlaybackState() == Player.STATE_BUFFERING;
+        return playing() && player.getPlaybackState() == Player.STATE_BUFFERING;
     }
 
     long position() {
-        return player != null ? Math.max(0, player.getCurrentPosition()) : 0;
+        return player != null ? Math.max(0, player.getCurrentPosition()) : Math.max(0, pausedPositionMs);
     }
 
     long duration() {
-        long d = player != null ? player.getDuration() : C.TIME_UNSET;
+        long d = player != null ? player.getDuration() : pausedPositionMs >= 0 ? pausedDurationMs : C.TIME_UNSET;
         if (d == C.TIME_UNSET || d <= 0) {
             RadioCatalog.Track t = current();
             return t != null ? t.durationMs : 0;
@@ -428,12 +513,13 @@ final class RadioPlayer {
 
     private void saveEpisode(boolean now) {
         RadioCatalog.Track t = current();
-        if (player == null || t == null || !t.episode()) return;
+        if ((player == null && pausedPositionMs < 0) || t == null || !t.episode()) return;
         long ms = SystemClock.elapsedRealtime();
         if (!now && ms - lastSave < 15000) return;
         lastSave = ms;
-        long pos = player.getCurrentPosition(), d = duration();
-        boolean done = player.getPlaybackState() == Player.STATE_ENDED || (d > 0 && pos > d - 30000);
+        long pos = position(), d = duration();
+        boolean done = (player != null && player.getPlaybackState() == Player.STATE_ENDED)
+                || (d > 0 && pos > d - 30000);
         SharedPreferences.Editor e = prefs().edit();
         if (done) e.remove("pos:" + t.url);
         else if (pos > 10000) e.putLong("pos:" + t.url, pos);
@@ -444,7 +530,7 @@ final class RadioPlayer {
 
     private void updateSession() {
         RadioCatalog.Track t = current();
-        if (t == null || player == null) return;
+        if (t == null || (player == null && session == null)) return;
         if (session == null) {
             session = new MediaSession(app, "Radiomarchy");
             session.setCallback(new MediaSession.Callback() {
@@ -503,7 +589,7 @@ final class RadioPlayer {
                 .putString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE, t.artist)
                 .putLong(MediaMetadata.METADATA_KEY_DURATION, duration())
                 .build());
-        int st = player.getPlaybackState() == Player.STATE_BUFFERING ? PlaybackState.STATE_BUFFERING
+        int st = buffering() ? PlaybackState.STATE_BUFFERING
                 : playing() ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED;
         session.setPlaybackState(new PlaybackState.Builder()
                 .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE | PlaybackState.ACTION_PLAY_PAUSE
@@ -525,9 +611,8 @@ final class RadioPlayer {
      * up so PLAY / PLAY_PAUSE on Home resume the song without opening Radiomarchy again.
      */
     void claimSession() {
-        if (current() == null || player == null) return;
         updateSession();
-        startService();
+        if (playing()) startService();
     }
 
     private boolean wallpaperMusicTried;
@@ -543,7 +628,7 @@ final class RadioPlayer {
             return;
         }
         if (current() != null) {
-            if (player != null && player.getPlayWhenReady()) ensureAudible();
+            if (playing()) ensureAudible();
             else claimSession();
             return;
         }
@@ -586,21 +671,19 @@ final class RadioPlayer {
      */
     void ensureAudible() {
         if (current() == null) return;
-        ExoPlayer p = player();
+        if (player == null) {
+            resume();
+            return;
+        }
+        ExoPlayer p = player;
         p.setVolume(1f);
         try {
             p.setAudioAttributes(new AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true);
         } catch (Throwable ignored) {
         }
-        int st = p.getPlaybackState();
-        if (st == Player.STATE_IDLE || st == Player.STATE_ENDED) start(resumeAt(current()));
-        else if (!p.getPlayWhenReady()) {
-            p.setPlayWhenReady(true);
-            startService();
-        }
-        claimSession();
-        changed();
+        if (!playing()) resume();
+        else claimSession();
     }
 
     /** MEDIA_* keys: true if this player has a current track and handled the key. */

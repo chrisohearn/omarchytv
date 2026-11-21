@@ -90,8 +90,9 @@ public final class RadioActivity extends Activity implements RadioPlayer.Listene
     private final Runnable tick = new Runnable() {
         @Override
         public void run() {
+            if (!player.progressing()) return;
             updateTime();
-            if (!demo && !saver && autoDemo && player.playing() && SystemClock.elapsedRealtime() - lastKey > 60_000) setDemo(true);
+            if (!demo && !saver && autoDemo && SystemClock.elapsedRealtime() - lastKey > 60_000) setDemo(true);
             h.postDelayed(this, 250);
         }
     };
@@ -440,8 +441,6 @@ public final class RadioActivity extends Activity implements RadioPlayer.Listene
         if (fractal != null && fractal.getVisibility() == View.VISIBLE) fractal.onResume();
         if (slides != null && slides.getVisibility() == View.VISIBLE) slides.start();
         player.addListener(this);
-        h.removeCallbacks(tick);
-        h.post(tick);
         lastKey = SystemClock.elapsedRealtime();
         onRadio();
         if (saver) {
@@ -465,6 +464,8 @@ public final class RadioActivity extends Activity implements RadioPlayer.Listene
     @Override
     public void onRadio() {
         if (isFinishing()) return;
+        h.removeCallbacks(tick);
+        if (player.progressing()) h.postDelayed(tick, 250);
         refresh(false);
     }
 
