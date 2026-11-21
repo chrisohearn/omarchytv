@@ -11,7 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 TMP = Path(tempfile.mkdtemp(prefix="omarchy-link-test-")).resolve()
 HOME = TMP / "home"
 os.environ.update(HOME=str(HOME), XDG_RUNTIME_DIR=str(TMP / "run"), XDG_CONFIG_HOME=str(HOME / ".config"),
-                  XDG_STATE_HOME=str(HOME / ".local/state"), XDG_CACHE_HOME=str(HOME / ".cache"))
+                  XDG_DATA_HOME=str(HOME / ".local/share"), XDG_STATE_HOME=str(HOME / ".local/state"),
+                  XDG_CACHE_HOME=str(HOME / ".cache"))
 os.environ.pop("OMARCHY_LINK_MDNS", None)
 # Hermetic: the real AI CLIs (and cast/recorder/clipboard tools) installed on this machine (claude, codex, ...) must never run in tests.
 # Running one in the fake HOME makes it write ~/.claude.json, which then reads as "signed in" for
