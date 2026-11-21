@@ -73,7 +73,7 @@ test("remote keys: colours, channels, digits; letters typed in the URL field sta
   assert.strictEqual(k(8), "back");
 });
 
-function openRoulette() {
+function openRoulette(iptv) {
   let plays = 0, exits = 0, timerId = 0;
   const playing = [];
   const intervals = new Map();
@@ -105,9 +105,10 @@ function openRoulette() {
   });
   const ui = cine.open(root, {
     tr: key => key, theme: {}, cfg: {}, store: { getItem: () => null },
-    dhh: { status: () => "", list: () => [] },
+    dhh: { status: () => "", list: () => [] }, save() {},
     onPlay: value => playing.push(value), onExit: () => { exits++; }
   });
+  if (iptv) ui._state().iptv = iptv;
   ui.key("right");
   ui.key("blue");
   return {
@@ -177,4 +178,24 @@ test("strings in every language, the page loads it, the open movies are labelled
   assert.ok(fs.existsSync(path.join(__dirname, "../app", C.TEST_CLIP)), "the test clip is in the app");
   assert.ok(fs.readFileSync(path.join(__dirname, "../app", C.TEST_CLIP)).equals(fs.readFileSync(path.join(__dirname, "../../launcher/app/src/main/assets/cinemarchy/omarchytv-test.mp4"))), "the same clip on Android");
   assert.ok(!/4K HDR|OLED|60fps/.test(src));
+});
+
+test("Back from a playing channel cancels pending roulette", () => {
+  const roulette = openRoulette([{ name: "Fixture", group: "Demo", url: "https://example.invalid/channel" }]);
+  for (let i = 0; i < 7; i++) roulette.tick();
+  assert.strictEqual(roulette.plays(), 1);
+
+  roulette.ui.key("green");
+  assert.strictEqual(roulette.activeRoulette(), 1);
+  for (let i = 0; i < 7; i++) roulette.tick();
+  assert.strictEqual(roulette.plays(), 2);
+
+  roulette.ui.key("green");
+  assert.strictEqual(roulette.activeRoulette(), 1);
+  roulette.ui.key("back");
+  for (let i = 0; i < 7; i++) roulette.tick();
+  assert.strictEqual(roulette.plays(), 2);
+  assert.strictEqual(roulette.activeRoulette(), 0);
+  assert.strictEqual(roulette.staticOverlay.style.display, "none");
+  roulette.ui.destroy();
 });
