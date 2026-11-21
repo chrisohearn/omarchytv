@@ -1241,21 +1241,13 @@ public final class CinemarchyActivity extends Activity implements OmarchyLink.Li
             }
             switch (kc) {
                 case KeyEvent.KEYCODE_J:
-                    moveListFocus(1);
+                    jump(1);
                     return true;
                 case KeyEvent.KEYCODE_K:
-                    moveListFocus(-1);
+                    jump(-1);
                     return true;
                 case KeyEvent.KEYCODE_G:
-                    if (e.isShiftPressed()) {
-                        if (listContainer.getChildCount() > 0) {
-                            listContainer.getChildAt(listContainer.getChildCount() - 1).requestFocus();
-                        }
-                    } else {
-                        if (listContainer.getChildCount() > 0) {
-                            listContainer.getChildAt(0).requestFocus();
-                        }
-                    }
+                    focusListItem(e.isShiftPressed() ? currentItems.size() - 1 : 0);
                     return true;
                 case KeyEvent.KEYCODE_P:
                     activateEntry(selectedEntry);
@@ -1309,40 +1301,28 @@ public final class CinemarchyActivity extends Activity implements OmarchyLink.Li
         for (int i = 0; i < count; i++) if (listContainer.getChildAt(i).hasFocus()) { cur = i; break; }
         if (cur < 0) return false;
         int abs = listOffset + cur + delta;
-        if (abs < 0 || abs >= currentItems.size()) return false;
         if (cur + delta >= 0 && cur + delta < count) return false;   // still inside: normal focus move
-        listOffset = Math.max(0, Math.min(Math.max(0, currentItems.size() - WINDOW), abs - WINDOW / 2));
-        populateList(currentItems);
-        View v = listContainer.getChildAt(abs - listOffset);
-        if (v != null) v.requestFocus();
-        return true;
+        return focusListItem(abs);
     }
 
-    /** Page up/down (and CH+/CH- style jumps) across the whole list. */
+    /** Move by one row or a page across the whole list. */
     private boolean jump(int delta) {
         int count = listContainer.getChildCount(), cur = 0;
         for (int i = 0; i < count; i++) if (listContainer.getChildAt(i).hasFocus()) { cur = i; break; }
         int abs = Math.max(0, Math.min(currentItems.size() - 1, listOffset + cur + delta));
-        if (abs >= listOffset && abs < listOffset + count) { listContainer.getChildAt(abs - listOffset).requestFocus(); return true; }
-        listOffset = Math.max(0, Math.min(Math.max(0, currentItems.size() - WINDOW), abs - WINDOW / 2));
-        populateList(currentItems);
-        View v = listContainer.getChildAt(abs - listOffset);
-        if (v != null) v.requestFocus();
-        return true;
+        return focusListItem(abs);
     }
 
-    private void moveListFocus(int delta) {
-        int count = listContainer.getChildCount();
-        if (count == 0) return;
-        int cur = 0;
-        for (int i = 0; i < count; i++) {
-            if (listContainer.getChildAt(i).hasFocus()) {
-                cur = i;
-                break;
-            }
+    /** Focus an absolute list position, rebuilding the window only when it cannot show that item. */
+    private boolean focusListItem(int index) {
+        if (index < 0 || index >= currentItems.size()) return false;
+        if (index < listOffset || index >= listOffset + listContainer.getChildCount()) {
+            listOffset = Math.max(0, Math.min(currentItems.size() - WINDOW, index - WINDOW / 2));
+            populateList(currentItems);
         }
-        int next = Math.max(0, Math.min(count - 1, cur + delta));
-        listContainer.getChildAt(next).requestFocus();
+        View row = listContainer.getChildAt(index - listOffset);
+        if (row != null) row.requestFocus();
+        return true;
     }
 
     private TextView label(String text, float sp, int color, boolean bold) {
