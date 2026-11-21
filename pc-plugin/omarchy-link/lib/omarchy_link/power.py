@@ -16,7 +16,7 @@ import sys
 import threading
 from pathlib import Path
 
-from . import liftoff
+from . import config, liftoff
 
 MAC = __import__("re").compile(r"^([0-9a-f]{2}:){5}[0-9a-f]{2}$")
 SYS_NET = Path("/sys/class/net")
@@ -69,9 +69,6 @@ def suspend_argv() -> list[str] | None:
 
 
 def _suspend(log) -> None:
-    global _timer
-    with _lock:
-        _timer = None
     st = liftoff.public(liftoff.read_state())
     if st and st["state"] == "running":
         log("TV off, but a liftoff is running: not suspending")
@@ -91,8 +88,6 @@ def _suspend(log) -> None:
 def tv_power(state: object, cfg: dict, log=lambda m: None) -> str:
     """The TV turned "standby" or "on". Returns "scheduled", "cancelled", "disabled", "ignored"."""
     global _timer
-    if cfg.get("powerFromTv", True) is False:
-        return "disabled"
     if state == "on":
         with _lock:
             t, _timer = _timer, None
@@ -100,19 +95,42 @@ def tv_power(state: object, cfg: dict, log=lambda m: None) -> str:
             t.cancel()
             log("TV back on: PC suspend cancelled")
             return "cancelled"
-        return "ignored"
+    if cfg.get("powerFromTv", True) is False:
+        return "disabled"
     if state != "standby":
         return "ignored"
     try:
         grace = max(10, min(3600, int(cfg.get("powerGraceS", 60))))
     except (TypeError, ValueError):
         grace = 60
+
+    def suspend_if_pending():
+        global _timer
+        with _lock:
+            if _timer is not timer:
+                return
+        try:
+            current = config.load_config()
+        except (OSError, ValueError):
+            current = None
+        with _lock:
+            if _timer is not timer:
+                return
+            _timer = None
+        if current is None:
+            log("TV off: cannot read power settings, not suspending")
+            return
+        if current.get("powerFromTv", True) is False:
+            log("TV off: PC suspend disabled")
+            return
+        _suspend(log)
+
     with _lock:
         if _timer:
             return "scheduled"
-        _timer = threading.Timer(grace, _suspend, args=(log,))
-        _timer.daemon = True
-        _timer.start()
+        timer = _timer = threading.Timer(grace, suspend_if_pending)
+        timer.daemon = True
+        timer.start()
     log(f"TV off: the PC suspends in {grace} s unless the TV comes back on")
     return "scheduled"
 

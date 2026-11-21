@@ -70,6 +70,47 @@ class Power(unittest.TestCase):
         self.assertEqual(power.tv_power("reboot", {}), "ignored")
         self.assertFalse(power.pending())
 
+    def test_on_cancels_even_when_disabled(self):
+        with mock.patch.object(power.threading, "Timer") as timer, \
+             mock.patch.object(power, "_suspend") as suspend:
+            self.assertEqual(power.tv_power("standby", {}), "scheduled")
+            self.assertEqual(power.tv_power("on", {"powerFromTv": False}), "cancelled")
+            self.assertFalse(power.pending())
+            timer.return_value.cancel.assert_called_once()
+            # cancel() can race a callback that has already started.
+            timer.call_args.args[1](*timer.call_args.kwargs.get("args", ()))
+            suspend.assert_not_called()
+
+    def test_on_cancels_while_callback_reads_config(self):
+        def read_config():
+            self.assertEqual(power.tv_power("on", {}), "cancelled")
+            return {}
+
+        with mock.patch.object(power.config, "load_config", side_effect=read_config), \
+             mock.patch.object(power.threading, "Timer") as timer, \
+             mock.patch.object(power, "_suspend") as suspend:
+            self.assertEqual(power.tv_power("standby", {}), "scheduled")
+            timer.call_args.args[1]()
+            self.assertFalse(power.pending())
+            suspend.assert_not_called()
+
+    def test_timer_reads_current_config_without_an_on_event(self):
+        with mock.patch.object(session.config, "CONFIG_FILE", helpers.TMP / "power-config.json"), \
+             mock.patch.object(power.threading, "Timer") as timer, \
+             mock.patch.object(power, "_suspend") as suspend:
+            session.config.save_config({"powerFromTv": True})
+            self.assertEqual(power.tv_power("standby", session.config.load_config()), "scheduled")
+            session.config.save_config({"powerFromTv": False})
+            timer.call_args.args[1](*timer.call_args.kwargs.get("args", ()))
+            self.assertFalse(power.pending())
+            suspend.assert_not_called()
+
+            session.config.save_config({"powerFromTv": True})
+            self.assertEqual(power.tv_power("standby", session.config.load_config()), "scheduled")
+            timer.call_args.args[1](*timer.call_args.kwargs.get("args", ()))
+            self.assertFalse(power.pending())
+            suspend.assert_called_once()
+
     def test_suspend_skipped_while_a_liftoff_runs(self):
         logs = []
         with mock.patch.object(power.liftoff, "public", return_value={"state": "running"}), \
